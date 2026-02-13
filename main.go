@@ -14,14 +14,20 @@ func main() {
 	cmd := os.Args[1]
 	switch cmd {
 	case "add":
-		fmt.Fprintln(os.Stderr, "md add: not yet implemented")
-		os.Exit(1)
+		if err := cmdAdd(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "md add: %s\n", err)
+			os.Exit(1)
+		}
 	case "del":
-		fmt.Fprintln(os.Stderr, "md del: not yet implemented")
-		os.Exit(1)
+		if err := cmdDel(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "md del: %s\n", err)
+			os.Exit(1)
+		}
 	case "ready":
-		fmt.Fprintln(os.Stderr, "md ready: not yet implemented")
-		os.Exit(1)
+		if err := cmdReady(); err != nil {
+			fmt.Fprintf(os.Stderr, "md ready: %s\n", err)
+			os.Exit(1)
+		}
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", cmd)
 		fmt.Fprintln(os.Stderr, "commands: add, del, ready")
