@@ -1,10 +1,21 @@
 package main
 
-import "github.com/jpillora/opts"
+import (
+	"os"
 
-const tasksFile = "TASKS.md"
+	"github.com/jpillora/opts"
+)
 
 var version = "0.0.0-dev"
+
+var tasksFile = getTasksFile()
+
+func getTasksFile() string {
+	if v := os.Getenv("MD_TASKS"); v != "" {
+		return v
+	}
+	return "TASKS.md"
+}
 
 type config struct {
 	Add    addCmd    `opts:"mode=cmd" help:"Add a new task"`
