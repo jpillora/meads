@@ -4,22 +4,22 @@ import (
 	"testing"
 )
 
-func TestParseTasks_SingleTask(t *testing.T) {
-	input := `## 0001 Fix the login bug
+func TestParseFile_SingleTask(t *testing.T) {
+	input := `## 1 Fix the login bug
 
 * status: open
 * priority: 1
-* depends-on: 0003
+* depends-on: 3
 
 The login page throws a 500 when the session cookie is expired.`
 
-	tasks := ParseTasks(input)
-	if len(tasks) != 1 {
-		t.Fatalf("expected 1 task, got %d", len(tasks))
+	f := ParseFile(input)
+	if len(f.Tasks) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(f.Tasks))
 	}
-	task := tasks[0]
-	if task.ID != "0001" {
-		t.Errorf("ID = %q, want %q", task.ID, "0001")
+	task := f.Tasks[0]
+	if task.ID != 1 {
+		t.Errorf("ID = %d, want %d", task.ID, 1)
 	}
 	if task.Title != "Fix the login bug" {
 		t.Errorf("Title = %q, want %q", task.Title, "Fix the login bug")
@@ -30,68 +30,68 @@ The login page throws a 500 when the session cookie is expired.`
 	if task.Priority != 1 {
 		t.Errorf("Priority = %d, want %d", task.Priority, 1)
 	}
-	if task.DependsOn != "0003" {
-		t.Errorf("DependsOn = %q, want %q", task.DependsOn, "0003")
+	if task.DependsOn != 3 {
+		t.Errorf("DependsOn = %d, want %d", task.DependsOn, 3)
 	}
 	if task.Body != "The login page throws a 500 when the session cookie is expired." {
 		t.Errorf("Body = %q, want %q", task.Body, "The login page throws a 500 when the session cookie is expired.")
 	}
 }
 
-func TestParseTasks_MultipleTasks(t *testing.T) {
-	input := `## 0001 First task
+func TestParseFile_MultipleTasks(t *testing.T) {
+	input := `## 1 First task
 
 * status: open
 * priority: 2
 
 Do the first thing.
 
-## 0002 Second task
+## 2 Second task
 
 * status: closed
 * priority: 1
 
 Do the second thing.
 
-## 0003 Third task
+## 3 Third task
 
 * status: inprogress
 
 Working on it.`
 
-	tasks := ParseTasks(input)
-	if len(tasks) != 3 {
-		t.Fatalf("expected 3 tasks, got %d", len(tasks))
+	f := ParseFile(input)
+	if len(f.Tasks) != 3 {
+		t.Fatalf("expected 3 tasks, got %d", len(f.Tasks))
 	}
-	if tasks[0].ID != "0001" || tasks[0].Title != "First task" {
-		t.Errorf("task 0: ID=%q Title=%q", tasks[0].ID, tasks[0].Title)
+	if f.Tasks[0].ID != 1 || f.Tasks[0].Title != "First task" {
+		t.Errorf("task 0: ID=%d Title=%q", f.Tasks[0].ID, f.Tasks[0].Title)
 	}
-	if tasks[0].Status != "open" || tasks[0].Priority != 2 {
-		t.Errorf("task 0: Status=%q Priority=%d", tasks[0].Status, tasks[0].Priority)
+	if f.Tasks[0].Status != "open" || f.Tasks[0].Priority != 2 {
+		t.Errorf("task 0: Status=%q Priority=%d", f.Tasks[0].Status, f.Tasks[0].Priority)
 	}
-	if tasks[1].ID != "0002" || tasks[1].Status != "closed" {
-		t.Errorf("task 1: ID=%q Status=%q", tasks[1].ID, tasks[1].Status)
+	if f.Tasks[1].ID != 2 || f.Tasks[1].Status != "closed" {
+		t.Errorf("task 1: ID=%d Status=%q", f.Tasks[1].ID, f.Tasks[1].Status)
 	}
-	if tasks[2].ID != "0003" || tasks[2].Status != "inprogress" {
-		t.Errorf("task 2: ID=%q Status=%q", tasks[2].ID, tasks[2].Status)
+	if f.Tasks[2].ID != 3 || f.Tasks[2].Status != "inprogress" {
+		t.Errorf("task 2: ID=%d Status=%q", f.Tasks[2].ID, f.Tasks[2].Status)
 	}
-	if tasks[2].Body != "Working on it." {
-		t.Errorf("task 2: Body=%q", tasks[2].Body)
+	if f.Tasks[2].Body != "Working on it." {
+		t.Errorf("task 2: Body=%q", f.Tasks[2].Body)
 	}
 }
 
-func TestParseTasks_NoMetadata(t *testing.T) {
-	input := `## 0001 Bare task
+func TestParseFile_NoMetadata(t *testing.T) {
+	input := `## 1 Bare task
 
 Just a description with no metadata.`
 
-	tasks := ParseTasks(input)
-	if len(tasks) != 1 {
-		t.Fatalf("expected 1 task, got %d", len(tasks))
+	f := ParseFile(input)
+	if len(f.Tasks) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(f.Tasks))
 	}
-	task := tasks[0]
-	if task.ID != "0001" {
-		t.Errorf("ID = %q", task.ID)
+	task := f.Tasks[0]
+	if task.ID != 1 {
+		t.Errorf("ID = %d", task.ID)
 	}
 	if task.Status != "" {
 		t.Errorf("Status = %q, want empty", task.Status)
@@ -104,8 +104,8 @@ Just a description with no metadata.`
 	}
 }
 
-func TestParseTasks_CustomMeta(t *testing.T) {
-	input := `## 0001 Custom fields
+func TestParseFile_CustomMeta(t *testing.T) {
+	input := `## 1 Custom fields
 
 * status: open
 * priority: 3
@@ -114,11 +114,11 @@ func TestParseTasks_CustomMeta(t *testing.T) {
 
 Fix the API.`
 
-	tasks := ParseTasks(input)
-	if len(tasks) != 1 {
-		t.Fatalf("expected 1 task, got %d", len(tasks))
+	f := ParseFile(input)
+	if len(f.Tasks) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(f.Tasks))
 	}
-	task := tasks[0]
+	task := f.Tasks[0]
 	if task.Meta["assignee"] != "alice" {
 		t.Errorf("Meta[assignee] = %q, want %q", task.Meta["assignee"], "alice")
 	}
@@ -127,30 +127,30 @@ Fix the API.`
 	}
 }
 
-func TestParseTasks_Empty(t *testing.T) {
-	tasks := ParseTasks("")
-	if len(tasks) != 0 {
-		t.Fatalf("expected 0 tasks, got %d", len(tasks))
+func TestParseFile_Empty(t *testing.T) {
+	f := ParseFile("")
+	if len(f.Tasks) != 0 {
+		t.Fatalf("expected 0 tasks, got %d", len(f.Tasks))
 	}
 }
 
-func TestParseTasks_NoBody(t *testing.T) {
-	input := `## 0001 Metadata only
+func TestParseFile_NoBody(t *testing.T) {
+	input := `## 1 Metadata only
 
 * status: open
 * priority: 1`
 
-	tasks := ParseTasks(input)
-	if len(tasks) != 1 {
-		t.Fatalf("expected 1 task, got %d", len(tasks))
+	f := ParseFile(input)
+	if len(f.Tasks) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(f.Tasks))
 	}
-	if tasks[0].Body != "" {
-		t.Errorf("Body = %q, want empty", tasks[0].Body)
+	if f.Tasks[0].Body != "" {
+		t.Errorf("Body = %q, want empty", f.Tasks[0].Body)
 	}
 }
 
-func TestParseTasks_MultilineBody(t *testing.T) {
-	input := `## 0001 Multi-line body
+func TestParseFile_MultilineBody(t *testing.T) {
+	input := `## 1 Multi-line body
 
 * status: open
 
@@ -158,30 +158,93 @@ First paragraph.
 
 Second paragraph with more detail.`
 
-	tasks := ParseTasks(input)
-	if len(tasks) != 1 {
-		t.Fatalf("expected 1 task, got %d", len(tasks))
+	f := ParseFile(input)
+	if len(f.Tasks) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(f.Tasks))
 	}
 	want := "First paragraph.\n\nSecond paragraph with more detail."
-	if tasks[0].Body != want {
-		t.Errorf("Body = %q, want %q", tasks[0].Body, want)
+	if f.Tasks[0].Body != want {
+		t.Errorf("Body = %q, want %q", f.Tasks[0].Body, want)
 	}
 }
 
-func TestParseTasks_IDOnly(t *testing.T) {
-	input := `## 0001
+func TestParseFile_IDOnly(t *testing.T) {
+	input := `## 1
 
 * status: open`
 
-	tasks := ParseTasks(input)
-	if len(tasks) != 1 {
-		t.Fatalf("expected 1 task, got %d", len(tasks))
+	f := ParseFile(input)
+	if len(f.Tasks) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(f.Tasks))
 	}
-	if tasks[0].ID != "0001" {
-		t.Errorf("ID = %q", tasks[0].ID)
+	if f.Tasks[0].ID != 1 {
+		t.Errorf("ID = %d", f.Tasks[0].ID)
 	}
-	if tasks[0].Title != "" {
-		t.Errorf("Title = %q, want empty", tasks[0].Title)
+	if f.Tasks[0].Title != "" {
+		t.Errorf("Title = %q, want empty", f.Tasks[0].Title)
+	}
+}
+
+func TestParseFile_LeadingZeros(t *testing.T) {
+	input := `## 0001 Task with leading zeros
+
+* status: open
+* depends-on: 0003`
+
+	f := ParseFile(input)
+	if len(f.Tasks) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(f.Tasks))
+	}
+	if f.Tasks[0].ID != 1 {
+		t.Errorf("ID = %d, want 1", f.Tasks[0].ID)
+	}
+	if f.Tasks[0].DependsOn != 3 {
+		t.Errorf("DependsOn = %d, want 3", f.Tasks[0].DependsOn)
+	}
+	if f.Tasks[0].Meta["depends-on"] != "3" {
+		t.Errorf("Meta[depends-on] = %q, want %q", f.Tasks[0].Meta["depends-on"], "3")
+	}
+}
+
+func TestParseFile_ProjectMeta(t *testing.T) {
+	input := `# TASKS
+
+a description
+
+* created: 2026-01-01T00:00:00Z
+* next-id: 5
+
+## 1 First task
+
+* status: open`
+
+	f := ParseFile(input)
+	if f.Meta["created"] != "2026-01-01T00:00:00Z" {
+		t.Errorf("Meta[created] = %q, want %q", f.Meta["created"], "2026-01-01T00:00:00Z")
+	}
+	if f.Meta["next-id"] != "5" {
+		t.Errorf("Meta[next-id] = %q, want %q", f.Meta["next-id"], "5")
+	}
+	if len(f.Tasks) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(f.Tasks))
+	}
+}
+
+func TestParseFile_NonIntegerIDSkipped(t *testing.T) {
+	input := `## abc Not a valid task
+
+* status: open
+
+## 1 Valid task
+
+* status: open`
+
+	f := ParseFile(input)
+	if len(f.Tasks) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(f.Tasks))
+	}
+	if f.Tasks[0].ID != 1 {
+		t.Errorf("ID = %d, want 1", f.Tasks[0].ID)
 	}
 }
 
@@ -194,7 +257,7 @@ func TestParseMetaLine(t *testing.T) {
 	}{
 		{"* status: open", "status", "open", true},
 		{"* priority: 1", "priority", "1", true},
-		{"* depends-on: 0003", "depends-on", "0003", true},
+		{"* depends-on: 3", "depends-on", "3", true},
 		{"* assignee: alice bob", "assignee", "alice bob", true},
 		{"not a meta line", "", "", false},
 		{"* no-colon-space", "", "", false},
@@ -212,32 +275,40 @@ func TestParseMetaLine(t *testing.T) {
 func TestSplitHeading(t *testing.T) {
 	tests := []struct {
 		input     string
-		wantID    string
+		wantID    int
 		wantTitle string
 	}{
-		{"0001 Fix the login bug", "0001", "Fix the login bug"},
-		{"0001", "0001", ""},
-		{"abc Do something", "abc", "Do something"},
+		{"1 Fix the login bug", 1, "Fix the login bug"},
+		{"1", 1, ""},
+		{"0001 Padded ID", 1, "Padded ID"},
+		{"42 Do something", 42, "Do something"},
 	}
 	for _, tt := range tests {
 		id, title := splitHeading(tt.input)
 		if id != tt.wantID || title != tt.wantTitle {
-			t.Errorf("splitHeading(%q) = (%q, %q), want (%q, %q)",
+			t.Errorf("splitHeading(%q) = (%d, %q), want (%d, %q)",
 				tt.input, id, title, tt.wantID, tt.wantTitle)
 		}
 	}
 }
 
+func TestSplitHeading_Invalid(t *testing.T) {
+	id, _ := splitHeading("abc Do something")
+	if id != -1 {
+		t.Errorf("splitHeading(\"abc Do something\") = %d, want -1", id)
+	}
+}
+
 func TestFormatTask_Full(t *testing.T) {
 	task := Task{
-		ID:     "0001",
+		ID:     1,
 		Title:  "Fix the login bug",
 		Status: "open",
 		Meta:   map[string]string{"status": "open", "priority": "3"},
 		Body:   "Some description.",
 	}
 	got := FormatTask(task)
-	want := "## 0001 Fix the login bug\n\n* status: open\n* priority: 3\n\nSome description.\n"
+	want := "## 1 Fix the login bug\n\n* status: open\n* priority: 3\n\nSome description.\n"
 	if got != want {
 		t.Errorf("FormatTask =\n%q\nwant\n%q", got, want)
 	}
@@ -245,12 +316,12 @@ func TestFormatTask_Full(t *testing.T) {
 
 func TestFormatTask_NoBody(t *testing.T) {
 	task := Task{
-		ID:    "0002",
+		ID:    2,
 		Title: "No body",
 		Meta:  map[string]string{"status": "closed"},
 	}
 	got := FormatTask(task)
-	want := "## 0002 No body\n\n* status: closed\n"
+	want := "## 2 No body\n\n* status: closed\n"
 	if got != want {
 		t.Errorf("FormatTask =\n%q\nwant\n%q", got, want)
 	}
@@ -258,55 +329,125 @@ func TestFormatTask_NoBody(t *testing.T) {
 
 func TestFormatTask_NoMeta(t *testing.T) {
 	task := Task{
-		ID:    "0003",
+		ID:    3,
 		Title: "Bare task",
 		Meta:  map[string]string{},
 		Body:  "Just a body.",
 	}
 	got := FormatTask(task)
-	want := "## 0003 Bare task\n\nJust a body.\n"
+	want := "## 3 Bare task\n\nJust a body.\n"
 	if got != want {
 		t.Errorf("FormatTask =\n%q\nwant\n%q", got, want)
 	}
 }
 
-func TestFormatTasks_RoundTrip(t *testing.T) {
-	input := `## 0001 First task
-
-* status: open
-* priority: 2
-
-Do the first thing.
-
-## 0002 Second task
-
-* status: closed
-* priority: 1
-
-Do the second thing.`
-
-	tasks := ParseTasks(input)
-	if len(tasks) != 2 {
-		t.Fatalf("expected 2 tasks, got %d", len(tasks))
+func TestFormatTask_UpdatedSameAsCreated(t *testing.T) {
+	task := Task{
+		ID:    1,
+		Title: "Test",
+		Meta: map[string]string{
+			"status":  "open",
+			"created": "2026-01-01T00:00:00Z",
+			"updated": "2026-01-01T00:00:00Z",
+		},
 	}
-	output := FormatTasks(tasks)
+	got := FormatTask(task)
+	// updated should be omitted since it equals created
+	want := "## 1 Test\n\n* status: open\n* created: 2026-01-01T00:00:00Z\n"
+	if got != want {
+		t.Errorf("FormatTask =\n%q\nwant\n%q", got, want)
+	}
+}
+
+func TestFormatTask_UpdatedDifferentFromCreated(t *testing.T) {
+	task := Task{
+		ID:    1,
+		Title: "Test",
+		Meta: map[string]string{
+			"status":  "open",
+			"created": "2026-01-01T00:00:00Z",
+			"updated": "2026-01-02T00:00:00Z",
+		},
+	}
+	got := FormatTask(task)
+	want := "## 1 Test\n\n* status: open\n* created: 2026-01-01T00:00:00Z\n* updated: 2026-01-02T00:00:00Z\n"
+	if got != want {
+		t.Errorf("FormatTask =\n%q\nwant\n%q", got, want)
+	}
+}
+
+func TestFormatFile_WithProjectMeta(t *testing.T) {
+	f := File{
+		Meta: map[string]string{
+			"created": "2026-01-01T00:00:00Z",
+			"next-id": "3",
+		},
+		Tasks: []Task{
+			{
+				ID:    1,
+				Title: "First",
+				Meta:  map[string]string{"status": "open"},
+			},
+		},
+	}
+	got := FormatFile(f)
+	want := "# TASKS\n\na [meads](https://github.com/jpillora/meads) (`md`) managed task log\n\n* created: 2026-01-01T00:00:00Z\n* next-id: 3\n\n## 1 First\n\n* status: open\n"
+	if got != want {
+		t.Errorf("FormatFile =\n%q\nwant\n%q", got, want)
+	}
+}
+
+func TestFormatFile_ProjectMetaUpdatedSkipped(t *testing.T) {
+	f := File{
+		Meta: map[string]string{
+			"created": "2026-01-01T00:00:00Z",
+			"updated": "2026-01-01T00:00:00Z",
+			"next-id": "2",
+		},
+		Tasks: []Task{
+			{ID: 1, Title: "Test", Meta: map[string]string{"status": "open"}},
+		},
+	}
+	got := FormatFile(f)
+	// updated should be omitted since it equals created
+	want := "# TASKS\n\na [meads](https://github.com/jpillora/meads) (`md`) managed task log\n\n* created: 2026-01-01T00:00:00Z\n* next-id: 2\n\n## 1 Test\n\n* status: open\n"
+	if got != want {
+		t.Errorf("FormatFile =\n%q\nwant\n%q", got, want)
+	}
+}
+
+func TestFormatFile_RoundTrip(t *testing.T) {
+	input := "# TASKS\n\na [meads](https://github.com/jpillora/meads) (`md`) managed task log\n\n* created: 2026-01-01T00:00:00Z\n* next-id: 3\n\n## 1 First task\n\n* status: open\n* priority: 2\n\nDo the first thing.\n\n## 2 Second task\n\n* status: closed\n* priority: 1\n\nDo the second thing.\n"
+
+	f := ParseFile(input)
+	if len(f.Tasks) != 2 {
+		t.Fatalf("expected 2 tasks, got %d", len(f.Tasks))
+	}
+	output := FormatFile(f)
 	// Re-parse the output and verify tasks are preserved.
-	tasks2 := ParseTasks(output)
-	if len(tasks2) != 2 {
-		t.Fatalf("round-trip: expected 2 tasks, got %d", len(tasks2))
+	f2 := ParseFile(output)
+	if len(f2.Tasks) != 2 {
+		t.Fatalf("round-trip: expected 2 tasks, got %d", len(f2.Tasks))
 	}
-	for i := range tasks {
-		if tasks[i].ID != tasks2[i].ID {
-			t.Errorf("round-trip task %d: ID %q != %q", i, tasks[i].ID, tasks2[i].ID)
+	for i := range f.Tasks {
+		if f.Tasks[i].ID != f2.Tasks[i].ID {
+			t.Errorf("round-trip task %d: ID %d != %d", i, f.Tasks[i].ID, f2.Tasks[i].ID)
 		}
-		if tasks[i].Title != tasks2[i].Title {
-			t.Errorf("round-trip task %d: Title %q != %q", i, tasks[i].Title, tasks2[i].Title)
+		if f.Tasks[i].Title != f2.Tasks[i].Title {
+			t.Errorf("round-trip task %d: Title %q != %q", i, f.Tasks[i].Title, f2.Tasks[i].Title)
 		}
-		if tasks[i].Status != tasks2[i].Status {
-			t.Errorf("round-trip task %d: Status %q != %q", i, tasks[i].Status, tasks2[i].Status)
+		if f.Tasks[i].Status != f2.Tasks[i].Status {
+			t.Errorf("round-trip task %d: Status %q != %q", i, f.Tasks[i].Status, f2.Tasks[i].Status)
 		}
-		if tasks[i].Body != tasks2[i].Body {
-			t.Errorf("round-trip task %d: Body %q != %q", i, tasks[i].Body, tasks2[i].Body)
+		if f.Tasks[i].Body != f2.Tasks[i].Body {
+			t.Errorf("round-trip task %d: Body %q != %q", i, f.Tasks[i].Body, f2.Tasks[i].Body)
 		}
+	}
+	// Verify project meta round-trip.
+	if f.Meta["created"] != f2.Meta["created"] {
+		t.Errorf("round-trip: created %q != %q", f.Meta["created"], f2.Meta["created"])
+	}
+	if f.Meta["next-id"] != f2.Meta["next-id"] {
+		t.Errorf("round-trip: next-id %q != %q", f.Meta["next-id"], f2.Meta["next-id"])
 	}
 }

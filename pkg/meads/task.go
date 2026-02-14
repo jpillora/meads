@@ -8,13 +8,19 @@ import (
 	"strings"
 )
 
+// File represents a parsed TASKS.md file.
+type File struct {
+	Meta  map[string]string `json:"meta,omitempty"`
+	Tasks []Task            `json:"tasks"`
+}
+
 // Task represents a single task parsed from a TASKS.md file.
 type Task struct {
-	ID        string            `json:"id"`
+	ID        int               `json:"id"`
 	Title     string            `json:"title"`
 	Status    string            `json:"status,omitempty"`
 	Priority  int               `json:"priority,omitempty"`
-	DependsOn string            `json:"depends_on,omitempty"`
+	DependsOn int               `json:"depends_on,omitempty"`
 	Meta      map[string]string `json:"meta,omitempty"`
 	Body      string            `json:"body,omitempty"`
 }
@@ -74,7 +80,9 @@ func (t *Task) SetMeta(key, value string) {
 			t.Priority = n
 		}
 	case "depends-on":
-		t.DependsOn = value
+		if n, err := strconv.Atoi(value); err == nil {
+			t.DependsOn = n
+		}
 	}
 }
 
@@ -84,36 +92,58 @@ func (t *Task) ensureMeta() {
 	}
 }
 
+var (
+	projectMetaOrder = []string{"created", "updated", "next-id"}
+	taskMetaOrder    = []string{"status", "priority", "depends-on", "created", "updated"}
+)
+
+// formatMetaBlock formats a metadata map as "* key: value" lines.
+// orderedKeys controls which keys appear first, in the given order.
+// The "updated" key is skipped if its value equals the "created" value.
+func formatMetaBlock(meta map[string]string, orderedKeys []string) string {
+	if len(meta) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	written := make(map[string]bool)
+	for _, key := range orderedKeys {
+		val, ok := meta[key]
+		if !ok {
+			continue
+		}
+		if key == "updated" {
+			if created, ok := meta["created"]; ok && val == created {
+				written[key] = true
+				continue
+			}
+		}
+		fmt.Fprintf(&sb, "* %s: %s\n", key, val)
+		written[key] = true
+	}
+	var rest []string
+	for k := range meta {
+		if !written[k] {
+			rest = append(rest, k)
+		}
+	}
+	sort.Strings(rest)
+	for _, k := range rest {
+		fmt.Fprintf(&sb, "* %s: %s\n", k, meta[k])
+	}
+	return sb.String()
+}
+
 // FormatTask formats a single Task as a markdown section.
 func FormatTask(t Task) string {
 	var sb strings.Builder
 	if t.Title != "" {
-		fmt.Fprintf(&sb, "## %s %s\n", t.ID, t.Title)
+		fmt.Fprintf(&sb, "## %d %s\n", t.ID, t.Title)
 	} else {
-		fmt.Fprintf(&sb, "## %s\n", t.ID)
+		fmt.Fprintf(&sb, "## %d\n", t.ID)
 	}
-	if len(t.Meta) > 0 {
+	if metaBlock := formatMetaBlock(t.Meta, taskMetaOrder); metaBlock != "" {
 		sb.WriteString("\n")
-		// Write well-known keys in a fixed order.
-		ordered := []string{"status", "priority", "depends-on"}
-		written := make(map[string]bool)
-		for _, key := range ordered {
-			if val, ok := t.Meta[key]; ok {
-				fmt.Fprintf(&sb, "* %s: %s\n", key, val)
-				written[key] = true
-			}
-		}
-		// Remaining keys sorted alphabetically.
-		var rest []string
-		for key := range t.Meta {
-			if !written[key] {
-				rest = append(rest, key)
-			}
-		}
-		sort.Strings(rest)
-		for _, key := range rest {
-			fmt.Fprintf(&sb, "* %s: %s\n", key, t.Meta[key])
-		}
+		sb.WriteString(metaBlock)
 	}
 	if t.Body != "" {
 		sb.WriteString("\n")
@@ -125,14 +155,17 @@ func FormatTask(t Task) string {
 
 const fileHeader = "# TASKS\n\na [meads](https://github.com/jpillora/meads) (`md`) managed task log\n"
 
-// FormatTasks formats all tasks as a complete TASKS.md file.
-func FormatTasks(tasks []Task) string {
-	if len(tasks) == 0 {
-		return fileHeader
+// FormatFile formats a complete TASKS.md file.
+func FormatFile(f File) string {
+	var sb strings.Builder
+	sb.WriteString(fileHeader)
+	if metaBlock := formatMetaBlock(f.Meta, projectMetaOrder); metaBlock != "" {
+		sb.WriteString("\n")
+		sb.WriteString(metaBlock)
 	}
-	var parts []string
-	for _, t := range tasks {
-		parts = append(parts, FormatTask(t))
+	for _, t := range f.Tasks {
+		sb.WriteString("\n")
+		sb.WriteString(FormatTask(t))
 	}
-	return fileHeader + "\n" + strings.Join(parts, "\n")
+	return sb.String()
 }

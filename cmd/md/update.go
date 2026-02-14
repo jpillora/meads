@@ -15,7 +15,11 @@ type updateCmd struct {
 }
 
 func (c *updateCmd) Run() error {
-	err := meads.Update(tasksFile, c.ID, func(t *meads.Task) {
+	id, err := strconv.Atoi(c.ID)
+	if err != nil {
+		return fmt.Errorf("invalid task ID: %s", c.ID)
+	}
+	err = meads.Update(tasksFile, id, func(t *meads.Task) {
 		if c.Status != "" {
 			t.SetStatus(c.Status)
 		}
@@ -31,6 +35,6 @@ func (c *updateCmd) Run() error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("updated task %s\n", c.ID)
+	fmt.Printf("updated task %d\n", id)
 	return nil
 }

@@ -5,27 +5,34 @@ import (
 	"strings"
 )
 
-// ParseTasks parses the TASKS.md content and returns all tasks.
-func ParseTasks(content string) []Task {
-	sections := splitSections(content)
-	tasks := make([]Task, 0, len(sections))
+// ParseFile parses the TASKS.md content and returns a File.
+func ParseFile(content string) File {
+	preamble, sections := splitSections(content)
+	f := File{
+		Meta:  parsePreambleMeta(preamble),
+		Tasks: make([]Task, 0, len(sections)),
+	}
 	for _, sec := range sections {
 		if t, ok := parseTask(sec); ok {
-			tasks = append(tasks, t)
+			f.Tasks = append(f.Tasks, t)
 		}
 	}
-	return tasks
+	return f
 }
 
-// splitSections splits markdown content into sections, each starting with "## ".
-func splitSections(content string) []string {
+// splitSections splits markdown content into the preamble (before first ## section)
+// and individual sections starting with "## ".
+func splitSections(content string) (string, []string) {
 	lines := strings.Split(content, "\n")
 	var sections []string
+	var preambleEnd int
 	start := -1
 	for i, line := range lines {
 		if strings.HasPrefix(line, "## ") {
 			if start >= 0 {
 				sections = append(sections, strings.Join(lines[start:i], "\n"))
+			} else {
+				preambleEnd = i
 			}
 			start = i
 		}
@@ -33,7 +40,25 @@ func splitSections(content string) []string {
 	if start >= 0 {
 		sections = append(sections, strings.Join(lines[start:], "\n"))
 	}
-	return sections
+	var preamble string
+	if preambleEnd > 0 {
+		preamble = strings.Join(lines[:preambleEnd], "\n")
+	} else if start < 0 {
+		// No ## sections at all, entire content is preamble.
+		preamble = content
+	}
+	return preamble, sections
+}
+
+// parsePreambleMeta extracts "* key: value" lines from the preamble.
+func parsePreambleMeta(preamble string) map[string]string {
+	meta := make(map[string]string)
+	for _, line := range strings.Split(preamble, "\n") {
+		if key, val, ok := parseMetaLine(line); ok {
+			meta[key] = val
+		}
+	}
+	return meta
 }
 
 // parseTask parses a single task section into a Task.
@@ -44,7 +69,7 @@ func parseTask(section string) (Task, bool) {
 	}
 	heading := strings.TrimPrefix(lines[0], "## ")
 	id, title := splitHeading(heading)
-	if id == "" {
+	if id < 0 {
 		return Task{}, false
 	}
 	meta := make(map[string]string)
@@ -84,19 +109,31 @@ func parseTask(section string) (Task, bool) {
 		}
 	}
 	if v, ok := meta["depends-on"]; ok {
-		t.DependsOn = v
+		if n, err := strconv.Atoi(v); err == nil {
+			t.DependsOn = n
+			meta["depends-on"] = strconv.Itoa(n) // normalize
+		}
 	}
 	return t, true
 }
 
-// splitHeading splits "0001 Fix the login bug" into id="0001" and title="Fix the login bug".
-func splitHeading(s string) (id, title string) {
+// splitHeading splits "1 Fix the login bug" into id=1 and title="Fix the login bug".
+// Returns id=-1 if the heading does not start with a valid integer.
+func splitHeading(s string) (id int, title string) {
 	s = strings.TrimSpace(s)
 	i := strings.IndexByte(s, ' ')
+	var idStr string
 	if i < 0 {
-		return s, ""
+		idStr = s
+	} else {
+		idStr = s[:i]
+		title = s[i+1:]
 	}
-	return s[:i], s[i+1:]
+	n, err := strconv.Atoi(idStr)
+	if err != nil {
+		return -1, ""
+	}
+	return n, title
 }
 
 // parseMetaLine parses "* key: value" and returns key, value, true. Returns false if not a meta line.

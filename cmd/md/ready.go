@@ -14,7 +14,7 @@ func (c *readyCmd) Run() error {
 		return err
 	}
 	for _, t := range tasks {
-		fmt.Printf("%s %s\n", t.ID, t.Title)
+		fmt.Printf("%d %s\n", t.ID, t.Title)
 	}
 	return nil
 }

@@ -99,8 +99,11 @@ func (c *addCmd) Run() error {
 		t.SetPriority(n)
 	}
 	if dependsOn != "" {
-		t.DependsOn = dependsOn
-		t.SetMeta("depends-on", dependsOn)
+		n, err := strconv.Atoi(dependsOn)
+		if err != nil {
+			return fmt.Errorf("invalid depends-on: %s", dependsOn)
+		}
+		t.SetMeta("depends-on", strconv.Itoa(n))
 	}
 	if typ != "" {
 		t.SetMeta("type", typ)
@@ -112,6 +115,6 @@ func (c *addCmd) Run() error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("added task %s\n", id)
+	fmt.Printf("added task %d\n", id)
 	return nil
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/jpillora/meads/pkg/meads"
 )
@@ -14,7 +15,15 @@ type getCmd struct {
 }
 
 func (c *getCmd) Run() error {
-	tasks, err := meads.Get(tasksFile, c.IDs)
+	ids := make([]int, len(c.IDs))
+	for i, s := range c.IDs {
+		n, err := strconv.Atoi(s)
+		if err != nil {
+			return fmt.Errorf("invalid task ID: %s", s)
+		}
+		ids[i] = n
+	}
+	tasks, err := meads.Get(tasksFile, ids)
 	if err != nil {
 		return err
 	}
@@ -28,7 +37,7 @@ func printTasks(tasks []meads.Task, asJSON bool) error {
 		return enc.Encode(tasks)
 	}
 	for _, t := range tasks {
-		fmt.Printf("%s %s\n", t.ID, t.Title)
+		fmt.Printf("%d %s\n", t.ID, t.Title)
 	}
 	return nil
 }

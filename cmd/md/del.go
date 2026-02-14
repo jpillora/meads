@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/jpillora/meads/pkg/meads"
 )
@@ -11,9 +12,13 @@ type delCmd struct {
 }
 
 func (c *delCmd) Run() error {
-	if err := meads.Delete(tasksFile, c.ID); err != nil {
+	id, err := strconv.Atoi(c.ID)
+	if err != nil {
+		return fmt.Errorf("invalid task ID: %s", c.ID)
+	}
+	if err := meads.Delete(tasksFile, id); err != nil {
 		return err
 	}
-	fmt.Printf("deleted task %s\n", c.ID)
+	fmt.Printf("deleted task %d\n", id)
 	return nil
 }
