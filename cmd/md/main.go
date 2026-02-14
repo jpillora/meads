@@ -17,6 +17,7 @@ type config struct {
 	Ready  readyCmd  `opts:"mode=cmd" help:"List open tasks not blocked by dependencies"`
 	Import importCmd `opts:"mode=cmd" help:"Import tasks from an external source"`
 	Prime  primeCmd  `opts:"mode=cmd" help:"Print LLM context for using md"`
+	Mcp    mcpCmd   `opts:"mode=cmd" help:"Start MCP server over stdio"`
 }
 
 func main() {
