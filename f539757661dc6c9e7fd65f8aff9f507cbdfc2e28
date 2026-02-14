@@ -1,0 +1,29 @@
+Migrated the CLI framework from manual os.Args parsing with a switch
+statement to the jpillora/opts library, which provides struct-based
+command definitions with automatic help generation, version info, and
+argument parsing.
+
+Each subcommand (add, del, ready) was refactored from standalone
+functions accepting []string args to struct types implementing a Run()
+method. The addCmd struct uses opts tags to define Title as a required
+arg and Body as a variadic arg. The delCmd struct takes an ID arg. The
+readyCmd struct takes no args.
+
+The main.go was simplified from ~30 lines of manual dispatch to a
+declarative config struct with opts builder calls for name, version,
+summary, and repo metadata.
+
+The README was completely rewritten from an internal format
+specification (describing the TASKS.md schema, key definitions, and
+locking protocol) to a user-facing document with installation
+instructions, quick start examples, and concise notes about the
+format, concurrency, and AI-friendliness.
+
+An examples/TASKS.md file was added demonstrating the format with 7
+sample tasks using various metadata fields (status, priority,
+depends-on, assignee, component) and different statuses (closed,
+inprogress, open).
+
+Dependencies added: github.com/jpillora/opts v1.2.3 with indirect
+dependencies on hashicorp/errwrap, hashicorp/go-multierror, and
+posener/complete.
