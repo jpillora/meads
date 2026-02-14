@@ -14,15 +14,12 @@ builds:
       - linux
       - darwin
       - windows
-      - openbsd
     goarch:
-      - '386'
       - amd64
-      - arm
       - arm64
-    goarm:
-      - '6'
-      - '7'
+    ignore:
+      - goos: windows
+        goarch: arm
 nfpms:
   - maintainer: "https://github.com/{{ .Env.GITHUB_USER }}"
     formats:
@@ -30,7 +27,12 @@ nfpms:
       - rpm
       - apk
 archives:
-  - format: gz
+  - formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
     files:
       - none*
 changelog:
