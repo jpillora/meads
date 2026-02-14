@@ -2,6 +2,12 @@
 
 > **Context Recovery**: Run `md prime` after compaction, clear, or new session
 
+## Agent Directives
+
+- After completing a task successfully, always git commit and git push
+- Always rebuild `md` by running `go install` from `cmd/md/`
+- Always use `md` to manage tasks, see below
+
 ## Overview
 
 `md` is a git-native task tracker that stores all tasks in a single `TASKS.md` file. No database, no config files - just Markdown and git.

@@ -3,12 +3,13 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-02-14T12:12:20Z
-* next-id: 6
+* updated: 2026-02-14T12:35:36Z
+* next-id: 10
 
 ## 1. implement mcp server
 
-* status: open
+* status: inprogress
+* updated: 2026-02-14T12:17:38Z
 
 implement an mcp server over stdin for simple integration with existing tools
 
@@ -62,3 +63,19 @@ to allow hand writing of the TASKS.md file. any time the TASKS.md file is locked
 * updated: 2026-02-14T12:09:14Z
 
 limits number of results
+
+## 8. custom TASKSmd path
+
+* status: closed
+* created: 2026-02-14T12:24:12Z
+* updated: 2026-02-14T12:35:36Z
+
+use env var `MD_TASKS` to get filepath, and if not set, then use `<workdir>/TASKS.md`
+
+## 9. add a new status 'draft'
+
+* status: closed
+* created: 2026-02-14T12:27:15Z
+* updated: 2026-02-14T12:35:36Z
+
+draft means not-done and not-ready. whereas open means not-done and ready. its a way to jot down ideas but not actually have then as ready work
