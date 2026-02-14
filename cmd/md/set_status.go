@@ -9,7 +9,7 @@ import (
 
 type setStatusCmd struct {
 	ID     string `opts:"mode=arg" help:"Task ID"`
-	Status string `opts:"mode=arg" help:"New status (open, inprogress, closed)"`
+	Status string `opts:"mode=arg" help:"New status (draft, open, inprogress, closed)"`
 }
 
 func (c *setStatusCmd) Run() error {

@@ -144,7 +144,7 @@ type readyTasksInput struct{}
 
 type addTaskInput struct {
 	Title    string `json:"title" jsonschema:"task title,required"`
-	Status   string `json:"status,omitempty" jsonschema:"task status (open, inprogress, closed)"`
+	Status   string `json:"status,omitempty" jsonschema:"task status (draft, open, inprogress, closed)"`
 	Priority string `json:"priority,omitempty" jsonschema:"task priority (P0-P9)"`
 	Type     string `json:"type,omitempty" jsonschema:"task type (bug, task, feature)"`
 	Body     string `json:"body,omitempty" jsonschema:"task description body"`
@@ -156,7 +156,7 @@ type addTaskOutput struct {
 
 type updateTaskInput struct {
 	ID       int    `json:"id" jsonschema:"task ID to update,required"`
-	Status   string `json:"status,omitempty" jsonschema:"new status (open, inprogress, closed)"`
+	Status   string `json:"status,omitempty" jsonschema:"new status (draft, open, inprogress, closed)"`
 	Priority string `json:"priority,omitempty" jsonschema:"new priority (P0-P9)"`
 	Title    string `json:"title,omitempty" jsonschema:"new title"`
 }

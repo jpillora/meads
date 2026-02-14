@@ -25,7 +25,7 @@
 - `md add --title="Fix login" --type=bug --priority=P1 --body="Details here"` - Flag-based
 
 ### Updating Tasks
-- `md update <id> --status=open|inprogress|closed` - Update status
+- `md update <id> --status=draft|open|inprogress|closed` - Update status
 - `md update <id> --priority=P1` - Update priority
 - `md update <id> --title="New title"` - Update title
 - `md set-status <id> <status>` - Shorthand for status changes

@@ -12,11 +12,12 @@ import (
 type addCmd struct {
 	Args      []string `opts:"mode=arg,min=0" help:"Input text (e.g. 'bug: Fix login P3')"`
 	Title     string   `help:"Set task title"`
-	Status    string   `help:"Set task status"`
+	Status    string   `help:"Set task status (draft, open, inprogress, closed)"`
 	Priority  string   `help:"Set task priority (1-9)"`
 	Type      string   `help:"Set task type (bug, task, feature)"`
 	DependsOn string   `opts:"name=depends-on" help:"Set dependency task ID"`
 	Body      string   `help:"Set task body"`
+	Draft     bool     `help:"Create task with draft status"`
 }
 
 var (
@@ -85,6 +86,12 @@ func (c *addCmd) Run() error {
 		return fmt.Errorf("title is required")
 	}
 	// Default status
+	if c.Draft {
+		if status != "" {
+			return fmt.Errorf("cannot use --draft with --status")
+		}
+		status = "draft"
+	}
 	if status == "" {
 		status = "open"
 	}
