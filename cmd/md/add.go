@@ -99,7 +99,7 @@ func (c *addCmd) Run() error {
 		if err != nil {
 			return fmt.Errorf("invalid depends-on: %s", dependsOn)
 		}
-		t.SetMeta("depends-on", strconv.Itoa(n))
+		t.SetDependsOn([]int{n})
 	}
 	if typ != "" {
 		t.SetType(typ)

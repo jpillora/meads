@@ -110,10 +110,8 @@ func parseTask(section string) (Task, bool) {
 		t.Type = v
 	}
 	if v, ok := meta["depends-on"]; ok {
-		if n, err := strconv.Atoi(v); err == nil {
-			t.DependsOn = n
-			meta["depends-on"] = strconv.Itoa(n) // normalize
-		}
+		t.DependsOn = parseIntSlice(v)
+		meta["depends-on"] = formatIntSlice(t.DependsOn) // normalize
 	}
 	if v, ok := meta["close-reason"]; ok {
 		t.CloseReason = v

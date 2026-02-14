@@ -30,8 +30,8 @@ The login page throws a 500 when the session cookie is expired.`
 	if task.Priority != "1" {
 		t.Errorf("Priority = %q, want %q", task.Priority, "1")
 	}
-	if task.DependsOn != 3 {
-		t.Errorf("DependsOn = %d, want %d", task.DependsOn, 3)
+	if len(task.DependsOn) != 1 || task.DependsOn[0] != 3 {
+		t.Errorf("DependsOn = %v, want [3]", task.DependsOn)
 	}
 	if task.Body != "The login page throws a 500 when the session cookie is expired." {
 		t.Errorf("Body = %q, want %q", task.Body, "The login page throws a 500 when the session cookie is expired.")
@@ -198,8 +198,8 @@ func TestParseFile_LeadingZeros(t *testing.T) {
 	if f.Tasks[0].ID != 1 {
 		t.Errorf("ID = %d, want 1", f.Tasks[0].ID)
 	}
-	if f.Tasks[0].DependsOn != 3 {
-		t.Errorf("DependsOn = %d, want 3", f.Tasks[0].DependsOn)
+	if len(f.Tasks[0].DependsOn) != 1 || f.Tasks[0].DependsOn[0] != 3 {
+		t.Errorf("DependsOn = %v, want [3]", f.Tasks[0].DependsOn)
 	}
 	if f.Tasks[0].Meta["depends-on"] != "3" {
 		t.Errorf("Meta[depends-on] = %q, want %q", f.Tasks[0].Meta["depends-on"], "3")

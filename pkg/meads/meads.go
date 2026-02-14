@@ -110,7 +110,8 @@ func Delete(file string, id int) error {
 }
 
 // Update modifies a task by ID. The provided function receives a pointer
-// to the task for mutation.
+// to the task for mutation. After mutation, any DependsOn IDs are validated
+// to ensure the referenced tasks exist.
 func Update(file string, id int, fn func(*Task)) error {
 	_, content, err := acquireLock(file)
 	if err != nil {
@@ -132,10 +133,31 @@ func Update(file string, id int, fn func(*Task)) error {
 		releaseLock(file, content)
 		return fmt.Errorf("task %d not found", id)
 	}
+	// Validate DependsOn references.
+	if err := validateDeps(&f); err != nil {
+		releaseLock(file, content)
+		return err
+	}
 	ensureProjectMeta(&f, now)
 	f.Meta["updated"] = now
 	if err := releaseLock(file, FormatFile(f)); err != nil {
 		return fmt.Errorf("writing %s: %w", file, err)
+	}
+	return nil
+}
+
+// validateDeps checks that all DependsOn IDs reference existing tasks.
+func validateDeps(f *File) error {
+	ids := make(map[int]bool, len(f.Tasks))
+	for _, t := range f.Tasks {
+		ids[t.ID] = true
+	}
+	for _, t := range f.Tasks {
+		for _, dep := range t.DependsOn {
+			if !ids[dep] {
+				return fmt.Errorf("task %d depends on non-existent task %d", t.ID, dep)
+			}
+		}
 	}
 	return nil
 }
@@ -194,11 +216,16 @@ func Ready(file string) ([]Task, error) {
 		if t.Status != "open" {
 			continue
 		}
-		if t.DependsOn > 0 {
-			depStatus, exists := statusByID[t.DependsOn]
+		blocked := false
+		for _, dep := range t.DependsOn {
+			depStatus, exists := statusByID[dep]
 			if exists && depStatus != "closed" {
-				continue
+				blocked = true
+				break
 			}
+		}
+		if blocked {
+			continue
 		}
 		ready = append(ready, t)
 	}

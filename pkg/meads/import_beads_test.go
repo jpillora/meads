@@ -4,7 +4,7 @@ import "testing"
 
 func TestBeadToTask_BasicMapping(t *testing.T) {
 	b := beadIssue{
-		ID:       42,
+		ID:       "rais-42",
 		Title:    "Fix crash on startup",
 		Description: "App crashes when no config file exists.",
 		Status:   "open",
@@ -29,8 +29,8 @@ func TestBeadToTask_BasicMapping(t *testing.T) {
 	if task.Type != "bug" {
 		t.Errorf("Type = %q, want %q", task.Type, "bug")
 	}
-	if task.Meta["bead-id"] != "42" {
-		t.Errorf("Meta[bead-id] = %q, want %q", task.Meta["bead-id"], "42")
+	if task.Meta["bead-id"] != "rais-42" {
+		t.Errorf("Meta[bead-id] = %q, want %q", task.Meta["bead-id"], "rais-42")
 	}
 	if task.Meta["created"] != "2026-01-01T00:00:00Z" {
 		t.Errorf("Meta[created] = %q", task.Meta["created"])
@@ -53,7 +53,7 @@ func TestBeadToTask_StatusMapping(t *testing.T) {
 		{"deferred", "open", "deferred"},
 	}
 	for _, tt := range tests {
-		b := beadIssue{ID: 1, Title: "t", Status: tt.beadStatus}
+		b := beadIssue{ID: "1", Title: "t", Status: tt.beadStatus}
 		task := beadToTask(b)
 		if task.Status != tt.wantStatus {
 			t.Errorf("status %q: got Status=%q, want %q", tt.beadStatus, task.Status, tt.wantStatus)
@@ -68,7 +68,7 @@ func TestBeadToTask_StatusMapping(t *testing.T) {
 
 func TestBeadToTask_PriorityMapping(t *testing.T) {
 	for i := 0; i <= 4; i++ {
-		b := beadIssue{ID: 1, Title: "t", Priority: i}
+		b := beadIssue{ID: "1", Title: "t", Priority: i}
 		task := beadToTask(b)
 		want := "P" + string(rune('0'+i))
 		if task.Priority != want {
@@ -79,7 +79,7 @@ func TestBeadToTask_PriorityMapping(t *testing.T) {
 
 func TestBeadToTask_LabelsToTags(t *testing.T) {
 	b := beadIssue{
-		ID:     1,
+		ID:     "1",
 		Title:  "t",
 		Labels: []string{"frontend", "urgent"},
 	}
@@ -94,7 +94,7 @@ func TestBeadToTask_LabelsToTags(t *testing.T) {
 
 func TestBeadToTask_CloseReason(t *testing.T) {
 	b := beadIssue{
-		ID:          1,
+		ID:          "1",
 		Title:       "t",
 		Status:      "closed",
 		CloseReason: "won't fix",
@@ -107,7 +107,7 @@ func TestBeadToTask_CloseReason(t *testing.T) {
 
 func TestBeadToTask_OptionalFields(t *testing.T) {
 	b := beadIssue{
-		ID:       1,
+		ID:       "1",
 		Title:    "t",
 		Owner:    "alice",
 		Assignee: "bob",
@@ -133,7 +133,7 @@ func TestBeadToTask_OptionalFields(t *testing.T) {
 }
 
 func TestBeadToTask_EmptyOptionalFieldsOmitted(t *testing.T) {
-	b := beadIssue{ID: 1, Title: "t"}
+	b := beadIssue{ID: "1", Title: "t"}
 	task := beadToTask(b)
 	if _, ok := task.Meta["owner"]; ok {
 		t.Errorf("Meta[owner] should not be set")

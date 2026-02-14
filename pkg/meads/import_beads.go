@@ -35,13 +35,14 @@ func (b *beadsImporter) Import() ([]Task, error) {
 }
 
 type beadIssue struct {
-	ID              int               `json:"id"`
+	ID              string            `json:"id"`
 	Title           string            `json:"title"`
 	Description     string            `json:"description"`
 	Status          string            `json:"status"`
 	Priority        int               `json:"priority"`
 	IssueType       string            `json:"issue_type"`
 	CreatedAt       string            `json:"created_at"`
+	CreatedBy       string            `json:"created_by"`
 	UpdatedAt       string            `json:"updated_at"`
 	ClosedAt        string            `json:"closed_at"`
 	CloseReason     string            `json:"close_reason"`
@@ -87,7 +88,7 @@ func beadToTask(b beadIssue) Task {
 		}
 	}
 	// Dedup key
-	t.Meta["bead-id"] = strconv.Itoa(b.ID)
+	t.Meta["bead-id"] = b.ID
 	// Timestamps
 	if b.CreatedAt != "" {
 		t.Meta["created"] = b.CreatedAt

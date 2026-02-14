@@ -11,7 +11,9 @@ type config struct {
 	Get    getCmd    `opts:"mode=cmd" help:"Get tasks by ID"`
 	List   listCmd   `opts:"mode=cmd" help:"List all tasks"`
 	Del    delCmd    `opts:"mode=cmd" help:"Delete a task by ID"`
-	Update updateCmd `opts:"mode=cmd" help:"Update a task by ID"`
+	Update    updateCmd    `opts:"mode=cmd" help:"Update a task by ID"`
+	SetStatus setStatusCmd `opts:"mode=cmd,name=set-status" help:"Set a task's status"`
+	AddDep    addDepCmd    `opts:"mode=cmd,name=add-dep" help:"Add a dependency to a task"`
 	Ready  readyCmd  `opts:"mode=cmd" help:"List open tasks not blocked by dependencies"`
 	Import importCmd `opts:"mode=cmd" help:"Import tasks from an external source"`
 }

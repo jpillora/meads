@@ -21,7 +21,7 @@ type Task struct {
 	Status      string            `json:"status,omitempty"`
 	Priority    string            `json:"priority,omitempty"`
 	Type        string            `json:"type,omitempty"`
-	DependsOn   int               `json:"depends_on,omitempty"`
+	DependsOn   []int             `json:"depends_on,omitempty"`
 	CloseReason string            `json:"close_reason,omitempty"`
 	Tags        []string          `json:"tags,omitempty"`
 	Meta        map[string]string `json:"meta,omitempty"`
@@ -51,11 +51,19 @@ func (t Task) MarshalJSON() ([]byte, error) {
 		}
 	}
 	type taskJSON Task
+	out := taskJSON(t)
+	// Fill in inferred defaults for JSON output.
+	if out.Priority == "" {
+		out.Priority = "P2"
+	}
+	if out.Type == "" {
+		out.Type = "task"
+	}
 	return json.Marshal(struct {
 		taskJSON
 		Meta map[string]string `json:"meta,omitempty"`
 	}{
-		taskJSON: taskJSON(t),
+		taskJSON: out,
 		Meta:     meta,
 	})
 }
@@ -95,6 +103,23 @@ func (t *Task) SetTags(tags []string) {
 	t.Meta["tags"] = strings.Join(tags, ",")
 }
 
+// SetDependsOn updates the depends-on list in both the field and Meta map.
+func (t *Task) SetDependsOn(ids []int) {
+	t.DependsOn = ids
+	t.ensureMeta()
+	t.Meta["depends-on"] = formatIntSlice(ids)
+}
+
+// AddDep adds a dependency ID if not already present.
+func (t *Task) AddDep(id int) {
+	for _, d := range t.DependsOn {
+		if d == id {
+			return
+		}
+	}
+	t.SetDependsOn(append(t.DependsOn, id))
+}
+
 // SetMeta sets a metadata key-value pair and syncs convenience fields.
 func (t *Task) SetMeta(key, value string) {
 	t.ensureMeta()
@@ -107,9 +132,7 @@ func (t *Task) SetMeta(key, value string) {
 	case "type":
 		t.Type = value
 	case "depends-on":
-		if n, err := strconv.Atoi(value); err == nil {
-			t.DependsOn = n
-		}
+		t.DependsOn = parseIntSlice(value)
 	case "close-reason":
 		t.CloseReason = value
 	case "tags":
@@ -121,6 +144,27 @@ func (t *Task) ensureMeta() {
 	if t.Meta == nil {
 		t.Meta = make(map[string]string)
 	}
+}
+
+// parseIntSlice parses a comma-separated string of integers.
+func parseIntSlice(s string) []int {
+	var ids []int
+	for _, p := range strings.Split(s, ",") {
+		p = strings.TrimSpace(p)
+		if n, err := strconv.Atoi(p); err == nil {
+			ids = append(ids, n)
+		}
+	}
+	return ids
+}
+
+// formatIntSlice formats a slice of ints as a comma-separated string.
+func formatIntSlice(ids []int) string {
+	parts := make([]string, len(ids))
+	for i, id := range ids {
+		parts[i] = strconv.Itoa(id)
+	}
+	return strings.Join(parts, ",")
 }
 
 // splitTags splits a comma-separated string into trimmed non-empty tags.
@@ -160,7 +204,7 @@ func formatMetaBlock(meta map[string]string, orderedKeys []string) string {
 				continue
 			}
 		}
-		fmt.Fprintf(&sb, "* %s: %s\n", key, val)
+		fmt.Fprintf(&sb, "* %s: %s\n", key, flattenMetaValue(val))
 		written[key] = true
 	}
 	var rest []string
@@ -171,9 +215,14 @@ func formatMetaBlock(meta map[string]string, orderedKeys []string) string {
 	}
 	sort.Strings(rest)
 	for _, k := range rest {
-		fmt.Fprintf(&sb, "* %s: %s\n", k, meta[k])
+		fmt.Fprintf(&sb, "* %s: %s\n", k, flattenMetaValue(meta[k]))
 	}
 	return sb.String()
+}
+
+// flattenMetaValue replaces newlines with spaces so meta values stay on one line.
+func flattenMetaValue(s string) string {
+	return strings.Join(strings.Fields(s), " ")
 }
 
 // FormatTask formats a single Task as a markdown section.
