@@ -46,10 +46,11 @@ func (c *addCmd) Run() error {
 			parsedPriority = m[1]
 			input = strings.TrimSpace(priorityRe.ReplaceAllString(input, ""))
 		}
-		// (3) Extract title (everything before first period)
-		var parsedTitle string
+		// (3) Extract title (everything before first period), remainder is body
+		var parsedTitle, parsedBody string
 		if idx := strings.Index(input, "."); idx >= 0 {
 			parsedTitle = strings.TrimSpace(input[:idx])
+			parsedBody = strings.TrimSpace(input[idx+1:])
 		} else {
 			parsedTitle = strings.TrimSpace(input)
 		}
@@ -63,6 +64,9 @@ func (c *addCmd) Run() error {
 		if title != "" && parsedTitle != "" {
 			return fmt.Errorf("title set by both flag and argument")
 		}
+		if body != "" && parsedBody != "" {
+			return fmt.Errorf("body set by both flag and argument")
+		}
 		// Apply parsed values
 		if parsedType != "" {
 			typ = parsedType
@@ -72,6 +76,9 @@ func (c *addCmd) Run() error {
 		}
 		if parsedTitle != "" {
 			title = parsedTitle
+		}
+		if parsedBody != "" {
+			body = parsedBody
 		}
 	}
 	if title == "" {

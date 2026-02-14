@@ -74,3 +74,7 @@ The binary is called `md`. Place it on your `PATH`.
 - **Concurrency** — Concurrent writes are safe. `meads` uses append-based optimistic locking so multiple processes (or AI agents) can write to `TASKS.md` simultaneously without corruption.
 - **AI-friendly** — The Markdown format is designed to be readable and writable by LLMs. Point an agent at `TASKS.md` and it can parse, query, and reason about your backlog.
 - **Minimal dependencies** — single static binary.
+
+## Future
+
+- **Task history** — `md history 0001` to show when a task was added, modified, and closed. Since all state lives in `TASKS.md`, this is just `git blame` and `git log` under the hood — no extra metadata to store or sync.

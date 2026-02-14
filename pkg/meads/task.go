@@ -123,14 +123,16 @@ func FormatTask(t Task) string {
 	return sb.String()
 }
 
+const fileHeader = "# TASKS\n\na [meads](https://github.com/jpillora/meads) (`md`) managed task log\n"
+
 // FormatTasks formats all tasks as a complete TASKS.md file.
 func FormatTasks(tasks []Task) string {
 	if len(tasks) == 0 {
-		return ""
+		return fileHeader
 	}
 	var parts []string
 	for _, t := range tasks {
 		parts = append(parts, FormatTask(t))
 	}
-	return strings.Join(parts, "\n")
+	return fileHeader + "\n" + strings.Join(parts, "\n")
 }
