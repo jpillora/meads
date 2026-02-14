@@ -3,21 +3,8 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-02-14T14:05:49Z
+* updated: 2026-02-15T00:27:39Z
 * next-id: 11
-
-## 1. implement mcp server
-
-* status: inprogress
-* updated: 2026-02-14T12:17:38Z
-
-implement an mcp server over stdin for simple integration with existing tools
-
-it should be a simple `md mcp` command that listens over stdio, and exposes commands to edit TASKS.md.
-
-use `github.com/modelcontextprotocol/go-sdk` server
-
-it should have FAST unit tests, since the interface should be io.ReadWriter. and just use an `go-sdk` MCP client
 
 ## 5. auto delete
 
