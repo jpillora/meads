@@ -81,6 +81,40 @@ func Update(file, id string, fn func(*Task)) error {
 	return nil
 }
 
+// Get returns tasks from the file. If ids is non-empty only the matching
+// tasks are returned (in the order given). An error is returned for any
+// id that does not exist. If ids is empty all tasks are returned.
+func Get(file string, ids []string) ([]Task, error) {
+	data, err := os.ReadFile(file)
+	if err != nil {
+		if os.IsNotExist(err) {
+			if len(ids) > 0 {
+				return nil, fmt.Errorf("task %s not found", ids[0])
+			}
+			return nil, nil
+		}
+		return nil, fmt.Errorf("reading %s: %w", file, err)
+	}
+	content := stripLockLines(string(data))
+	tasks := ParseTasks(content)
+	if len(ids) == 0 {
+		return tasks, nil
+	}
+	byID := make(map[string]Task, len(tasks))
+	for _, t := range tasks {
+		byID[t.ID] = t
+	}
+	out := make([]Task, 0, len(ids))
+	for _, id := range ids {
+		t, ok := byID[id]
+		if !ok {
+			return nil, fmt.Errorf("task %s not found", id)
+		}
+		out = append(out, t)
+	}
+	return out, nil
+}
+
 // Ready returns open tasks not blocked by unclosed dependencies, sorted by priority descending.
 func Ready(file string) ([]Task, error) {
 	data, err := os.ReadFile(file)

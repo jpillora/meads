@@ -1,6 +1,7 @@
 package meads
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strconv"
@@ -9,13 +10,42 @@ import (
 
 // Task represents a single task parsed from a TASKS.md file.
 type Task struct {
-	ID        string
-	Title     string
-	Status    string
-	Priority  int
-	DependsOn string
-	Meta      map[string]string // all key-value pairs including status, priority, depends-on
-	Body      string            // freeform description after metadata
+	ID        string            `json:"id"`
+	Title     string            `json:"title"`
+	Status    string            `json:"status,omitempty"`
+	Priority  int               `json:"priority,omitempty"`
+	DependsOn string            `json:"depends_on,omitempty"`
+	Meta      map[string]string `json:"meta,omitempty"`
+	Body      string            `json:"body,omitempty"`
+}
+
+// knownMetaKeys are metadata keys that have dedicated struct fields.
+// These are excluded from the "meta" JSON field to avoid duplication.
+var knownMetaKeys = map[string]bool{
+	"status":     true,
+	"priority":   true,
+	"depends-on": true,
+}
+
+// MarshalJSON implements custom JSON marshaling to exclude known keys from meta.
+func (t Task) MarshalJSON() ([]byte, error) {
+	var meta map[string]string
+	for k, v := range t.Meta {
+		if !knownMetaKeys[k] {
+			if meta == nil {
+				meta = make(map[string]string)
+			}
+			meta[k] = v
+		}
+	}
+	type taskJSON Task
+	return json.Marshal(struct {
+		taskJSON
+		Meta map[string]string `json:"meta,omitempty"`
+	}{
+		taskJSON: taskJSON(t),
+		Meta:     meta,
+	})
 }
 
 // SetStatus updates the task status in both the field and Meta map.
