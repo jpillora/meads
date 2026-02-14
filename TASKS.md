@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-02-14T12:35:36Z
+* updated: 2026-02-14T12:53:08Z
 * next-id: 10
 
 ## 1. implement mcp server
@@ -46,8 +46,9 @@ which just print  the tasks list as plain markdown
 
 ## 5. auto delete
 
-* status: open
+* status: draft
 * created: 2026-02-14T11:46:18Z
+* updated: 2026-02-14T12:53:08Z
 
 a bit dangerous, cos dont want to lose data, but with a precommit hook the experience is okay. if we detect (1) were on the default branch (2) the TASKS file is commited and in sync (3) then find all tasks which are closed (4) delete them (5) ammend-commit with deletion.
 
