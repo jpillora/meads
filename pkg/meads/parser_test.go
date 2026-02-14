@@ -279,9 +279,12 @@ func TestSplitHeading(t *testing.T) {
 		wantTitle string
 	}{
 		{"1 Fix the login bug", 1, "Fix the login bug"},
+		{"1. Fix the login bug", 1, "Fix the login bug"},
 		{"1", 1, ""},
+		{"1.", 1, ""},
 		{"0001 Padded ID", 1, "Padded ID"},
 		{"42 Do something", 42, "Do something"},
+		{"42. Do something", 42, "Do something"},
 	}
 	for _, tt := range tests {
 		id, title := splitHeading(tt.input)
@@ -308,7 +311,7 @@ func TestFormatTask_Full(t *testing.T) {
 		Body:   "Some description.",
 	}
 	got := FormatTask(task)
-	want := "## 1 Fix the login bug\n\n* status: open\n* priority: 3\n\nSome description.\n"
+	want := "## 1. Fix the login bug\n\n* status: open\n* priority: 3\n\nSome description.\n"
 	if got != want {
 		t.Errorf("FormatTask =\n%q\nwant\n%q", got, want)
 	}
@@ -321,7 +324,7 @@ func TestFormatTask_NoBody(t *testing.T) {
 		Meta:  map[string]string{"status": "closed"},
 	}
 	got := FormatTask(task)
-	want := "## 2 No body\n\n* status: closed\n"
+	want := "## 2. No body\n\n* status: closed\n"
 	if got != want {
 		t.Errorf("FormatTask =\n%q\nwant\n%q", got, want)
 	}
@@ -335,7 +338,7 @@ func TestFormatTask_NoMeta(t *testing.T) {
 		Body:  "Just a body.",
 	}
 	got := FormatTask(task)
-	want := "## 3 Bare task\n\nJust a body.\n"
+	want := "## 3. Bare task\n\nJust a body.\n"
 	if got != want {
 		t.Errorf("FormatTask =\n%q\nwant\n%q", got, want)
 	}
@@ -353,7 +356,7 @@ func TestFormatTask_UpdatedSameAsCreated(t *testing.T) {
 	}
 	got := FormatTask(task)
 	// updated should be omitted since it equals created
-	want := "## 1 Test\n\n* status: open\n* created: 2026-01-01T00:00:00Z\n"
+	want := "## 1. Test\n\n* status: open\n* created: 2026-01-01T00:00:00Z\n"
 	if got != want {
 		t.Errorf("FormatTask =\n%q\nwant\n%q", got, want)
 	}
@@ -370,7 +373,7 @@ func TestFormatTask_UpdatedDifferentFromCreated(t *testing.T) {
 		},
 	}
 	got := FormatTask(task)
-	want := "## 1 Test\n\n* status: open\n* created: 2026-01-01T00:00:00Z\n* updated: 2026-01-02T00:00:00Z\n"
+	want := "## 1. Test\n\n* status: open\n* created: 2026-01-01T00:00:00Z\n* updated: 2026-01-02T00:00:00Z\n"
 	if got != want {
 		t.Errorf("FormatTask =\n%q\nwant\n%q", got, want)
 	}
@@ -391,7 +394,7 @@ func TestFormatFile_WithProjectMeta(t *testing.T) {
 		},
 	}
 	got := FormatFile(f)
-	want := "# TASKS\n\na [meads](https://github.com/jpillora/meads) (`md`) managed task log\n\n* created: 2026-01-01T00:00:00Z\n* next-id: 3\n\n## 1 First\n\n* status: open\n"
+	want := "# TASKS\n\na [meads](https://github.com/jpillora/meads) (`md`) managed task log\n\n* created: 2026-01-01T00:00:00Z\n* next-id: 3\n\n## 1. First\n\n* status: open\n"
 	if got != want {
 		t.Errorf("FormatFile =\n%q\nwant\n%q", got, want)
 	}
@@ -410,7 +413,7 @@ func TestFormatFile_ProjectMetaUpdatedSkipped(t *testing.T) {
 	}
 	got := FormatFile(f)
 	// updated should be omitted since it equals created
-	want := "# TASKS\n\na [meads](https://github.com/jpillora/meads) (`md`) managed task log\n\n* created: 2026-01-01T00:00:00Z\n* next-id: 2\n\n## 1 Test\n\n* status: open\n"
+	want := "# TASKS\n\na [meads](https://github.com/jpillora/meads) (`md`) managed task log\n\n* created: 2026-01-01T00:00:00Z\n* next-id: 2\n\n## 1. Test\n\n* status: open\n"
 	if got != want {
 		t.Errorf("FormatFile =\n%q\nwant\n%q", got, want)
 	}

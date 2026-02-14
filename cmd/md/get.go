@@ -10,8 +10,9 @@ import (
 )
 
 type getCmd struct {
-	JSON bool     `help:"Output tasks as JSON"`
-	IDs  []string `opts:"mode=arg,min=1" help:"Task IDs to retrieve"`
+	JSON  bool     `help:"Output tasks as JSON"`
+	Short bool     `help:"Output short format (ID TITLE)"`
+	IDs   []string `opts:"mode=arg,min=1" help:"Task IDs to retrieve"`
 }
 
 func (c *getCmd) Run() error {
@@ -27,7 +28,18 @@ func (c *getCmd) Run() error {
 	if err != nil {
 		return err
 	}
-	return printTasks(tasks, c.JSON)
+	if c.Short {
+		return printTasks(tasks, c.JSON)
+	}
+	if c.JSON {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(tasks)
+	}
+	for _, t := range tasks {
+		fmt.Print(meads.FormatTask(t))
+	}
+	return nil
 }
 
 func printTasks(tasks []meads.Task, asJSON bool) error {
@@ -37,7 +49,7 @@ func printTasks(tasks []meads.Task, asJSON bool) error {
 		return enc.Encode(tasks)
 	}
 	for _, t := range tasks {
-		fmt.Printf("%d %s\n", t.ID, t.Title)
+		fmt.Printf("%d. %s\n", t.ID, t.Title)
 	}
 	return nil
 }

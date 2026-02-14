@@ -122,7 +122,8 @@ func parseTask(section string) (Task, bool) {
 	return t, true
 }
 
-// splitHeading splits "1 Fix the login bug" into id=1 and title="Fix the login bug".
+// splitHeading splits "1. Fix the login bug" into id=1 and title="Fix the login bug".
+// Also accepts "1 Fix the login bug" without the dot for backwards compatibility.
 // Returns id=-1 if the heading does not start with a valid integer.
 func splitHeading(s string) (id int, title string) {
 	s = strings.TrimSpace(s)
@@ -134,6 +135,8 @@ func splitHeading(s string) (id int, title string) {
 		idStr = s[:i]
 		title = s[i+1:]
 	}
+	// Strip trailing dot so both "42." and "42" parse as ID 42.
+	idStr = strings.TrimSuffix(idStr, ".")
 	n, err := strconv.Atoi(idStr)
 	if err != nil {
 		return -1, ""

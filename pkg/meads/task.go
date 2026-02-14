@@ -229,9 +229,9 @@ func flattenMetaValue(s string) string {
 func FormatTask(t Task) string {
 	var sb strings.Builder
 	if t.Title != "" {
-		fmt.Fprintf(&sb, "## %d %s\n", t.ID, t.Title)
+		fmt.Fprintf(&sb, "## %d. %s\n", t.ID, t.Title)
 	} else {
-		fmt.Fprintf(&sb, "## %d\n", t.ID)
+		fmt.Fprintf(&sb, "## %d.\n", t.ID)
 	}
 	if metaBlock := formatMetaBlock(t.Meta, taskMetaOrder); metaBlock != "" {
 		sb.WriteString("\n")
