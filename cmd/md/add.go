@@ -43,7 +43,7 @@ func (c *addCmd) Run() error {
 		// (2) Extract priority
 		var parsedPriority string
 		if m := priorityRe.FindStringSubmatch(input); m != nil {
-			parsedPriority = m[1]
+			parsedPriority = m[0] // full "P\d" match
 			input = strings.TrimSpace(priorityRe.ReplaceAllString(input, ""))
 		}
 		// (3) Extract title (everything before first period), remainder is body
@@ -92,11 +92,7 @@ func (c *addCmd) Run() error {
 	t.Title = title
 	t.SetStatus(status)
 	if priority != "" {
-		n, err := strconv.Atoi(priority)
-		if err != nil {
-			return fmt.Errorf("invalid priority: %s", priority)
-		}
-		t.SetPriority(n)
+		t.SetPriority(priority)
 	}
 	if dependsOn != "" {
 		n, err := strconv.Atoi(dependsOn)
@@ -106,7 +102,7 @@ func (c *addCmd) Run() error {
 		t.SetMeta("depends-on", strconv.Itoa(n))
 	}
 	if typ != "" {
-		t.SetMeta("type", typ)
+		t.SetType(typ)
 	}
 	if body != "" {
 		t.Body = body

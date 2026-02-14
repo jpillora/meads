@@ -16,21 +16,27 @@ type File struct {
 
 // Task represents a single task parsed from a TASKS.md file.
 type Task struct {
-	ID        int               `json:"id"`
-	Title     string            `json:"title"`
-	Status    string            `json:"status,omitempty"`
-	Priority  int               `json:"priority,omitempty"`
-	DependsOn int               `json:"depends_on,omitempty"`
-	Meta      map[string]string `json:"meta,omitempty"`
-	Body      string            `json:"body,omitempty"`
+	ID          int               `json:"id"`
+	Title       string            `json:"title"`
+	Status      string            `json:"status,omitempty"`
+	Priority    string            `json:"priority,omitempty"`
+	Type        string            `json:"type,omitempty"`
+	DependsOn   int               `json:"depends_on,omitempty"`
+	CloseReason string            `json:"close_reason,omitempty"`
+	Tags        []string          `json:"tags,omitempty"`
+	Meta        map[string]string `json:"meta,omitempty"`
+	Body        string            `json:"body,omitempty"`
 }
 
 // knownMetaKeys are metadata keys that have dedicated struct fields.
 // These are excluded from the "meta" JSON field to avoid duplication.
 var knownMetaKeys = map[string]bool{
-	"status":     true,
-	"priority":   true,
-	"depends-on": true,
+	"status":       true,
+	"priority":     true,
+	"type":         true,
+	"depends-on":   true,
+	"close-reason": true,
+	"tags":         true,
 }
 
 // MarshalJSON implements custom JSON marshaling to exclude known keys from meta.
@@ -62,10 +68,31 @@ func (t *Task) SetStatus(s string) {
 }
 
 // SetPriority updates the task priority in both the field and Meta map.
-func (t *Task) SetPriority(p int) {
+func (t *Task) SetPriority(p string) {
 	t.Priority = p
 	t.ensureMeta()
-	t.Meta["priority"] = strconv.Itoa(p)
+	t.Meta["priority"] = p
+}
+
+// SetType updates the task type in both the field and Meta map.
+func (t *Task) SetType(s string) {
+	t.Type = s
+	t.ensureMeta()
+	t.Meta["type"] = s
+}
+
+// SetCloseReason updates the close reason in both the field and Meta map.
+func (t *Task) SetCloseReason(s string) {
+	t.CloseReason = s
+	t.ensureMeta()
+	t.Meta["close-reason"] = s
+}
+
+// SetTags updates the tags in both the field and Meta map.
+func (t *Task) SetTags(tags []string) {
+	t.Tags = tags
+	t.ensureMeta()
+	t.Meta["tags"] = strings.Join(tags, ",")
 }
 
 // SetMeta sets a metadata key-value pair and syncs convenience fields.
@@ -76,13 +103,17 @@ func (t *Task) SetMeta(key, value string) {
 	case "status":
 		t.Status = value
 	case "priority":
-		if n, err := strconv.Atoi(value); err == nil {
-			t.Priority = n
-		}
+		t.Priority = value
+	case "type":
+		t.Type = value
 	case "depends-on":
 		if n, err := strconv.Atoi(value); err == nil {
 			t.DependsOn = n
 		}
+	case "close-reason":
+		t.CloseReason = value
+	case "tags":
+		t.Tags = splitTags(value)
 	}
 }
 
@@ -92,9 +123,21 @@ func (t *Task) ensureMeta() {
 	}
 }
 
+// splitTags splits a comma-separated string into trimmed non-empty tags.
+func splitTags(s string) []string {
+	var tags []string
+	for _, t := range strings.Split(s, ",") {
+		t = strings.TrimSpace(t)
+		if t != "" {
+			tags = append(tags, t)
+		}
+	}
+	return tags
+}
+
 var (
 	projectMetaOrder = []string{"created", "updated", "next-id"}
-	taskMetaOrder    = []string{"status", "priority", "depends-on", "created", "updated"}
+	taskMetaOrder    = []string{"status", "priority", "type", "depends-on", "close-reason", "tags", "created", "updated"}
 )
 
 // formatMetaBlock formats a metadata map as "* key: value" lines.

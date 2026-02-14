@@ -27,8 +27,8 @@ The login page throws a 500 when the session cookie is expired.`
 	if task.Status != "open" {
 		t.Errorf("Status = %q, want %q", task.Status, "open")
 	}
-	if task.Priority != 1 {
-		t.Errorf("Priority = %d, want %d", task.Priority, 1)
+	if task.Priority != "1" {
+		t.Errorf("Priority = %q, want %q", task.Priority, "1")
 	}
 	if task.DependsOn != 3 {
 		t.Errorf("DependsOn = %d, want %d", task.DependsOn, 3)
@@ -66,8 +66,8 @@ Working on it.`
 	if f.Tasks[0].ID != 1 || f.Tasks[0].Title != "First task" {
 		t.Errorf("task 0: ID=%d Title=%q", f.Tasks[0].ID, f.Tasks[0].Title)
 	}
-	if f.Tasks[0].Status != "open" || f.Tasks[0].Priority != 2 {
-		t.Errorf("task 0: Status=%q Priority=%d", f.Tasks[0].Status, f.Tasks[0].Priority)
+	if f.Tasks[0].Status != "open" || f.Tasks[0].Priority != "2" {
+		t.Errorf("task 0: Status=%q Priority=%q", f.Tasks[0].Status, f.Tasks[0].Priority)
 	}
 	if f.Tasks[1].ID != 2 || f.Tasks[1].Status != "closed" {
 		t.Errorf("task 1: ID=%d Status=%q", f.Tasks[1].ID, f.Tasks[1].Status)
@@ -96,8 +96,8 @@ Just a description with no metadata.`
 	if task.Status != "" {
 		t.Errorf("Status = %q, want empty", task.Status)
 	}
-	if task.Priority != 0 {
-		t.Errorf("Priority = %d, want 0", task.Priority)
+	if task.Priority != "" {
+		t.Errorf("Priority = %q, want empty", task.Priority)
 	}
 	if task.Body != "Just a description with no metadata." {
 		t.Errorf("Body = %q", task.Body)
@@ -449,5 +449,106 @@ func TestFormatFile_RoundTrip(t *testing.T) {
 	}
 	if f.Meta["next-id"] != f2.Meta["next-id"] {
 		t.Errorf("round-trip: next-id %q != %q", f.Meta["next-id"], f2.Meta["next-id"])
+	}
+}
+
+func TestParseFile_TypeField(t *testing.T) {
+	input := `## 1 Add login
+
+* status: open
+* type: feature`
+
+	f := ParseFile(input)
+	if len(f.Tasks) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(f.Tasks))
+	}
+	if f.Tasks[0].Type != "feature" {
+		t.Errorf("Type = %q, want %q", f.Tasks[0].Type, "feature")
+	}
+}
+
+func TestParseFile_CloseReasonField(t *testing.T) {
+	input := `## 1 Old bug
+
+* status: closed
+* close-reason: duplicate`
+
+	f := ParseFile(input)
+	if len(f.Tasks) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(f.Tasks))
+	}
+	if f.Tasks[0].CloseReason != "duplicate" {
+		t.Errorf("CloseReason = %q, want %q", f.Tasks[0].CloseReason, "duplicate")
+	}
+}
+
+func TestParseFile_TagsField(t *testing.T) {
+	input := `## 1 Tagged task
+
+* status: open
+* tags: backend,api,urgent`
+
+	f := ParseFile(input)
+	if len(f.Tasks) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(f.Tasks))
+	}
+	tags := f.Tasks[0].Tags
+	if len(tags) != 3 {
+		t.Fatalf("expected 3 tags, got %d", len(tags))
+	}
+	if tags[0] != "backend" || tags[1] != "api" || tags[2] != "urgent" {
+		t.Errorf("Tags = %v, want [backend api urgent]", tags)
+	}
+}
+
+func TestNewFields_RoundTrip(t *testing.T) {
+	task := Task{
+		ID:          1,
+		Title:       "Round trip test",
+		Status:      "closed",
+		Priority:    "P1",
+		Type:        "bug",
+		CloseReason: "fixed",
+		Tags:        []string{"backend", "api"},
+	}
+	task.ensureMeta()
+	task.Meta["status"] = "closed"
+	task.Meta["priority"] = "P1"
+	task.Meta["type"] = "bug"
+	task.Meta["close-reason"] = "fixed"
+	task.Meta["tags"] = "backend,api"
+
+	formatted := FormatTask(task)
+	f := ParseFile(formatted)
+	if len(f.Tasks) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(f.Tasks))
+	}
+	got := f.Tasks[0]
+	if got.Priority != "P1" {
+		t.Errorf("Priority = %q, want %q", got.Priority, "P1")
+	}
+	if got.Type != "bug" {
+		t.Errorf("Type = %q, want %q", got.Type, "bug")
+	}
+	if got.CloseReason != "fixed" {
+		t.Errorf("CloseReason = %q, want %q", got.CloseReason, "fixed")
+	}
+	if len(got.Tags) != 2 || got.Tags[0] != "backend" || got.Tags[1] != "api" {
+		t.Errorf("Tags = %v, want [backend api]", got.Tags)
+	}
+}
+
+func TestParseFile_StringPriority(t *testing.T) {
+	input := `## 1 P-string task
+
+* status: open
+* priority: P0`
+
+	f := ParseFile(input)
+	if len(f.Tasks) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(f.Tasks))
+	}
+	if f.Tasks[0].Priority != "P0" {
+		t.Errorf("Priority = %q, want %q", f.Tasks[0].Priority, "P0")
 	}
 }

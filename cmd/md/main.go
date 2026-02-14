@@ -13,6 +13,7 @@ type config struct {
 	Del    delCmd    `opts:"mode=cmd" help:"Delete a task by ID"`
 	Update updateCmd `opts:"mode=cmd" help:"Update a task by ID"`
 	Ready  readyCmd  `opts:"mode=cmd" help:"List open tasks not blocked by dependencies"`
+	Import importCmd `opts:"mode=cmd" help:"Import tasks from an external source"`
 }
 
 func main() {

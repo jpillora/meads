@@ -24,9 +24,7 @@ func (c *updateCmd) Run() error {
 			t.SetStatus(c.Status)
 		}
 		if c.Priority != "" {
-			if n, err := strconv.Atoi(c.Priority); err == nil {
-				t.SetPriority(n)
-			}
+			t.SetPriority(c.Priority)
 		}
 		if c.Title != "" {
 			t.Title = c.Title

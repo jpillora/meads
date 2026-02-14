@@ -39,6 +39,46 @@ func Add(file string, t Task) (int, error) {
 	return t.ID, nil
 }
 
+// AddMany creates multiple tasks in a single lock acquisition.
+// Each task must have ID == 0. Returns the assigned IDs.
+func AddMany(file string, tasks []Task) ([]int, error) {
+	if len(tasks) == 0 {
+		return nil, nil
+	}
+	for i, t := range tasks {
+		if t.ID != 0 {
+			return nil, fmt.Errorf("task %d: ID must not be set (got %d)", i, t.ID)
+		}
+	}
+	if err := ensureFile(file); err != nil {
+		return nil, err
+	}
+	_, content, err := acquireLock(file)
+	if err != nil {
+		return nil, err
+	}
+	f := ParseFile(content)
+	now := time.Now().UTC().Format(time.RFC3339)
+	ids := make([]int, len(tasks))
+	for i := range tasks {
+		tasks[i].ID = nextID(&f)
+		tasks[i].ensureMeta()
+		// Only set created if not already provided (e.g. from import).
+		if tasks[i].Meta["created"] == "" {
+			tasks[i].Meta["created"] = now
+		}
+		f.Tasks = append(f.Tasks, tasks[i])
+		ids[i] = tasks[i].ID
+	}
+	ensureProjectMeta(&f, now)
+	f.Meta["updated"] = now
+	f.Meta["next-id"] = strconv.Itoa(tasks[len(tasks)-1].ID + 1)
+	if err := releaseLock(file, FormatFile(f)); err != nil {
+		return nil, fmt.Errorf("writing %s: %w", file, err)
+	}
+	return ids, nil
+}
+
 // Delete removes a task by ID.
 func Delete(file string, id int) error {
 	_, content, err := acquireLock(file)
@@ -163,7 +203,14 @@ func Ready(file string) ([]Task, error) {
 		ready = append(ready, t)
 	}
 	sort.Slice(ready, func(i, j int) bool {
-		return ready[i].Priority > ready[j].Priority
+		pi, pj := ready[i].Priority, ready[j].Priority
+		if pi == "" {
+			pi = "P2"
+		}
+		if pj == "" {
+			pj = "P2"
+		}
+		return pi < pj
 	})
 	return ready, nil
 }

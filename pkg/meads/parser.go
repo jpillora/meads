@@ -104,15 +104,22 @@ func parseTask(section string) (Task, bool) {
 		t.Status = v
 	}
 	if v, ok := meta["priority"]; ok {
-		if n, err := strconv.Atoi(v); err == nil {
-			t.Priority = n
-		}
+		t.Priority = v
+	}
+	if v, ok := meta["type"]; ok {
+		t.Type = v
 	}
 	if v, ok := meta["depends-on"]; ok {
 		if n, err := strconv.Atoi(v); err == nil {
 			t.DependsOn = n
 			meta["depends-on"] = strconv.Itoa(n) // normalize
 		}
+	}
+	if v, ok := meta["close-reason"]; ok {
+		t.CloseReason = v
+	}
+	if v, ok := meta["tags"]; ok {
+		t.Tags = splitTags(v)
 	}
 	return t, true
 }
