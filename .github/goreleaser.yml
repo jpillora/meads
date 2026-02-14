@@ -21,13 +21,15 @@ builds:
       - goos: windows
         goarch: arm
 nfpms:
-  - maintainer: "https://github.com/{{ .Env.GITHUB_USER }}"
+  - package_name: md
+    maintainer: "https://github.com/{{ .Env.GITHUB_USER }}"
     formats:
       - deb
       - rpm
       - apk
 archives:
-  - formats:
+  - name_template: "md_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats:
       - tar.gz
     format_overrides:
       - goos: windows
