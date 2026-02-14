@@ -1,0 +1,12 @@
+Added the `md prime` subcommand for LLM context recovery. This command uses Go's
+embed directive to bundle `cmd/md/AGENTS.md` into the binary and prints it to stdout,
+allowing agents to quickly reload project context after session compaction or restart.
+
+The root-level `AGENTS.md` (which contained old beads/bd-based instructions) was deleted
+and replaced with a new `cmd/md/AGENTS.md` that documents md-native commands and workflows.
+
+A new `CLAUDE.md` was added at the project root following Claude Code conventions, providing
+project overview, command reference, common workflows, and rules for interacting with the
+md task tracker.
+
+The `primeCmd` struct was registered in `cmd/md/main.go` alongside the existing commands.
