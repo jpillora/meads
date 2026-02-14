@@ -16,6 +16,7 @@ type config struct {
 	AddDep    addDepCmd    `opts:"mode=cmd,name=add-dep" help:"Add a dependency to a task"`
 	Ready  readyCmd  `opts:"mode=cmd" help:"List open tasks not blocked by dependencies"`
 	Import importCmd `opts:"mode=cmd" help:"Import tasks from an external source"`
+	Prime  primeCmd  `opts:"mode=cmd" help:"Print LLM context for using md"`
 }
 
 func main() {

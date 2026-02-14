@@ -1,0 +1,66 @@
+# Meads (`md`) Task Tracking Context
+
+> **Context Recovery**: Run `md prime` after compaction, clear, or new session
+
+## Overview
+
+`md` is a git-native task tracker that stores all tasks in a single `TASKS.md` file. No database, no config files - just Markdown and git.
+
+## Essential Commands
+
+### Finding Work
+- `md ready` - Show open tasks not blocked by dependencies (sorted by priority)
+- `md list` - List all tasks
+- `md list --json` - List all tasks as JSON
+- `md get <id>` - Get a specific task
+- `md get --json <id>` - Get a specific task as JSON
+
+### Creating Tasks
+- `md add "Fix the login bug"` - Add a simple task
+- `md add "bug: Fix login P1. Session cookie expires"` - Rich input parsing
+  - Type prefix: `bug:`, `task:`, `feature:` (optional)
+  - Priority: `P0`-`P9` (0=critical, 4=backlog, default=P2)
+  - Title: everything before first `.`
+  - Body: everything after the `.`
+- `md add --title="Fix login" --type=bug --priority=P1 --body="Details here"` - Flag-based
+
+### Updating Tasks
+- `md update <id> --status=open|inprogress|closed` - Update status
+- `md update <id> --priority=P1` - Update priority
+- `md update <id> --title="New title"` - Update title
+- `md set-status <id> <status>` - Shorthand for status changes
+- `md del <id>` - Delete a task
+
+### Dependencies
+- `md add-dep <child> <parent>` - Make child depend on parent
+- `md add --depends-on=<id> "Task title"` - Add task with dependency
+- Tasks blocked by unclosed dependencies are excluded from `md ready`
+
+### Importing
+- `md import beads` - Import tasks from beads issue tracker
+
+## Common Workflows
+
+**Starting a session:**
+```bash
+md ready              # Find available work
+md get <id>           # Review task details
+md set-status <id> inprogress  # Claim it
+```
+
+**Creating dependent tasks:**
+```bash
+md add "feature: Build API endpoint"    # Returns ID, e.g. 5
+md add "Write tests for API. Cover edge cases" --depends-on=5
+```
+
+**Completing work:**
+```bash
+md set-status <id> closed    # Mark task done
+```
+
+## Rules
+- **Do NOT read or edit TASKS.md directly** - always use `md` commands to read and modify tasks
+- Task IDs are auto-assigned integers
+- Git handles versioning and history
+- The file uses optimistic locking for concurrent access
