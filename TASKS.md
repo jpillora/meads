@@ -3,8 +3,8 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-02-14T12:53:08Z
-* next-id: 10
+* updated: 2026-02-14T14:05:07Z
+* next-id: 11
 
 ## 1. implement mcp server
 
@@ -18,31 +18,6 @@ it should be a simple `md mcp` command that listens over stdio, and exposes comm
 use `github.com/modelcontextprotocol/go-sdk` server
 
 it should have FAST unit tests, since the interface should be io.ReadWriter. and just use an `go-sdk` MCP client
-
-## 2. implement a "prime" command
-
-* status: closed
-* updated: 2026-02-14T12:10:00Z
-
-embed a basic AGENTS.md file which can be created/appended/feed-into LLMs to teach them how to use `md`
-
-## 3. in markdown, suffix numbers with dot
-
-* status: closed
-* updated: 2026-02-14T12:08:15Z
-
-so `## 42 foo bar` becomes `## 42. foo bar`
-
-parse should still work without it, it just needs the space.
-
-but it should always write dot -> space. `<N>. `
-
-## 4. list --md flag
-
-* status: closed
-* updated: 2026-02-14T12:12:20Z
-
-which just print  the tasks list as plain markdown
 
 ## 5. auto delete
 
@@ -58,25 +33,7 @@ with all this, users need to `md auto-delete` and this adds a git hook to do the
 
 to allow hand writing of the TASKS.md file. any time the TASKS.md file is locked. it should confirm that `next-id` is set HIGHER than the highest-id. if not, it should automatically reset it to highest-id + 1.
 
-## 7. add --limit -n flag to "ready"
+## 10. Test closed task for auto-delete
 
 * status: closed
-* updated: 2026-02-14T12:09:14Z
-
-limits number of results
-
-## 8. custom TASKSmd path
-
-* status: closed
-* created: 2026-02-14T12:24:12Z
-* updated: 2026-02-14T12:35:36Z
-
-use env var `MD_TASKS` to get filepath, and if not set, then use `<workdir>/TASKS.md`
-
-## 9. add a new status 'draft'
-
-* status: closed
-* created: 2026-02-14T12:27:15Z
-* updated: 2026-02-14T12:35:36Z
-
-draft means not-done and not-ready. whereas open means not-done and ready. its a way to jot down ideas but not actually have then as ready work
+* created: 2026-02-14T14:05:07Z
