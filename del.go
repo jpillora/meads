@@ -5,16 +5,16 @@ import (
 	"strings"
 )
 
-func cmdDel(args []string) error {
-	if len(args) != 1 {
-		return fmt.Errorf("usage: md del <id>")
-	}
-	id := args[0]
+type delCmd struct {
+	ID string `opts:"mode=arg" help:"Task ID to delete"`
+}
+
+func (c *delCmd) Run() error {
 	_, content, err := acquireLock()
 	if err != nil {
 		return err
 	}
-	result, err := deleteTask(content, id)
+	result, err := deleteTask(content, c.ID)
 	if err != nil {
 		// Release lock with original content on failure.
 		releaseLock(content)
@@ -23,7 +23,7 @@ func cmdDel(args []string) error {
 	if err := releaseLock(result); err != nil {
 		return fmt.Errorf("writing %s: %w", tasksFile, err)
 	}
-	fmt.Printf("deleted task %s\n", id)
+	fmt.Printf("deleted task %s\n", c.ID)
 	return nil
 }
 
@@ -38,7 +38,6 @@ func deleteTask(content, id string) (string, error) {
 		if start == -1 {
 			if strings.HasPrefix(line, prefix) {
 				start = i
-				// Also consume a blank line before the heading if present.
 			}
 		} else {
 			if strings.HasPrefix(line, "## ") {

@@ -1,48 +1,76 @@
 # meads
 
-Beads, but **m**uch simpler, built with **M**arkdown.
+Git-native task tracking in a single Markdown file. No database, no server, no dependencies — just `TASKS.md` and git.
 
-Uses a single `TASKS.md` file as the database and relies on git for history.
+## Quick Start
 
-## TASKS.md Format
-
-The file is human-readable but **not** human-writable. All mutations go through the `md` CLI tool.
-
-Tasks are stored as a flat series of entries:
-
-```markdown
-## 0001 Fix the login bug
-
-* status: open
-* priority: 1
-* depends-on: 0003
-
-The login page throws a 500 when the session cookie is expired.
+```bash
+go install github.com/jpillora/meads@latest
 ```
 
-### Keys
+```bash
+md add "Fix the login bug" "500 error when session cookie is expired"
+# added task 0001
 
-- `status` — `open`, `inprogress`, or `closed`
-- `priority` — numeric, higher priority tasks are listed first
-- `depends-on` — ID of another task this one depends on
+md add "Write tests for login fix"
+# added task 0002
 
-You can set any other key you like. The format is freeform and LLM-queryable.
+md ready
+# 0001 Fix the login bug
+# 0002 Write tests for login fix
 
-## CLI — `md`
+md del 0001
+# deleted task 0001
+```
 
-All writes to `TASKS.md` go through the `md` command:
+All state lives in `TASKS.md`. Commit it to git and you get full history for free.
 
-| Command    | Description                                      |
-|------------|--------------------------------------------------|
-| `md add`   | Add a new task                                   |
-| `md del`   | Delete a task                                    |
-| `md ready` | Show all open tasks (not blocked by dependencies)|
+## Examples
 
-## File Locking
+**Add a task with a description:**
 
-`meads` uses a simple append-based lock:
+```bash
+md add "Implement OAuth" "Add Google sign-in using OAuth 2.0 flow"
+```
 
-1. Append `\nlock:<random-uuid>\n` to `TASKS.md`
-2. Read the file back
-3. If your UUID is the **first** `lock:` line in the file, you hold the lock and can proceed with changes
-4. Otherwise, back off — another writer won the race
+**View ready work (sorted by priority):**
+
+```bash
+md ready
+# 0003 Critical hotfix        (priority: 5)
+# 0001 Implement OAuth         (priority: 2)
+```
+
+**Use dependencies to block tasks:**
+
+Edit `TASKS.md` to add `* depends-on: 0001` to a task. It won't appear in `md ready` until task `0001` is closed.
+
+**Track progress with status:**
+
+Tasks support three statuses: `open`, `inprogress`, `closed`. Set them by editing the `* status:` line in `TASKS.md`.
+
+## Installation
+
+Requires Go 1.25.6+.
+
+```bash
+go install github.com/jpillora/meads@latest
+```
+
+Or build from source:
+
+```bash
+git clone https://github.com/jpillora/meads.git
+cd meads
+go build -o md .
+```
+
+The binary is called `md`. Place it on your `PATH`.
+
+## Notes
+
+- **Format** — Tasks are stored as Markdown headings (`## 0001 Title`) with `* key: value` metadata. The file is human-readable but all writes should go through the `md` CLI to maintain consistency.
+- **Metadata** — Built-in keys are `status`, `priority`, and `depends-on`. Custom keys are supported — add any `* key: value` line you need.
+- **Concurrency** — Concurrent writes are safe. `meads` uses append-based optimistic locking so multiple processes (or AI agents) can write to `TASKS.md` simultaneously without corruption.
+- **AI-friendly** — The Markdown format is designed to be readable and writable by LLMs. Point an agent at `TASKS.md` and it can parse, query, and reason about your backlog.
+- **Minimal dependencies** — single static binary.

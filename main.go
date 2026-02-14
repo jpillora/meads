@@ -1,36 +1,22 @@
 package main
 
-import (
-	"fmt"
-	"os"
-)
+import "github.com/jpillora/opts"
+
+var version = "0.0.0-dev"
+
+type config struct {
+	Add   addCmd   `opts:"mode=cmd" help:"Add a new task"`
+	Del   delCmd   `opts:"mode=cmd" help:"Delete a task by ID"`
+	Ready readyCmd `opts:"mode=cmd" help:"List open tasks not blocked by dependencies"`
+}
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: md <command> [args]")
-		fmt.Fprintln(os.Stderr, "commands: add, del, ready")
-		os.Exit(1)
-	}
-	cmd := os.Args[1]
-	switch cmd {
-	case "add":
-		if err := cmdAdd(os.Args[2:]); err != nil {
-			fmt.Fprintf(os.Stderr, "md add: %s\n", err)
-			os.Exit(1)
-		}
-	case "del":
-		if err := cmdDel(os.Args[2:]); err != nil {
-			fmt.Fprintf(os.Stderr, "md del: %s\n", err)
-			os.Exit(1)
-		}
-	case "ready":
-		if err := cmdReady(); err != nil {
-			fmt.Fprintf(os.Stderr, "md ready: %s\n", err)
-			os.Exit(1)
-		}
-	default:
-		fmt.Fprintf(os.Stderr, "unknown command: %s\n", cmd)
-		fmt.Fprintln(os.Stderr, "commands: add, del, ready")
-		os.Exit(1)
-	}
+	c := config{}
+	opts.New(&c).
+		Name("md").
+		Version(version).
+		Summary("Git-native task tracking in a single Markdown file").
+		Repo("https://github.com/jpillora/meads").
+		Parse().
+		RunFatal()
 }

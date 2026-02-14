@@ -6,7 +6,9 @@ import (
 	"sort"
 )
 
-func cmdReady() error {
+type readyCmd struct{}
+
+func (c *readyCmd) Run() error {
 	data, err := os.ReadFile(tasksFile)
 	if err != nil {
 		if os.IsNotExist(err) {

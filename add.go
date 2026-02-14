@@ -10,15 +10,12 @@ import (
 
 var taskHeadingRe = regexp.MustCompile(`^## (\d{4}) `)
 
-func cmdAdd(args []string) error {
-	if len(args) < 1 {
-		return fmt.Errorf("usage: md add <title> [body]")
-	}
-	title := args[0]
-	var body string
-	if len(args) > 1 {
-		body = strings.Join(args[1:], " ")
-	}
+type addCmd struct {
+	Title string   `opts:"mode=arg" help:"Task title"`
+	Body  []string `opts:"mode=arg" help:"Task description"`
+}
+
+func (c *addCmd) Run() error {
 	// Ensure TASKS.md exists.
 	if _, err := os.Stat(tasksFile); os.IsNotExist(err) {
 		if err := os.WriteFile(tasksFile, []byte(""), 0644); err != nil {
@@ -30,7 +27,8 @@ func cmdAdd(args []string) error {
 		return err
 	}
 	nextID := nextTaskID(content)
-	entry := formatTask(nextID, title, body)
+	body := strings.Join(c.Body, " ")
+	entry := formatTask(nextID, c.Title, body)
 	var result string
 	if strings.TrimSpace(content) == "" {
 		result = entry
