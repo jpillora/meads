@@ -1,4 +1,4 @@
-package main
+package meads
 
 import (
 	"crypto/rand"
@@ -7,19 +7,17 @@ import (
 	"strings"
 )
 
-const tasksFile = "TASKS.md"
-
-// acquireLock appends a lock line to TASKS.md and checks if we won the race.
+// acquireLock appends a lock line to the file and checks if we won the race.
 // Returns the lock ID and file contents (without any lock lines) on success.
-func acquireLock() (string, string, error) {
+func acquireLock(file string) (string, string, error) {
 	id, err := randomID()
 	if err != nil {
 		return "", "", fmt.Errorf("generating lock id: %w", err)
 	}
 	lockLine := "\nlock:" + id + "\n"
-	f, err := os.OpenFile(tasksFile, os.O_APPEND|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(file, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
-		return "", "", fmt.Errorf("opening %s for lock: %w", tasksFile, err)
+		return "", "", fmt.Errorf("opening %s for lock: %w", file, err)
 	}
 	_, err = f.WriteString(lockLine)
 	f.Close()
@@ -27,9 +25,9 @@ func acquireLock() (string, string, error) {
 		return "", "", fmt.Errorf("writing lock: %w", err)
 	}
 	// Read back and check if we hold the lock.
-	data, err := os.ReadFile(tasksFile)
+	data, err := os.ReadFile(file)
 	if err != nil {
-		return "", "", fmt.Errorf("reading %s after lock: %w", tasksFile, err)
+		return "", "", fmt.Errorf("reading %s after lock: %w", file, err)
 	}
 	content := string(data)
 	// Find the first lock: line.
@@ -42,17 +40,17 @@ func acquireLock() (string, string, error) {
 			}
 			// Someone else won — clean up our lock line.
 			cleaned := strings.Replace(content, lockLine, "", 1)
-			os.WriteFile(tasksFile, []byte(cleaned), 0644)
+			os.WriteFile(file, []byte(cleaned), 0644)
 			return "", "", fmt.Errorf("lock contention: another writer holds the lock")
 		}
 	}
 	return "", "", fmt.Errorf("lock line not found after write")
 }
 
-// releaseLock writes the final content back to TASKS.md, removing all lock lines.
-func releaseLock(content string) error {
+// releaseLock writes the final content back to the file, removing all lock lines.
+func releaseLock(file, content string) error {
 	clean := stripLockLines(content)
-	return os.WriteFile(tasksFile, []byte(clean), 0644)
+	return os.WriteFile(file, []byte(clean), 0644)
 }
 
 func stripLockLines(s string) string {

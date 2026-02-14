@@ -1,20 +1,9 @@
-package main
+package meads
 
 import (
 	"strconv"
 	"strings"
 )
-
-// Task represents a single task parsed from TASKS.md.
-type Task struct {
-	ID        string
-	Title     string
-	Status    string
-	Priority  int
-	DependsOn string
-	Meta      map[string]string // all key-value pairs including status, priority, depends-on
-	Body      string            // freeform description after metadata
-}
 
 // ParseTasks parses the TASKS.md content and returns all tasks.
 func ParseTasks(content string) []Task {

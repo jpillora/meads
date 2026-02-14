@@ -1,4 +1,4 @@
-package main
+package meads
 
 import (
 	"testing"
@@ -224,6 +224,89 @@ func TestSplitHeading(t *testing.T) {
 		if id != tt.wantID || title != tt.wantTitle {
 			t.Errorf("splitHeading(%q) = (%q, %q), want (%q, %q)",
 				tt.input, id, title, tt.wantID, tt.wantTitle)
+		}
+	}
+}
+
+func TestFormatTask_Full(t *testing.T) {
+	task := Task{
+		ID:     "0001",
+		Title:  "Fix the login bug",
+		Status: "open",
+		Meta:   map[string]string{"status": "open", "priority": "3"},
+		Body:   "Some description.",
+	}
+	got := FormatTask(task)
+	want := "## 0001 Fix the login bug\n\n* status: open\n* priority: 3\n\nSome description.\n"
+	if got != want {
+		t.Errorf("FormatTask =\n%q\nwant\n%q", got, want)
+	}
+}
+
+func TestFormatTask_NoBody(t *testing.T) {
+	task := Task{
+		ID:    "0002",
+		Title: "No body",
+		Meta:  map[string]string{"status": "closed"},
+	}
+	got := FormatTask(task)
+	want := "## 0002 No body\n\n* status: closed\n"
+	if got != want {
+		t.Errorf("FormatTask =\n%q\nwant\n%q", got, want)
+	}
+}
+
+func TestFormatTask_NoMeta(t *testing.T) {
+	task := Task{
+		ID:    "0003",
+		Title: "Bare task",
+		Meta:  map[string]string{},
+		Body:  "Just a body.",
+	}
+	got := FormatTask(task)
+	want := "## 0003 Bare task\n\nJust a body.\n"
+	if got != want {
+		t.Errorf("FormatTask =\n%q\nwant\n%q", got, want)
+	}
+}
+
+func TestFormatTasks_RoundTrip(t *testing.T) {
+	input := `## 0001 First task
+
+* status: open
+* priority: 2
+
+Do the first thing.
+
+## 0002 Second task
+
+* status: closed
+* priority: 1
+
+Do the second thing.`
+
+	tasks := ParseTasks(input)
+	if len(tasks) != 2 {
+		t.Fatalf("expected 2 tasks, got %d", len(tasks))
+	}
+	output := FormatTasks(tasks)
+	// Re-parse the output and verify tasks are preserved.
+	tasks2 := ParseTasks(output)
+	if len(tasks2) != 2 {
+		t.Fatalf("round-trip: expected 2 tasks, got %d", len(tasks2))
+	}
+	for i := range tasks {
+		if tasks[i].ID != tasks2[i].ID {
+			t.Errorf("round-trip task %d: ID %q != %q", i, tasks[i].ID, tasks2[i].ID)
+		}
+		if tasks[i].Title != tasks2[i].Title {
+			t.Errorf("round-trip task %d: Title %q != %q", i, tasks[i].Title, tasks2[i].Title)
+		}
+		if tasks[i].Status != tasks2[i].Status {
+			t.Errorf("round-trip task %d: Status %q != %q", i, tasks[i].Status, tasks2[i].Status)
+		}
+		if tasks[i].Body != tasks2[i].Body {
+			t.Errorf("round-trip task %d: Body %q != %q", i, tasks[i].Body, tasks2[i].Body)
 		}
 	}
 }
