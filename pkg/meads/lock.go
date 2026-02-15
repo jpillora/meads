@@ -4,7 +4,9 @@ import (
 	"crypto/rand"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // acquireLock appends a lock line to the file and checks if we won the race.
@@ -14,7 +16,8 @@ func acquireLock(file string) (string, string, error) {
 	if err != nil {
 		return "", "", fmt.Errorf("generating lock id: %w", err)
 	}
-	lockLine := "\nlock:" + id + "\n"
+	now := time.Now().Unix()
+	lockLine := fmt.Sprintf("\nlock:%s:%d\n", id, now)
 	f, err := os.OpenFile(file, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		return "", "", fmt.Errorf("opening %s for lock: %w", file, err)
@@ -30,19 +33,31 @@ func acquireLock(file string) (string, string, error) {
 		return "", "", fmt.Errorf("reading %s after lock: %w", file, err)
 	}
 	content := string(data)
-	// Find the first lock: line.
+	// Find the first non-expired lock: line.
 	for _, line := range strings.Split(content, "\n") {
-		if strings.HasPrefix(line, "lock:") {
-			if line == "lock:"+id {
-				// We won. Strip all lock lines and return clean content.
-				clean := stripLockLines(content)
-				return id, clean, nil
-			}
-			// Someone else won — clean up our lock line.
-			cleaned := strings.Replace(content, lockLine, "", 1)
-			os.WriteFile(file, []byte(cleaned), 0644)
-			return "", "", fmt.Errorf("lock contention: another writer holds the lock")
+		if !strings.HasPrefix(line, "lock:") {
+			continue
 		}
+		// Parse timestamp from lock:<id>:<timestamp>
+		parts := strings.SplitN(line, ":", 3)
+		if len(parts) != 3 {
+			continue // malformed lock line, skip
+		}
+		ts, err := strconv.ParseInt(parts[2], 10, 64)
+		if err != nil {
+			continue // malformed timestamp, skip
+		}
+		// Expired locks (>60s) are ignored
+		if now-ts > 60 {
+			continue
+		}
+		if parts[1] == id {
+			// We won. Strip all lock lines and return clean content.
+			clean := stripLockLines(content)
+			return id, clean, nil
+		}
+		// Someone else won.
+		return "", "", fmt.Errorf("lock contention: another writer holds the lock")
 	}
 	return "", "", fmt.Errorf("lock line not found after write")
 }
