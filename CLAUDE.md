@@ -1,7 +1,5 @@
 # Meads (`md`) Task Tracking Context
 
-> **Context Recovery**: Run `md prime` after compaction, clear, or new session
-
 ## Agent Directives
 
 - After completing a task successfully, always git commit and git push

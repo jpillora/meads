@@ -1,7 +1,5 @@
 # Meads (`md`) Task Tracking Context
 
-> **Context Recovery**: Run `md prime --mcp` after compaction, clear, or new session
-
 ## Overview
 
 `md` is a git-native task tracker that stores all tasks in a single `TASKS.md` file. No database, no config files - just Markdown and git.
