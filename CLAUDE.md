@@ -42,9 +42,6 @@
 - `md add --depends-on=<id> "Task title"` - Add task with dependency
 - Tasks blocked by unclosed dependencies are excluded from `md ready`
 
-### Importing
-- `md import beads` - Import tasks from beads issue tracker
-
 ## Common Workflows
 
 **Starting a session:**
