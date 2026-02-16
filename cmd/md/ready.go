@@ -7,11 +7,12 @@ import (
 )
 
 type readyCmd struct {
-	Limit int `opts:"short=n" help:"Limit number of results"`
+	globals *globals
+	Limit   int `opts:"short=n" help:"Limit number of results"`
 }
 
 func (c *readyCmd) Run() error {
-	tasks, err := meads.Ready(tasksFile)
+	tasks, err := meads.Ready(c.globals.TasksFile)
 	if err != nil {
 		return err
 	}

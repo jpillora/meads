@@ -7,7 +7,8 @@ import (
 )
 
 type importCmd struct {
-	Target string `opts:"mode=arg" help:"Import target (e.g. beads)"`
+	globals *globals
+	Target  string `opts:"mode=arg" help:"Import target (e.g. beads)"`
 }
 
 func (c *importCmd) Run() error {
@@ -15,7 +16,7 @@ func (c *importCmd) Run() error {
 	if err != nil {
 		return err
 	}
-	result, err := meads.RunImport(tasksFile, imp)
+	result, err := meads.RunImport(c.globals.TasksFile, imp)
 	if err != nil {
 		return err
 	}

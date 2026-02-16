@@ -8,8 +8,9 @@ import (
 )
 
 type addDepCmd struct {
-	Child  string `opts:"mode=arg" help:"Child task ID"`
-	Parent string `opts:"mode=arg" help:"Parent task ID to add as dependency"`
+	globals *globals
+	Child   string `opts:"mode=arg" help:"Child task ID"`
+	Parent  string `opts:"mode=arg" help:"Parent task ID to add as dependency"`
 }
 
 func (c *addDepCmd) Run() error {
@@ -24,7 +25,7 @@ func (c *addDepCmd) Run() error {
 	if child == parent {
 		return fmt.Errorf("a task cannot depend on itself")
 	}
-	err = meads.Update(tasksFile, child, func(t *meads.Task) {
+	err = meads.Update(c.globals.TasksFile, child, func(t *meads.Task) {
 		t.AddDep(parent)
 	})
 	if err != nil {

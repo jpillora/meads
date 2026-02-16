@@ -8,8 +8,9 @@ import (
 )
 
 type setStatusCmd struct {
-	ID     string `opts:"mode=arg" help:"Task ID"`
-	Status string `opts:"mode=arg" help:"New status (draft, open, inprogress, closed)"`
+	globals *globals
+	ID      string `opts:"mode=arg" help:"Task ID"`
+	Status  string `opts:"mode=arg" help:"New status (draft, open, inprogress, closed)"`
 }
 
 func (c *setStatusCmd) Run() error {
@@ -17,7 +18,7 @@ func (c *setStatusCmd) Run() error {
 	if err != nil {
 		return fmt.Errorf("invalid task ID: %s", c.ID)
 	}
-	err = meads.Update(tasksFile, id, func(t *meads.Task) {
+	err = meads.Update(c.globals.TasksFile, id, func(t *meads.Task) {
 		t.SetStatus(c.Status)
 	})
 	if err != nil {

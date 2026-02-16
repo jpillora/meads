@@ -7,12 +7,13 @@ import (
 )
 
 type listCmd struct {
-	JSON bool `help:"Output tasks as JSON"`
-	Md   bool `opts:"name=md" help:"Output tasks as markdown"`
+	globals *globals
+	JSON    bool `help:"Output tasks as JSON"`
+	Md      bool `opts:"name=md" help:"Output tasks as markdown"`
 }
 
 func (c *listCmd) Run() error {
-	tasks, err := meads.Get(tasksFile, nil)
+	tasks, err := meads.Get(c.globals.TasksFile, nil)
 	if err != nil {
 		return err
 	}

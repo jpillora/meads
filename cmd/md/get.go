@@ -10,9 +10,10 @@ import (
 )
 
 type getCmd struct {
-	JSON  bool     `help:"Output tasks as JSON"`
-	Short bool     `help:"Output short format (ID TITLE)"`
-	IDs   []string `opts:"mode=arg,min=1" help:"Task IDs to retrieve"`
+	globals *globals
+	JSON    bool     `help:"Output tasks as JSON"`
+	Short   bool     `help:"Output short format (ID TITLE)"`
+	IDs     []string `opts:"mode=arg,min=1" help:"Task IDs to retrieve"`
 }
 
 func (c *getCmd) Run() error {
@@ -24,7 +25,7 @@ func (c *getCmd) Run() error {
 		}
 		ids[i] = n
 	}
-	tasks, err := meads.Get(tasksFile, ids)
+	tasks, err := meads.Get(c.globals.TasksFile, ids)
 	if err != nil {
 		return err
 	}

@@ -10,6 +10,7 @@ import (
 )
 
 type addCmd struct {
+	globals   *globals
 	Args      []string `opts:"mode=arg,min=0" help:"Input text (e.g. 'bug: Fix login P3')"`
 	Title     string   `help:"Set task title"`
 	Status    string   `help:"Set task status (draft, open, inprogress, closed)"`
@@ -114,7 +115,7 @@ func (c *addCmd) Run() error {
 	if body != "" {
 		t.Body = body
 	}
-	id, err := meads.Add(tasksFile, t)
+	id, err := meads.Add(c.globals.TasksFile, t)
 	if err != nil {
 		return err
 	}

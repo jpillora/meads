@@ -7,9 +7,11 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-type mcpCmd struct{}
+type mcpCmd struct {
+	globals *globals
+}
 
 func (c *mcpCmd) Run() error {
-	s := mcppkg.NewServer(tasksFile, version)
+	s := mcppkg.NewServer(c.globals.TasksFile, version)
 	return s.Run(context.Background(), &mcp.StdioTransport{})
 }

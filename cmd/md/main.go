@@ -8,16 +8,20 @@ import (
 
 var version = "0.0.0-dev"
 
-var tasksFile = getTasksFile()
-
-func getTasksFile() string {
+func defaultTasksFile() string {
 	if v := os.Getenv("MD_TASKS"); v != "" {
 		return v
 	}
 	return "TASKS.md"
 }
 
-type config struct {
+type globals struct {
+	TasksFile  string `help:"the tasks markdown file to manage"`
+	WebhookURL string `help:"a url to POST to with {meads:true,action,data}"`
+}
+
+type root struct {
+	Globals    globals       `opts:"mode=embedded"`
 	Add        addCmd        `opts:"mode=cmd" help:"Add a new task"`
 	Get        getCmd        `opts:"mode=cmd" help:"Get tasks by ID"`
 	List       listCmd       `opts:"mode=cmd" help:"List all tasks"`
@@ -33,7 +37,21 @@ type config struct {
 }
 
 func main() {
-	c := config{}
+	c := root{}
+	c.Globals.TasksFile = defaultTasksFile()
+	g := &c.Globals
+	c.Add.globals = g
+	c.Get.globals = g
+	c.List.globals = g
+	c.Del.globals = g
+	c.Update.globals = g
+	c.SetStatus.globals = g
+	c.AddDep.globals = g
+	c.Ready.globals = g
+	c.Import.globals = g
+	c.Mcp.globals = g
+	c.AutoDelete.globals = g
+
 	opts.New(&c).
 		Name("md").
 		Version(version).

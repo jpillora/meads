@@ -8,7 +8,8 @@ import (
 )
 
 type delCmd struct {
-	ID string `opts:"mode=arg" help:"Task ID to delete"`
+	globals *globals
+	ID      string `opts:"mode=arg" help:"Task ID to delete"`
 }
 
 func (c *delCmd) Run() error {
@@ -16,7 +17,7 @@ func (c *delCmd) Run() error {
 	if err != nil {
 		return fmt.Errorf("invalid task ID: %s", c.ID)
 	}
-	if err := meads.Delete(tasksFile, id); err != nil {
+	if err := meads.Delete(c.globals.TasksFile, id); err != nil {
 		return err
 	}
 	fmt.Printf("deleted task %d\n", id)

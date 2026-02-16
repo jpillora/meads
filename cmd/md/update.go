@@ -8,6 +8,7 @@ import (
 )
 
 type updateCmd struct {
+	globals  *globals
 	ID       string `opts:"mode=arg" help:"Task ID to update"`
 	Status   string `help:"Set task status"`
 	Priority string `help:"Set task priority"`
@@ -19,7 +20,7 @@ func (c *updateCmd) Run() error {
 	if err != nil {
 		return fmt.Errorf("invalid task ID: %s", c.ID)
 	}
-	err = meads.Update(tasksFile, id, func(t *meads.Task) {
+	err = meads.Update(c.globals.TasksFile, id, func(t *meads.Task) {
 		if c.Status != "" {
 			t.SetStatus(c.Status)
 		}

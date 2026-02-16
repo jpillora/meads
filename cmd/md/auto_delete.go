@@ -11,6 +11,7 @@ import (
 )
 
 type autoDeleteCmd struct {
+	globals *globals
 	Disable bool `opts:"mode=flag" help:"Disable auto-delete by removing the pre-commit hook"`
 	Status  bool `opts:"mode=flag" help:"Check if auto-delete is enabled"`
 }
@@ -45,7 +46,8 @@ func (c *autoDeleteCmd) runFromHook() error {
 	}
 
 	// Find and delete all closed tasks
-	tasks, err := meads.Get(tasksFile, nil)
+	tf := c.globals.TasksFile
+	tasks, err := meads.Get(tf, nil)
 	if err != nil {
 		return fmt.Errorf("reading tasks: %w", err)
 	}
@@ -63,14 +65,14 @@ func (c *autoDeleteCmd) runFromHook() error {
 
 	// Delete each closed task
 	for _, id := range closedIDs {
-		if err := meads.Delete(tasksFile, id); err != nil {
+		if err := meads.Delete(tf, id); err != nil {
 			return fmt.Errorf("deleting task %d: %w", id, err)
 		}
 		fmt.Fprintf(os.Stderr, "md: auto-deleted closed task %d\n", id)
 	}
 
 	// Amend the commit to include deletions
-	cmd := exec.Command("git", "add", tasksFile)
+	cmd := exec.Command("git", "add", tf)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("staging TASKS.md: %w", err)
 	}
@@ -105,13 +107,13 @@ func (c *autoDeleteCmd) isOnDefaultBranch() bool {
 
 func (c *autoDeleteCmd) isTasksFileClean() bool {
 	// Check for unstaged changes
-	cmd := exec.Command("git", "diff", "--quiet", "HEAD", "--", tasksFile)
+	cmd := exec.Command("git", "diff", "--quiet", "HEAD", "--", c.globals.TasksFile)
 	if err := cmd.Run(); err != nil {
 		return false // Has unstaged changes
 	}
 
 	// Check for staged changes
-	cmd = exec.Command("git", "diff", "--quiet", "--cached", "--", tasksFile)
+	cmd = exec.Command("git", "diff", "--quiet", "--cached", "--", c.globals.TasksFile)
 	if err := cmd.Run(); err != nil {
 		return false // Has staged changes
 	}
