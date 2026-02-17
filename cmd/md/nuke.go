@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -70,6 +71,20 @@ func (c *nukeCmd) Run() error {
 		trimmed := strings.TrimSpace(line)
 		return trimmed == ".beads/" || trimmed == ".beads"
 	}, &errors)
+
+	// 6. Remove "bd prime" hooks from Claude Code settings
+	claudeSettingsPaths := []string{
+		filepath.Join(repoRoot, ".claude", "settings.json"),
+		filepath.Join(repoRoot, ".claude", "settings.local.json"),
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		claudeSettingsPaths = append(claudeSettingsPaths,
+			filepath.Join(home, ".claude", "settings.json"),
+		)
+	}
+	for _, p := range claudeSettingsPaths {
+		c.removeBeadsClaudeHooks(p, &errors)
+	}
 
 	if len(errors) > 0 {
 		return fmt.Errorf("completed with errors:\n  %s", strings.Join(errors, "\n  "))
@@ -228,6 +243,123 @@ func (c *nukeCmd) cleanFile(path string, shouldRemove func(string) bool, errors 
 	} else {
 		fmt.Printf("cleaned %s\n", name)
 	}
+}
+
+// removeBeadsClaudeHooks removes hooks containing "bd prime" from a Claude
+// Code settings.json file. It precisely removes only individual hook handlers
+// whose command contains "bd prime", cleaning up empty matcher groups and
+// empty event arrays as it goes.
+func (c *nukeCmd) removeBeadsClaudeHooks(path string, errors *[]string) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return // file doesn't exist, skip silently
+	}
+
+	// Parse as generic JSON to preserve all other fields
+	var settings map[string]json.RawMessage
+	if err := json.Unmarshal(content, &settings); err != nil {
+		return
+	}
+
+	hooksRaw, ok := settings["hooks"]
+	if !ok {
+		return
+	}
+
+	// Parse hooks: map of event name -> array of matcher groups
+	var hooks map[string]json.RawMessage
+	if err := json.Unmarshal(hooksRaw, &hooks); err != nil {
+		return
+	}
+
+	changed := false
+	for eventName, matcherGroupsRaw := range hooks {
+		var matcherGroups []json.RawMessage
+		if err := json.Unmarshal(matcherGroupsRaw, &matcherGroups); err != nil {
+			continue
+		}
+
+		var keptGroups []json.RawMessage
+		for _, groupRaw := range matcherGroups {
+			var group map[string]json.RawMessage
+			if err := json.Unmarshal(groupRaw, &group); err != nil {
+				keptGroups = append(keptGroups, groupRaw)
+				continue
+			}
+
+			handlersRaw, ok := group["hooks"]
+			if !ok {
+				keptGroups = append(keptGroups, groupRaw)
+				continue
+			}
+
+			var handlers []map[string]interface{}
+			if err := json.Unmarshal(handlersRaw, &handlers); err != nil {
+				keptGroups = append(keptGroups, groupRaw)
+				continue
+			}
+
+			var keptHandlers []map[string]interface{}
+			for _, h := range handlers {
+				cmd, _ := h["command"].(string)
+				if isBeadsPrimeCommand(cmd) {
+					changed = true
+					continue
+				}
+				keptHandlers = append(keptHandlers, h)
+			}
+
+			if len(keptHandlers) == 0 {
+				// All handlers removed, drop the entire matcher group
+				continue
+			}
+
+			// Re-serialize the group with filtered handlers
+			newHandlers, _ := json.Marshal(keptHandlers)
+			group["hooks"] = newHandlers
+			newGroup, _ := json.Marshal(group)
+			keptGroups = append(keptGroups, newGroup)
+		}
+
+		if len(keptGroups) == 0 {
+			delete(hooks, eventName)
+		} else {
+			newGroups, _ := json.Marshal(keptGroups)
+			hooks[eventName] = newGroups
+		}
+	}
+
+	if !changed {
+		return
+	}
+
+	// Serialize hooks back
+	newHooks, _ := json.Marshal(hooks)
+	settings["hooks"] = newHooks
+
+	// Write back with indentation to match typical settings format
+	out, err := json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		*errors = append(*errors, fmt.Sprintf("serializing %s: %v", filepath.Base(path), err))
+		return
+	}
+
+	if err := os.WriteFile(path, append(out, '\n'), 0600); err != nil {
+		*errors = append(*errors, fmt.Sprintf("writing %s: %v", filepath.Base(path), err))
+		return
+	}
+
+	rel, _ := filepath.Rel(".", path)
+	if rel == "" || strings.HasPrefix(rel, "..") {
+		rel = path
+	}
+	fmt.Printf("removed bd prime hooks from %s\n", rel)
+}
+
+// isBeadsPrimeCommand checks if a command string is a "bd prime" invocation.
+func isBeadsPrimeCommand(cmd string) bool {
+	cmd = strings.TrimSpace(cmd)
+	return cmd == "bd prime" || strings.HasPrefix(cmd, "bd prime ")
 }
 
 func gitDir() (string, error) {
