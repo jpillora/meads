@@ -34,6 +34,7 @@ type root struct {
 	Prime      primeCmd      `opts:"mode=cmd" help:"Print LLM context for using md"`
 	Mcp        mcpCmd        `opts:"mode=cmd" help:"Start MCP server over stdio"`
 	AutoDelete autoDeleteCmd `opts:"mode=cmd,name=auto-delete" help:"Auto-delete closed tasks via git hook"`
+	Nuke       nukeCmd      `opts:"mode=cmd" help:"Completely remove beads from the current repository"`
 }
 
 func main() {
@@ -51,6 +52,7 @@ func main() {
 	c.Import.globals = g
 	c.Mcp.globals = g
 	c.AutoDelete.globals = g
+	c.Nuke.globals = g
 
 	opts.New(&c).
 		Name("md").
