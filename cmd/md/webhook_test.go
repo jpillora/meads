@@ -88,6 +88,40 @@ func TestPostWebhook_Unix(t *testing.T) {
 	}
 }
 
+func TestPostWebhook_UnixWithPath(t *testing.T) {
+	dir := t.TempDir()
+	socketPath := filepath.Join(dir, "test.sock")
+
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer listener.Close()
+
+	var receivedPath string
+	var received webhookPayload
+	srv := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			receivedPath = r.URL.Path
+			body, _ := io.ReadAll(r.Body)
+			json.Unmarshal(body, &received)
+			w.WriteHeader(http.StatusOK)
+		}),
+	}
+	go srv.Serve(listener)
+	defer srv.Close()
+
+	g := &globals{WebhookURL: "unix://" + socketPath + ":/hooks/meads"}
+	postWebhook(g, "add", map[string]int{"id": 1})
+
+	if receivedPath != "/hooks/meads" {
+		t.Errorf("path = %q, want %q", receivedPath, "/hooks/meads")
+	}
+	if received.Action != "add" {
+		t.Errorf("action = %q, want %q", received.Action, "add")
+	}
+}
+
 func TestPostWebhook_ServerError(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -105,6 +139,28 @@ func TestPostWebhook_Unreachable(t *testing.T) {
 	postWebhook(g, "add", nil)
 }
 
+func TestParseUnixURL(t *testing.T) {
+	tests := []struct {
+		input      string
+		wantSocket string
+		wantPath   string
+	}{
+		{"unix:///var/run/app.sock", "/var/run/app.sock", "/"},
+		{"unix:///var/run/app.sock:/webhook", "/var/run/app.sock", "/webhook"},
+		{"unix:///var/run/app.sock:/api/hooks", "/var/run/app.sock", "/api/hooks"},
+		{"unix:///tmp/s.sock:", "/tmp/s.sock", "/"},
+	}
+	for _, tt := range tests {
+		sock, path := parseUnixURL(tt.input)
+		if sock != tt.wantSocket {
+			t.Errorf("parseUnixURL(%q) socket = %q, want %q", tt.input, sock, tt.wantSocket)
+		}
+		if path != tt.wantPath {
+			t.Errorf("parseUnixURL(%q) path = %q, want %q", tt.input, path, tt.wantPath)
+		}
+	}
+}
+
 func TestWebhookHTTPURL(t *testing.T) {
 	tests := []struct {
 		input string
@@ -113,6 +169,8 @@ func TestWebhookHTTPURL(t *testing.T) {
 		{"http://example.com/hook", "http://example.com/hook"},
 		{"https://example.com/hook", "https://example.com/hook"},
 		{"unix:///var/run/app.sock", "http://localhost/"},
+		{"unix:///var/run/app.sock:/webhook", "http://localhost/webhook"},
+		{"unix:///var/run/app.sock:/api/hooks", "http://localhost/api/hooks"},
 	}
 	for _, tt := range tests {
 		got := webhookHTTPURL(tt.input)

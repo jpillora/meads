@@ -55,11 +55,29 @@ func postWebhook(g *globals, action string, data any) {
 	}
 }
 
+// parseUnixURL splits a unix:// URL into socket path and HTTP path.
+// Format: unix:///path/to/socket:/http/path
+// The :/http/path suffix is optional and defaults to /.
+func parseUnixURL(rawURL string) (socketPath, httpPath string) {
+	rest := strings.TrimPrefix(rawURL, "unix://")
+	if i := strings.LastIndex(rest, ":"); i > 0 {
+		socketPath = rest[:i]
+		httpPath = rest[i+1:]
+	} else {
+		socketPath = rest
+		httpPath = "/"
+	}
+	if httpPath == "" {
+		httpPath = "/"
+	}
+	return
+}
+
 // webhookClient returns an http.Client configured for the given URL.
 // For unix:// URLs, it dials the Unix socket.
 func webhookClient(rawURL string) *http.Client {
 	if strings.HasPrefix(rawURL, "unix://") {
-		socketPath := strings.TrimPrefix(rawURL, "unix://")
+		socketPath, _ := parseUnixURL(rawURL)
 		return &http.Client{
 			Transport: &http.Transport{
 				DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
@@ -72,10 +90,11 @@ func webhookClient(rawURL string) *http.Client {
 }
 
 // webhookHTTPURL converts the webhook URL to a standard HTTP URL.
-// For unix:// URLs, returns http://localhost/ since the transport handles routing.
+// For unix:// URLs, extracts the HTTP path from the colon-separated suffix.
 func webhookHTTPURL(rawURL string) string {
 	if strings.HasPrefix(rawURL, "unix://") {
-		return "http://localhost/"
+		_, httpPath := parseUnixURL(rawURL)
+		return "http://localhost" + httpPath
 	}
 	return rawURL
 }
