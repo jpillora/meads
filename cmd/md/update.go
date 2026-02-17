@@ -20,6 +20,7 @@ func (c *updateCmd) Run() error {
 	if err != nil {
 		return fmt.Errorf("invalid task ID: %s", c.ID)
 	}
+	var updated meads.Task
 	err = meads.Update(c.globals.TasksFile, id, func(t *meads.Task) {
 		if c.Status != "" {
 			t.SetStatus(c.Status)
@@ -30,10 +31,12 @@ func (c *updateCmd) Run() error {
 		if c.Title != "" {
 			t.Title = c.Title
 		}
+		updated = *t
 	})
 	if err != nil {
 		return err
 	}
+	postWebhook(c.globals, "update", updated)
 	fmt.Printf("updated task %d\n", id)
 	return nil
 }

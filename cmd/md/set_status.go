@@ -18,12 +18,15 @@ func (c *setStatusCmd) Run() error {
 	if err != nil {
 		return fmt.Errorf("invalid task ID: %s", c.ID)
 	}
+	var updated meads.Task
 	err = meads.Update(c.globals.TasksFile, id, func(t *meads.Task) {
 		t.SetStatus(c.Status)
+		updated = *t
 	})
 	if err != nil {
 		return err
 	}
+	postWebhook(c.globals, "update", updated)
 	fmt.Printf("task %d status set to %s\n", id, c.Status)
 	return nil
 }

@@ -25,12 +25,15 @@ func (c *addDepCmd) Run() error {
 	if child == parent {
 		return fmt.Errorf("a task cannot depend on itself")
 	}
+	var updated meads.Task
 	err = meads.Update(c.globals.TasksFile, child, func(t *meads.Task) {
 		t.AddDep(parent)
+		updated = *t
 	})
 	if err != nil {
 		return err
 	}
+	postWebhook(c.globals, "update", updated)
 	fmt.Printf("task %d now depends on %d\n", child, parent)
 	return nil
 }

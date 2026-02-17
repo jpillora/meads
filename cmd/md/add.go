@@ -119,6 +119,8 @@ func (c *addCmd) Run() error {
 	if err != nil {
 		return err
 	}
+	t.ID = id
+	postWebhook(c.globals, "add", t)
 	fmt.Printf("added task %d\n", id)
 	return nil
 }

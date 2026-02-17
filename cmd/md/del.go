@@ -20,6 +20,7 @@ func (c *delCmd) Run() error {
 	if err := meads.Delete(c.globals.TasksFile, id); err != nil {
 		return err
 	}
+	postWebhook(c.globals, "delete", map[string]int{"id": id})
 	fmt.Printf("deleted task %d\n", id)
 	return nil
 }
