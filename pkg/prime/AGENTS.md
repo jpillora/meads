@@ -56,6 +56,7 @@ md set-status <id> closed    # Mark task done
 
 ## Rules
 - **Do NOT read or edit TASKS.md directly** - always use `md` commands to read and modify tasks
+- **ALWAYS include changes to TASKS.md in the next git commit after task is closed**
 - Task IDs are auto-assigned integers
 - Git handles versioning and history
 - The file uses optimistic locking for concurrent access

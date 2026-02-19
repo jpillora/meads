@@ -47,5 +47,6 @@ The `md` MCP server is enabled. **Use MCP tools instead of CLI commands** for al
 ## Rules
 - **Do NOT read or edit TASKS.md directly** - always use MCP tools to read and modify tasks
 - **Do NOT shell out to `md` CLI commands** - use the MCP tools above
+- **ALWAYS include changes to TASKS.md in the next git commit after task is closed**
 - Task IDs are auto-assigned integers
 - Git handles versioning and history
