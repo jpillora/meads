@@ -72,7 +72,7 @@ func TestAddAndGet(t *testing.T) {
 		"title":    "Test task",
 		"priority": "P1",
 		"type":     "bug",
-		"body":     "Some details",
+		"description": "Some details",
 	})
 	var addOut struct{ ID int }
 	unmarshalContent(t, addRes, &addOut)
@@ -90,7 +90,7 @@ func TestAddAndGet(t *testing.T) {
 		Status   string `json:"status"`
 		Priority string `json:"priority"`
 		Type     string `json:"type"`
-		Body     string `json:"body"`
+		Description string `json:"description"`
 	}
 	unmarshalContent(t, getRes, &task)
 	if task.Title != "Test task" {
@@ -105,8 +105,8 @@ func TestAddAndGet(t *testing.T) {
 	if task.Status != "open" {
 		t.Errorf("expected status 'open', got %q", task.Status)
 	}
-	if task.Body != "Some details" {
-		t.Errorf("expected body 'Some details', got %q", task.Body)
+	if task.Description != "Some details" {
+		t.Errorf("expected description 'Some details', got %q", task.Description)
 	}
 }
 

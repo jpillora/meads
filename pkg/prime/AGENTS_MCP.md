@@ -14,15 +14,15 @@ The `md` MCP server is enabled. **Use MCP tools instead of CLI commands** for al
 - `get_task(id)` - Get a specific task by ID
 
 ### Creating Tasks
-- `add_task(title, [status], [priority], [type], [body])` - Add a new task
+- `add_task(title, [status], [priority], [type], [description])` - Add a new task
   - `title` (required): task title
   - `status`: draft, open, inprogress, closed
   - `priority`: P0-P9 (0=critical, 4=backlog, default=P2)
   - `type`: bug, task, feature
-  - `body`: detailed description
+  - `description`: detailed description
 
 ### Updating Tasks
-- `update_task(id, [status], [priority], [title])` - Update a task
+- `update_task(id, [status], [priority], [title], [description])` - Update a task
 - `delete_task(id)` - Delete a task
 
 ### Dependencies
@@ -38,7 +38,7 @@ The `md` MCP server is enabled. **Use MCP tools instead of CLI commands** for al
 
 **Creating dependent tasks:**
 1. Call `add_task(title="Build API endpoint", type="feature")` - returns new task ID
-2. Call `add_task(title="Write tests for API", body="Cover edge cases")`  - returns new task ID
+2. Call `add_task(title="Write tests for API", description="Cover edge cases")`  - returns new task ID
 3. Call `add_dependency(child_id=<test_task_id>, parent_id=<api_task_id>)`
 
 **Completing work:**

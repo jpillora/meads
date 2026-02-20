@@ -23,6 +23,7 @@ type globals struct {
 type root struct {
 	Globals    globals       `opts:"mode=embedded"`
 	Add         addCmd         `opts:"mode=cmd,group=Basic" help:"Add a new task"`
+	Create      createCmd      `opts:"mode=cmd,group=Basic" help:"Create a new task (alias for add)"`
 	Get         getCmd         `opts:"mode=cmd,group=Basic" help:"Get tasks by ID"`
 	List        listCmd        `opts:"mode=cmd,group=Basic" help:"List all tasks"`
 	Del         delCmd         `opts:"mode=cmd,group=Basic" help:"Delete a task by ID"`
@@ -42,6 +43,8 @@ func main() {
 	c.Globals.TasksFile = defaultTasksFile()
 	g := &c.Globals
 	c.Add.globals = g
+	c.Create.globals = g
+
 	c.Get.globals = g
 	c.List.globals = g
 	c.Del.globals = g

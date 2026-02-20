@@ -56,8 +56,8 @@ type beadIssue struct {
 
 func beadToTask(b beadIssue) Task {
 	t := Task{
-		Title: b.Title,
-		Body:  b.Description,
+		Title:       b.Title,
+		Description: b.Description,
 	}
 	t.ensureMeta()
 	// Status mapping

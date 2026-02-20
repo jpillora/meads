@@ -10,15 +10,27 @@ import (
 )
 
 type addCmd struct {
-	globals   *globals
-	Args      []string `opts:"mode=arg,min=0" help:"Input text (e.g. 'bug: Fix login P3')"`
-	Title     string   `help:"Set task title"`
-	Status    string   `help:"Set task status (draft, open, inprogress, closed)"`
-	Priority  string   `help:"Set task priority (1-9)"`
-	Type      string   `help:"Set task type (bug, task, feature)"`
-	DependsOn string   `opts:"name=depends-on" help:"Set dependency task ID"`
-	Body      string   `help:"Set task body"`
-	Draft     bool     `help:"Create task with draft status"`
+	globals     *globals
+	Args        []string `opts:"mode=arg,min=0" help:"Input text (e.g. 'bug: Fix login P3')"`
+	Title       string   `help:"Set task title"`
+	Status      string   `help:"Set task status (draft, open, inprogress, closed)"`
+	Priority    string   `help:"Set task priority (1-9)"`
+	Type        string   `help:"Set task type (bug, task, feature)"`
+	DependsOn   string   `opts:"name=depends-on" help:"Set dependency task ID"`
+	Description string   `help:"Set task description"`
+	Draft       bool     `help:"Create task with draft status"`
+}
+
+type createCmd struct {
+	globals     *globals
+	Args        []string `opts:"mode=arg,min=0" help:"Input text (e.g. 'bug: Fix login P3')"`
+	Title       string   `help:"Set task title"`
+	Status      string   `help:"Set task status (draft, open, inprogress, closed)"`
+	Priority    string   `help:"Set task priority (1-9)"`
+	Type        string   `help:"Set task type (bug, task, feature)"`
+	DependsOn   string   `opts:"name=depends-on" help:"Set dependency task ID"`
+	Description string   `help:"Set task description"`
+	Draft       bool     `help:"Create task with draft status"`
 }
 
 var (
@@ -27,15 +39,17 @@ var (
 )
 
 func (c *addCmd) Run() error {
-	title := c.Title
-	status := c.Status
-	priority := c.Priority
-	typ := c.Type
-	dependsOn := c.DependsOn
-	body := c.Body
+	return runAdd(c.globals, c.Args, c.Title, c.Status, c.Priority, c.Type, c.DependsOn, c.Description, c.Draft)
+}
+
+func (c *createCmd) Run() error {
+	return runAdd(c.globals, c.Args, c.Title, c.Status, c.Priority, c.Type, c.DependsOn, c.Description, c.Draft)
+}
+
+func runAdd(g *globals, args []string, title, status, priority, typ, dependsOn, description string, draft bool) error {
 	// Parse args if provided
-	if len(c.Args) > 0 {
-		input := strings.Join(c.Args, " ")
+	if len(args) > 0 {
+		input := strings.Join(args, " ")
 		// (1) Extract type prefix
 		var parsedType string
 		if m := typeRe.FindStringSubmatch(input); m != nil {
@@ -48,11 +62,11 @@ func (c *addCmd) Run() error {
 			parsedPriority = m[0] // full "P\d" match
 			input = strings.TrimSpace(priorityRe.ReplaceAllString(input, ""))
 		}
-		// (3) Extract title (everything before first period), remainder is body
-		var parsedTitle, parsedBody string
+		// (3) Extract title (everything before first period), remainder is description
+		var parsedTitle, parsedDescription string
 		if idx := strings.Index(input, "."); idx >= 0 {
 			parsedTitle = strings.TrimSpace(input[:idx])
-			parsedBody = strings.TrimSpace(input[idx+1:])
+			parsedDescription = strings.TrimSpace(input[idx+1:])
 		} else {
 			parsedTitle = strings.TrimSpace(input)
 		}
@@ -66,8 +80,8 @@ func (c *addCmd) Run() error {
 		if title != "" && parsedTitle != "" {
 			return fmt.Errorf("title set by both flag and argument")
 		}
-		if body != "" && parsedBody != "" {
-			return fmt.Errorf("body set by both flag and argument")
+		if description != "" && parsedDescription != "" {
+			return fmt.Errorf("description set by both flag and argument")
 		}
 		// Apply parsed values
 		if parsedType != "" {
@@ -79,15 +93,15 @@ func (c *addCmd) Run() error {
 		if parsedTitle != "" {
 			title = parsedTitle
 		}
-		if parsedBody != "" {
-			body = parsedBody
+		if parsedDescription != "" {
+			description = parsedDescription
 		}
 	}
 	if title == "" {
 		return fmt.Errorf("title is required")
 	}
 	// Default status
-	if c.Draft {
+	if draft {
 		if status != "" {
 			return fmt.Errorf("cannot use --draft with --status")
 		}
@@ -112,15 +126,15 @@ func (c *addCmd) Run() error {
 	if typ != "" {
 		t.SetType(typ)
 	}
-	if body != "" {
-		t.Body = body
+	if description != "" {
+		t.Description = description
 	}
-	id, err := meads.Add(c.globals.TasksFile, t)
+	id, err := meads.Add(g.TasksFile, t)
 	if err != nil {
 		return err
 	}
 	t.ID = id
-	postWebhook(c.globals, "add", t)
+	postWebhook(g, "add", t)
 	fmt.Printf("added task %d\n", id)
 	return nil
 }

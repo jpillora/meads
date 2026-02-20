@@ -6,16 +6,16 @@ import (
 	"testing"
 )
 
-func TestUpdate_Body(t *testing.T) {
+func TestUpdate_Description(t *testing.T) {
 	path := tempTaskFile(t, "")
 	// Create a task to update.
 	id, err := Add(path, Task{Title: "Test task", Status: "open"})
 	if err != nil {
 		t.Fatalf("Add failed: %v", err)
 	}
-	// Update with a simple body.
+	// Update with a simple description.
 	err = Update(path, id, func(t *Task) {
-		t.Body = "simple body"
+		t.Description = "simple description"
 	})
 	if err != nil {
 		t.Fatalf("Update failed: %v", err)
@@ -24,18 +24,18 @@ func TestUpdate_Body(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get failed: %v", err)
 	}
-	if tasks[0].Body != "simple body" {
-		t.Errorf("Body = %q, want %q", tasks[0].Body, "simple body")
+	if tasks[0].Description != "simple description" {
+		t.Errorf("Description = %q, want %q", tasks[0].Description, "simple description")
 	}
 }
 
-func TestUpdate_MultilineBody(t *testing.T) {
+func TestUpdate_MultilineDescription(t *testing.T) {
 	path := tempTaskFile(t, "")
 	id, err := Add(path, Task{Title: "Crash report", Status: "open"})
 	if err != nil {
 		t.Fatalf("Add failed: %v", err)
 	}
-	multilineBody := `rais-control-prod crashed with: panic: reflect: call of reflect.Value.Set on zero Value.
+	multilineDesc := `rais-control-prod crashed with: panic: reflect: call of reflect.Value.Set on zero Value.
 
 Stack trace:
 - reflect.Value.Set (reflect/value.go:2126)
@@ -45,38 +45,38 @@ Stack trace:
 A nil map value inside the state struct causes reflect.Value.Set on a zero value.`
 
 	err = Update(path, id, func(t *Task) {
-		t.Body = multilineBody
+		t.Description = multilineDesc
 	})
 	if err != nil {
 		t.Fatalf("Update failed: %v", err)
 	}
-	// Read back and verify the multiline body survives the round-trip.
+	// Read back and verify the multiline description survives the round-trip.
 	tasks, err := Get(path, []int{id})
 	if err != nil {
 		t.Fatalf("Get failed: %v", err)
 	}
-	if tasks[0].Body != multilineBody {
-		t.Errorf("Body round-trip failed.\ngot:\n%s\nwant:\n%s", tasks[0].Body, multilineBody)
+	if tasks[0].Description != multilineDesc {
+		t.Errorf("Description round-trip failed.\ngot:\n%s\nwant:\n%s", tasks[0].Description, multilineDesc)
 	}
-	// Also verify the raw file contains the body text.
+	// Also verify the raw file contains the description text.
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("ReadFile failed: %v", err)
 	}
 	if !strings.Contains(string(data), "Stack trace:") {
-		t.Error("raw file does not contain multiline body content")
+		t.Error("raw file does not contain multiline description content")
 	}
 }
 
-func TestUpdate_BodyReplace(t *testing.T) {
+func TestUpdate_DescriptionReplace(t *testing.T) {
 	path := tempTaskFile(t, "")
-	id, err := Add(path, Task{Title: "Task with body", Status: "open", Body: "original body"})
+	id, err := Add(path, Task{Title: "Task with description", Status: "open", Description: "original description"})
 	if err != nil {
 		t.Fatalf("Add failed: %v", err)
 	}
-	// Replace the body via update.
+	// Replace the description via update.
 	err = Update(path, id, func(t *Task) {
-		t.Body = "replaced body"
+		t.Description = "replaced description"
 	})
 	if err != nil {
 		t.Fatalf("Update failed: %v", err)
@@ -85,7 +85,7 @@ func TestUpdate_BodyReplace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get failed: %v", err)
 	}
-	if tasks[0].Body != "replaced body" {
-		t.Errorf("Body = %q, want %q", tasks[0].Body, "replaced body")
+	if tasks[0].Description != "replaced description" {
+		t.Errorf("Description = %q, want %q", tasks[0].Description, "replaced description")
 	}
 }

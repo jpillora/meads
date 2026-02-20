@@ -92,13 +92,13 @@ func parseTask(section string) (Task, bool) {
 	if bodyStart < len(lines) && strings.TrimSpace(lines[bodyStart]) == "" {
 		bodyStart++
 	}
-	// Remaining lines form the body. Trim trailing whitespace.
-	body := strings.TrimRight(strings.Join(lines[bodyStart:], "\n"), "\n \t")
+	// Remaining lines form the description. Trim trailing whitespace.
+	description := strings.TrimRight(strings.Join(lines[bodyStart:], "\n"), "\n \t")
 	t := Task{
-		ID:    id,
-		Title: title,
-		Meta:  meta,
-		Body:  body,
+		ID:          id,
+		Title:       title,
+		Meta:        meta,
+		Description: description,
 	}
 	if v, ok := meta["status"]; ok {
 		t.Status = v

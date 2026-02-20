@@ -33,8 +33,8 @@ The login page throws a 500 when the session cookie is expired.`
 	if len(task.DependsOn) != 1 || task.DependsOn[0] != 3 {
 		t.Errorf("DependsOn = %v, want [3]", task.DependsOn)
 	}
-	if task.Body != "The login page throws a 500 when the session cookie is expired." {
-		t.Errorf("Body = %q, want %q", task.Body, "The login page throws a 500 when the session cookie is expired.")
+	if task.Description != "The login page throws a 500 when the session cookie is expired." {
+		t.Errorf("Description = %q, want %q", task.Description, "The login page throws a 500 when the session cookie is expired.")
 	}
 }
 
@@ -75,8 +75,8 @@ Working on it.`
 	if f.Tasks[2].ID != 3 || f.Tasks[2].Status != "inprogress" {
 		t.Errorf("task 2: ID=%d Status=%q", f.Tasks[2].ID, f.Tasks[2].Status)
 	}
-	if f.Tasks[2].Body != "Working on it." {
-		t.Errorf("task 2: Body=%q", f.Tasks[2].Body)
+	if f.Tasks[2].Description != "Working on it." {
+		t.Errorf("task 2: Description=%q", f.Tasks[2].Description)
 	}
 }
 
@@ -99,8 +99,8 @@ Just a description with no metadata.`
 	if task.Priority != "" {
 		t.Errorf("Priority = %q, want empty", task.Priority)
 	}
-	if task.Body != "Just a description with no metadata." {
-		t.Errorf("Body = %q", task.Body)
+	if task.Description != "Just a description with no metadata." {
+		t.Errorf("Description = %q", task.Description)
 	}
 }
 
@@ -134,7 +134,7 @@ func TestParseFile_Empty(t *testing.T) {
 	}
 }
 
-func TestParseFile_NoBody(t *testing.T) {
+func TestParseFile_NoDescription(t *testing.T) {
 	input := `## 1 Metadata only
 
 * status: open
@@ -144,12 +144,12 @@ func TestParseFile_NoBody(t *testing.T) {
 	if len(f.Tasks) != 1 {
 		t.Fatalf("expected 1 task, got %d", len(f.Tasks))
 	}
-	if f.Tasks[0].Body != "" {
-		t.Errorf("Body = %q, want empty", f.Tasks[0].Body)
+	if f.Tasks[0].Description != "" {
+		t.Errorf("Description = %q, want empty", f.Tasks[0].Description)
 	}
 }
 
-func TestParseFile_MultilineBody(t *testing.T) {
+func TestParseFile_MultilineDescription(t *testing.T) {
 	input := `## 1 Multi-line body
 
 * status: open
@@ -163,8 +163,8 @@ Second paragraph with more detail.`
 		t.Fatalf("expected 1 task, got %d", len(f.Tasks))
 	}
 	want := "First paragraph.\n\nSecond paragraph with more detail."
-	if f.Tasks[0].Body != want {
-		t.Errorf("Body = %q, want %q", f.Tasks[0].Body, want)
+	if f.Tasks[0].Description != want {
+		t.Errorf("Description = %q, want %q", f.Tasks[0].Description, want)
 	}
 }
 
@@ -308,7 +308,7 @@ func TestFormatTask_Full(t *testing.T) {
 		Title:  "Fix the login bug",
 		Status: "open",
 		Meta:   map[string]string{"status": "open", "priority": "3"},
-		Body:   "Some description.",
+		Description: "Some description.",
 	}
 	got := FormatTask(task)
 	want := "## 1. Fix the login bug\n\n* status: open\n* priority: 3\n\nSome description.\n"
@@ -317,7 +317,7 @@ func TestFormatTask_Full(t *testing.T) {
 	}
 }
 
-func TestFormatTask_NoBody(t *testing.T) {
+func TestFormatTask_NoDescription(t *testing.T) {
 	task := Task{
 		ID:    2,
 		Title: "No body",
@@ -335,10 +335,10 @@ func TestFormatTask_NoMeta(t *testing.T) {
 		ID:    3,
 		Title: "Bare task",
 		Meta:  map[string]string{},
-		Body:  "Just a body.",
+		Description: "Just a description.",
 	}
 	got := FormatTask(task)
-	want := "## 3. Bare task\n\nJust a body.\n"
+	want := "## 3. Bare task\n\nJust a description.\n"
 	if got != want {
 		t.Errorf("FormatTask =\n%q\nwant\n%q", got, want)
 	}
@@ -442,8 +442,8 @@ func TestFormatFile_RoundTrip(t *testing.T) {
 		if f.Tasks[i].Status != f2.Tasks[i].Status {
 			t.Errorf("round-trip task %d: Status %q != %q", i, f.Tasks[i].Status, f2.Tasks[i].Status)
 		}
-		if f.Tasks[i].Body != f2.Tasks[i].Body {
-			t.Errorf("round-trip task %d: Body %q != %q", i, f.Tasks[i].Body, f2.Tasks[i].Body)
+		if f.Tasks[i].Description != f2.Tasks[i].Description {
+			t.Errorf("round-trip task %d: Description %q != %q", i, f.Tasks[i].Description, f2.Tasks[i].Description)
 		}
 	}
 	// Verify project meta round-trip.

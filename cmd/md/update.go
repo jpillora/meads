@@ -12,8 +12,8 @@ type updateCmd struct {
 	ID       string `opts:"mode=arg" help:"Task ID to update"`
 	Status   string `help:"Set task status"`
 	Priority string `help:"Set task priority"`
-	Title    string `help:"Set task title"`
-	Body     string `help:"Set task body"`
+	Title       string `help:"Set task title"`
+	Description string `help:"Set task description"`
 }
 
 func (c *updateCmd) Run() error {
@@ -32,8 +32,8 @@ func (c *updateCmd) Run() error {
 		if c.Title != "" {
 			t.Title = c.Title
 		}
-		if c.Body != "" {
-			t.Body = c.Body
+		if c.Description != "" {
+			t.Description = c.Description
 		}
 		updated = *t
 	})

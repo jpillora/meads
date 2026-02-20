@@ -25,8 +25,8 @@
   - Type prefix: `bug:`, `task:`, `feature:` (optional)
   - Priority: `P0`-`P9` (0=critical, 4=backlog, default=P2)
   - Title: everything before first `.`
-  - Body: everything after the `.`
-- `md add --title="Fix login" --type=bug --priority=P1 --body="Details here"` - Flag-based
+  - Description: everything after the `.`
+- `md add --title="Fix login" --type=bug --priority=P1 --description="Details here"` - Flag-based
 
 ### Updating Tasks
 - `md update <id> --status=draft|open|inprogress|closed` - Update status

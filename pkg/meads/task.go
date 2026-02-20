@@ -25,7 +25,7 @@ type Task struct {
 	CloseReason string            `json:"close_reason,omitempty"`
 	Tags        []string          `json:"tags,omitempty"`
 	Meta        map[string]string `json:"meta,omitempty"`
-	Body        string            `json:"body,omitempty"`
+	Description string            `json:"description,omitempty"`
 }
 
 // knownMetaKeys are metadata keys that have dedicated struct fields.
@@ -237,9 +237,9 @@ func FormatTask(t Task) string {
 		sb.WriteString("\n")
 		sb.WriteString(metaBlock)
 	}
-	if t.Body != "" {
+	if t.Description != "" {
 		sb.WriteString("\n")
-		sb.WriteString(t.Body)
+		sb.WriteString(t.Description)
 		sb.WriteString("\n")
 	}
 	return sb.String()

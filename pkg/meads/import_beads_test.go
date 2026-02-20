@@ -17,8 +17,8 @@ func TestBeadToTask_BasicMapping(t *testing.T) {
 	if task.Title != "Fix crash on startup" {
 		t.Errorf("Title = %q", task.Title)
 	}
-	if task.Body != "App crashes when no config file exists." {
-		t.Errorf("Body = %q", task.Body)
+	if task.Description != "App crashes when no config file exists." {
+		t.Errorf("Description = %q", task.Description)
 	}
 	if task.Status != "open" {
 		t.Errorf("Status = %q, want %q", task.Status, "open")
