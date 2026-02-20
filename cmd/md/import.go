@@ -6,13 +6,12 @@ import (
 	"github.com/jpillora/meads/pkg/meads"
 )
 
-type importCmd struct {
+type beadsImportCmd struct {
 	globals *globals
-	Target  string `opts:"mode=arg" help:"Import target (e.g. beads)"`
 }
 
-func (c *importCmd) Run() error {
-	imp, err := meads.GetImporter(c.Target)
+func (c *beadsImportCmd) Run() error {
+	imp, err := meads.GetImporter("beads")
 	if err != nil {
 		return err
 	}

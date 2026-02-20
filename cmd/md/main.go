@@ -30,7 +30,7 @@ type root struct {
 	SetStatus  setStatusCmd  `opts:"mode=cmd,name=set-status" help:"Set a task's status"`
 	AddDep     addDepCmd     `opts:"mode=cmd,name=add-dep" help:"Add a dependency to a task"`
 	Ready      readyCmd      `opts:"mode=cmd" help:"List open tasks not blocked by dependencies"`
-	Import     importCmd     `opts:"mode=cmd" help:"Import tasks from an external source"`
+	BeadsImport beadsImportCmd `opts:"mode=cmd,name=beads-import" help:"Import tasks from beads"`
 	Prime      primeCmd      `opts:"mode=cmd" help:"Print LLM context for using md"`
 	Mcp        mcpCmd        `opts:"mode=cmd" help:"Start MCP server over stdio"`
 	AutoDelete autoDeleteCmd `opts:"mode=cmd,name=auto-delete" help:"Auto-delete closed tasks via git hook"`
@@ -49,7 +49,7 @@ func main() {
 	c.SetStatus.globals = g
 	c.AddDep.globals = g
 	c.Ready.globals = g
-	c.Import.globals = g
+	c.BeadsImport.globals = g
 	c.Mcp.globals = g
 	c.AutoDelete.globals = g
 	c.BeadsNuke.globals = g
