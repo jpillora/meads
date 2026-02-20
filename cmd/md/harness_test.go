@@ -1,0 +1,247 @@
+package main
+
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"testing"
+
+	"github.com/jpillora/meads/pkg/meads"
+)
+
+// testHarness provides an isolated git repo with task helpers for integration tests.
+type testHarness struct {
+	t       *testing.T
+	dir     string
+	globals *globals
+}
+
+// newHarness creates a temp dir with an initialized git repo and returns a harness.
+func newHarness(t *testing.T) *testHarness {
+	t.Helper()
+	dir := t.TempDir()
+	h := &testHarness{
+		t:   t,
+		dir: dir,
+		globals: &globals{
+			TasksFile: filepath.Join(dir, "TASKS.md"),
+			Dir:       dir,
+		},
+	}
+	// Initialize git repo
+	h.git("init", "-b", "main")
+	h.git("config", "user.name", "Test")
+	h.git("config", "user.email", "test@test.com")
+	// Create initial commit so HEAD exists
+	initial := filepath.Join(dir, ".gitkeep")
+	if err := os.WriteFile(initial, []byte(""), 0644); err != nil {
+		t.Fatal(err)
+	}
+	h.git("add", ".")
+	h.git("commit", "-m", "initial")
+	return h
+}
+
+// --- git helpers ---
+
+// git runs a git command in the harness dir and fails the test on error.
+func (h *testHarness) git(args ...string) string {
+	h.t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = h.dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		h.t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, out)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// commit stages TASKS.md and commits with the given message.
+func (h *testHarness) commit(msg string) {
+	h.t.Helper()
+	h.git("add", "TASKS.md")
+	h.git("commit", "-m", msg)
+}
+
+// commitAll stages all files and commits.
+func (h *testHarness) commitAll(msg string) {
+	h.t.Helper()
+	h.git("add", "-A")
+	h.git("commit", "-m", msg)
+}
+
+// lastCommitMessage returns the subject of the last commit.
+func (h *testHarness) lastCommitMessage() string {
+	h.t.Helper()
+	return h.git("log", "-1", "--format=%s")
+}
+
+// commitCount returns the number of commits.
+func (h *testHarness) commitCount() int {
+	h.t.Helper()
+	out := h.git("rev-list", "--count", "HEAD")
+	n, err := strconv.Atoi(out)
+	if err != nil {
+		h.t.Fatalf("parsing commit count: %v", err)
+	}
+	return n
+}
+
+// branch creates a new branch.
+func (h *testHarness) branch(name string) {
+	h.t.Helper()
+	h.git("branch", name)
+}
+
+// checkout switches to a branch.
+func (h *testHarness) checkout(name string) {
+	h.t.Helper()
+	h.git("checkout", name)
+}
+
+// --- task helpers ---
+
+// addTask creates a task with the given title (status=open) and returns its ID.
+func (h *testHarness) addTask(title string) int {
+	h.t.Helper()
+	t := meads.Task{Title: title}
+	t.SetStatus("open")
+	id, err := meads.Add(h.globals.TasksFile, t)
+	if err != nil {
+		h.t.Fatalf("addTask(%q): %v", title, err)
+	}
+	return id
+}
+
+// closeTask sets a task's status to closed.
+func (h *testHarness) closeTask(id int) {
+	h.t.Helper()
+	err := meads.Update(h.globals.TasksFile, id, func(t *meads.Task) {
+		t.SetStatus("closed")
+	})
+	if err != nil {
+		h.t.Fatalf("closeTask(%d): %v", id, err)
+	}
+}
+
+// deleteTask removes a task.
+func (h *testHarness) deleteTask(id int) {
+	h.t.Helper()
+	if err := meads.Delete(h.globals.TasksFile, id); err != nil {
+		h.t.Fatalf("deleteTask(%d): %v", id, err)
+	}
+}
+
+// getTask returns a single task by ID.
+func (h *testHarness) getTask(id int) meads.Task {
+	h.t.Helper()
+	tasks, err := meads.Get(h.globals.TasksFile, []int{id})
+	if err != nil {
+		h.t.Fatalf("getTask(%d): %v", id, err)
+	}
+	return tasks[0]
+}
+
+// getTasks returns all tasks.
+func (h *testHarness) getTasks() []meads.Task {
+	h.t.Helper()
+	tasks, err := meads.Get(h.globals.TasksFile, nil)
+	if err != nil {
+		h.t.Fatalf("getTasks: %v", err)
+	}
+	return tasks
+}
+
+// readyTasks returns tasks from meads.Ready.
+func (h *testHarness) readyTasks() []meads.Task {
+	h.t.Helper()
+	tasks, err := meads.Ready(h.globals.TasksFile)
+	if err != nil {
+		h.t.Fatalf("readyTasks: %v", err)
+	}
+	return tasks
+}
+
+// addDep makes child depend on parent.
+func (h *testHarness) addDep(child, parent int) {
+	h.t.Helper()
+	err := meads.Update(h.globals.TasksFile, child, func(t *meads.Task) {
+		t.AddDep(parent)
+	})
+	if err != nil {
+		h.t.Fatalf("addDep(%d, %d): %v", child, parent, err)
+	}
+}
+
+// --- auto-delete helper ---
+
+// runAutoDelete simulates the post-commit hook by running autoDeleteCmd with GITHOOK=1.
+func (h *testHarness) runAutoDelete() error {
+	h.t.Helper()
+	h.t.Setenv("GITHOOK", "1")
+	cmd := &autoDeleteCmd{globals: h.globals}
+	return cmd.Run()
+}
+
+// --- assertions ---
+
+func (h *testHarness) assertTaskCount(expected int) {
+	h.t.Helper()
+	tasks := h.getTasks()
+	if len(tasks) != expected {
+		h.t.Fatalf("expected %d tasks, got %d", expected, len(tasks))
+	}
+}
+
+func (h *testHarness) assertTaskExists(id int) {
+	h.t.Helper()
+	_, err := meads.Get(h.globals.TasksFile, []int{id})
+	if err != nil {
+		h.t.Fatalf("expected task %d to exist, but got: %v", id, err)
+	}
+}
+
+func (h *testHarness) assertTaskNotExists(id int) {
+	h.t.Helper()
+	_, err := meads.Get(h.globals.TasksFile, []int{id})
+	if err == nil {
+		h.t.Fatalf("expected task %d to not exist, but it does", id)
+	}
+}
+
+func (h *testHarness) assertTaskStatus(id int, status string) {
+	h.t.Helper()
+	t := h.getTask(id)
+	if t.Status != status {
+		h.t.Fatalf("expected task %d status %q, got %q", id, status, t.Status)
+	}
+}
+
+func (h *testHarness) assertReadyCount(expected int) {
+	h.t.Helper()
+	tasks := h.readyTasks()
+	if len(tasks) != expected {
+		h.t.Fatalf("expected %d ready tasks, got %d", expected, len(tasks))
+	}
+}
+
+func (h *testHarness) assertReadyContains(id int) {
+	h.t.Helper()
+	for _, t := range h.readyTasks() {
+		if t.ID == id {
+			return
+		}
+	}
+	h.t.Fatalf("expected ready list to contain task %d", id)
+}
+
+func (h *testHarness) assertReadyNotContains(id int) {
+	h.t.Helper()
+	for _, t := range h.readyTasks() {
+		if t.ID == id {
+			h.t.Fatalf("expected ready list to NOT contain task %d", id)
+		}
+	}
+}

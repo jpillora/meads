@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 
 	"github.com/jpillora/opts"
 )
@@ -18,6 +19,16 @@ func defaultTasksFile() string {
 type globals struct {
 	TasksFile  string `help:"the tasks markdown file to manage"`
 	WebhookURL string `help:"a url to POST to with {meads:true,action,data}"`
+	Dir        string `opts:"-"`
+}
+
+// gitCommand creates an exec.Command for git with Dir set.
+func (g *globals) gitCommand(args ...string) *exec.Cmd {
+	cmd := exec.Command("git", args...)
+	if g.Dir != "" {
+		cmd.Dir = g.Dir
+	}
+	return cmd
 }
 
 type root struct {

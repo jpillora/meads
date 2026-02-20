@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -72,12 +71,12 @@ func (c *autoDeleteCmd) runFromHook() error {
 	}
 
 	// Amend the commit to include deletions
-	cmd := exec.Command("git", "add", tf)
+	cmd := c.globals.gitCommand("add", tf)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("staging TASKS.md: %w", err)
 	}
 
-	cmd = exec.Command("git", "commit", "--amend", "--no-edit")
+	cmd = c.globals.gitCommand("commit", "--amend", "--no-edit")
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("amending commit: %w", err)
 	}
@@ -87,14 +86,14 @@ func (c *autoDeleteCmd) runFromHook() error {
 
 func (c *autoDeleteCmd) isOnDefaultBranch() bool {
 	// Get current branch
-	out, err := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD").Output()
+	out, err := c.globals.gitCommand("rev-parse", "--abbrev-ref", "HEAD").Output()
 	if err != nil {
 		return false
 	}
 	currentBranch := strings.TrimSpace(string(out))
 
 	// Get default branch
-	out, err = exec.Command("git", "symbolic-ref", "refs/remotes/origin/HEAD").Output()
+	out, err = c.globals.gitCommand("symbolic-ref", "refs/remotes/origin/HEAD").Output()
 	if err != nil {
 		// Fallback: check if current branch is main or master
 		return currentBranch == "main" || currentBranch == "master"
@@ -107,13 +106,13 @@ func (c *autoDeleteCmd) isOnDefaultBranch() bool {
 
 func (c *autoDeleteCmd) isTasksFileClean() bool {
 	// Check for unstaged changes
-	cmd := exec.Command("git", "diff", "--quiet", "HEAD", "--", c.globals.TasksFile)
+	cmd := c.globals.gitCommand("diff", "--quiet", "HEAD", "--", c.globals.TasksFile)
 	if err := cmd.Run(); err != nil {
 		return false // Has unstaged changes
 	}
 
 	// Check for staged changes
-	cmd = exec.Command("git", "diff", "--quiet", "--cached", "--", c.globals.TasksFile)
+	cmd = c.globals.gitCommand("diff", "--quiet", "--cached", "--", c.globals.TasksFile)
 	if err := cmd.Run(); err != nil {
 		return false // Has staged changes
 	}
@@ -220,7 +219,7 @@ func (c *autoDeleteCmd) checkStatus() error {
 
 func (c *autoDeleteCmd) getHookPath() (string, error) {
 	// Find git root
-	out, err := exec.Command("git", "rev-parse", "--git-dir").Output()
+	out, err := c.globals.gitCommand("rev-parse", "--git-dir").Output()
 	if err != nil {
 		return "", fmt.Errorf("not in a git repository")
 	}
