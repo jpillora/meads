@@ -22,19 +22,19 @@ type globals struct {
 
 type root struct {
 	Globals    globals       `opts:"mode=embedded"`
-	Add        addCmd        `opts:"mode=cmd" help:"Add a new task"`
-	Get        getCmd        `opts:"mode=cmd" help:"Get tasks by ID"`
-	List       listCmd       `opts:"mode=cmd" help:"List all tasks"`
-	Del        delCmd        `opts:"mode=cmd" help:"Delete a task by ID"`
-	Update     updateCmd     `opts:"mode=cmd" help:"Update a task by ID"`
-	SetStatus  setStatusCmd  `opts:"mode=cmd,name=set-status" help:"Set a task's status"`
-	AddDep     addDepCmd     `opts:"mode=cmd,name=add-dep" help:"Add a dependency to a task"`
-	Ready      readyCmd      `opts:"mode=cmd" help:"List open tasks not blocked by dependencies"`
-	BeadsImport beadsImportCmd `opts:"mode=cmd,name=beads-import" help:"Import tasks from beads"`
-	Prime      primeCmd      `opts:"mode=cmd" help:"Print LLM context for using md"`
-	Mcp        mcpCmd        `opts:"mode=cmd" help:"Start MCP server over stdio"`
-	AutoDelete autoDeleteCmd `opts:"mode=cmd,name=auto-delete" help:"Auto-delete closed tasks via git hook"`
-	BeadsNuke  nukeCmd      `opts:"mode=cmd,name=beads-nuke" help:"Completely remove beads from the current repository"`
+	Add         addCmd         `opts:"mode=cmd,group=Basic" help:"Add a new task"`
+	Get         getCmd         `opts:"mode=cmd,group=Basic" help:"Get tasks by ID"`
+	List        listCmd        `opts:"mode=cmd,group=Basic" help:"List all tasks"`
+	Del         delCmd         `opts:"mode=cmd,group=Basic" help:"Delete a task by ID"`
+	Update      updateCmd      `opts:"mode=cmd,group=Basic" help:"Update a task by ID"`
+	SetStatus   setStatusCmd   `opts:"mode=cmd,name=set-status,group=Basic" help:"Set a task's status"`
+	AddDep      addDepCmd      `opts:"mode=cmd,name=add-dep,group=Basic" help:"Add a dependency to a task"`
+	Ready       readyCmd       `opts:"mode=cmd,group=Basic" help:"List open tasks not blocked by dependencies"`
+	Prime       primeCmd       `opts:"mode=cmd,group=Misc" help:"Print LLM context for using md"`
+	Mcp         mcpCmd         `opts:"mode=cmd,group=Misc" help:"Start MCP server over stdio"`
+	AutoDelete  autoDeleteCmd  `opts:"mode=cmd,name=auto-delete,group=Misc" help:"Auto-delete closed tasks via git hook"`
+	BeadsImport beadsImportCmd `opts:"mode=cmd,name=beads-import,group=Beads" help:"Import tasks from beads"`
+	BeadsNuke   nukeCmd        `opts:"mode=cmd,name=beads-nuke,group=Beads" help:"Completely remove beads from the current repository"`
 }
 
 func main() {
