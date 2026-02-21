@@ -44,8 +44,16 @@ func (c *autoDeleteCmd) runFromHook() error {
 		return nil // Silently exit if TASKS.md has changes
 	}
 
-	// Find and delete all closed tasks
 	tf := c.globals.TasksFile
+
+	// Save backup for recovery — if anything fails after modifying
+	// the file, we restore it so TASKS.md always matches git HEAD.
+	backup, err := os.ReadFile(tf)
+	if err != nil {
+		return fmt.Errorf("reading %s: %w", tf, err)
+	}
+
+	// Find all closed tasks
 	tasks, err := meads.Get(tf, nil)
 	if err != nil {
 		return fmt.Errorf("reading tasks: %w", err)
@@ -62,22 +70,28 @@ func (c *autoDeleteCmd) runFromHook() error {
 		return nil // Nothing to delete
 	}
 
-	// Delete each closed task
+	// Atomic delete: removes all closed tasks and cleans up dangling deps
+	// in a single file write.
+	if err := meads.DeleteMany(tf, closedIDs); err != nil {
+		os.WriteFile(tf, backup, 0644)
+		return fmt.Errorf("deleting tasks: %w", err)
+	}
+
 	for _, id := range closedIDs {
-		if err := meads.Delete(tf, id); err != nil {
-			return fmt.Errorf("deleting task %d: %w", id, err)
-		}
 		fmt.Fprintf(os.Stderr, "md: auto-deleted closed task %d\n", id)
 	}
 
-	// Amend the commit to include deletions
-	cmd := c.globals.gitCommand("add", tf)
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("staging TASKS.md: %w", err)
+	// Stage the changes
+	if err := c.globals.gitCommand("add", tf).Run(); err != nil {
+		os.WriteFile(tf, backup, 0644)
+		return fmt.Errorf("staging %s: %w", tf, err)
 	}
 
-	cmd = c.globals.gitCommand("commit", "--amend", "--no-edit")
-	if err := cmd.Run(); err != nil {
+	// Amend the commit to include deletions
+	if err := c.globals.gitCommand("commit", "--amend", "--no-edit").Run(); err != nil {
+		// Restore file and unstage changes
+		os.WriteFile(tf, backup, 0644)
+		c.globals.gitCommand("reset", "HEAD", "--", tf).Run()
 		return fmt.Errorf("amending commit: %w", err)
 	}
 

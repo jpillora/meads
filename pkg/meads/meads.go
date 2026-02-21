@@ -109,6 +109,66 @@ func Delete(file string, id int) error {
 	return nil
 }
 
+// DeleteMany removes multiple tasks by ID in a single atomic operation.
+// It also removes deleted IDs from other tasks' DependsOn lists.
+func DeleteMany(file string, ids []int) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	_, content, err := acquireLock(file)
+	if err != nil {
+		return err
+	}
+	f := ParseFile(content)
+	deleteSet := make(map[int]bool, len(ids))
+	for _, id := range ids {
+		deleteSet[id] = true
+	}
+	// Filter out deleted tasks and clean up dangling deps.
+	filtered := make([]Task, 0, len(f.Tasks))
+	found := 0
+	for _, t := range f.Tasks {
+		if deleteSet[t.ID] {
+			found++
+			continue
+		}
+		// Remove deleted IDs from DependsOn.
+		if len(t.DependsOn) > 0 {
+			var cleanDeps []int
+			for _, dep := range t.DependsOn {
+				if !deleteSet[dep] {
+					cleanDeps = append(cleanDeps, dep)
+				}
+			}
+			if len(cleanDeps) != len(t.DependsOn) {
+				t.SetDependsOn(cleanDeps)
+			}
+		}
+		filtered = append(filtered, t)
+	}
+	if found != len(ids) {
+		releaseLock(file, content)
+		// Find first missing ID for the error message.
+		existing := make(map[int]bool, len(f.Tasks))
+		for _, t := range f.Tasks {
+			existing[t.ID] = true
+		}
+		for _, id := range ids {
+			if !existing[id] {
+				return fmt.Errorf("task %d not found", id)
+			}
+		}
+	}
+	f.Tasks = filtered
+	now := time.Now().UTC().Format(time.RFC3339)
+	ensureProjectMeta(&f, now)
+	f.Meta["updated"] = now
+	if err := releaseLock(file, FormatFile(f)); err != nil {
+		return fmt.Errorf("writing %s: %w", file, err)
+	}
+	return nil
+}
+
 // Update modifies a task by ID. The provided function receives a pointer
 // to the task for mutation. After mutation, any DependsOn IDs are validated
 // to ensure the referenced tasks exist.

@@ -126,6 +126,39 @@ func (h *testHarness) closeTask(id int) {
 	}
 }
 
+// setStatus sets a task's status.
+func (h *testHarness) setStatus(id int, status string) {
+	h.t.Helper()
+	err := meads.Update(h.globals.TasksFile, id, func(t *meads.Task) {
+		t.SetStatus(status)
+	})
+	if err != nil {
+		h.t.Fatalf("setStatus(%d, %q): %v", id, status, err)
+	}
+}
+
+// updatePriority sets a task's priority.
+func (h *testHarness) updatePriority(id int, priority string) {
+	h.t.Helper()
+	err := meads.Update(h.globals.TasksFile, id, func(t *meads.Task) {
+		t.SetPriority(priority)
+	})
+	if err != nil {
+		h.t.Fatalf("updatePriority(%d, %q): %v", id, priority, err)
+	}
+}
+
+// updateDescription sets a task's description.
+func (h *testHarness) updateDescription(id int, desc string) {
+	h.t.Helper()
+	err := meads.Update(h.globals.TasksFile, id, func(t *meads.Task) {
+		t.Description = desc
+	})
+	if err != nil {
+		h.t.Fatalf("updateDescription(%d): %v", id, err)
+	}
+}
+
 // deleteTask removes a task.
 func (h *testHarness) deleteTask(id int) {
 	h.t.Helper()
@@ -183,6 +216,65 @@ func (h *testHarness) runAutoDelete() error {
 	h.t.Setenv("GITHOOK", "1")
 	cmd := &autoDeleteCmd{globals: h.globals}
 	return cmd.Run()
+}
+
+// installPreCommitHook writes a pre-commit hook script to the test repo.
+func (h *testHarness) installPreCommitHook(script string) {
+	h.t.Helper()
+	hookDir := filepath.Join(h.dir, ".git", "hooks")
+	os.MkdirAll(hookDir, 0755)
+	hookPath := filepath.Join(hookDir, "pre-commit")
+	if err := os.WriteFile(hookPath, []byte(script), 0755); err != nil {
+		h.t.Fatal(err)
+	}
+}
+
+// removePreCommitHook removes the pre-commit hook from the test repo.
+func (h *testHarness) removePreCommitHook() {
+	h.t.Helper()
+	hookPath := filepath.Join(h.dir, ".git", "hooks", "pre-commit")
+	os.Remove(hookPath)
+}
+
+// createIndexLock creates a .git/index.lock to block git add/commit.
+func (h *testHarness) createIndexLock() {
+	h.t.Helper()
+	lockPath := filepath.Join(h.dir, ".git", "index.lock")
+	if err := os.WriteFile(lockPath, []byte(""), 0644); err != nil {
+		h.t.Fatal(err)
+	}
+}
+
+// removeIndexLock removes the .git/index.lock file.
+func (h *testHarness) removeIndexLock() {
+	h.t.Helper()
+	lockPath := filepath.Join(h.dir, ".git", "index.lock")
+	os.Remove(lockPath)
+}
+
+// tasksFileContent returns the raw content of TASKS.md.
+func (h *testHarness) tasksFileContent() string {
+	h.t.Helper()
+	data, err := os.ReadFile(h.globals.TasksFile)
+	if err != nil {
+		h.t.Fatalf("reading tasks file: %v", err)
+	}
+	return string(data)
+}
+
+// assertTasksFileClean verifies TASKS.md has no staged or unstaged changes vs HEAD.
+func (h *testHarness) assertTasksFileClean() {
+	h.t.Helper()
+	cmd := exec.Command("git", "diff", "--quiet", "HEAD", "--", "TASKS.md")
+	cmd.Dir = h.dir
+	if err := cmd.Run(); err != nil {
+		h.t.Fatal("TASKS.md has unstaged changes (expected clean)")
+	}
+	cmd = exec.Command("git", "diff", "--quiet", "--cached", "--", "TASKS.md")
+	cmd.Dir = h.dir
+	if err := cmd.Run(); err != nil {
+		h.t.Fatal("TASKS.md has staged changes (expected clean)")
+	}
 }
 
 // --- assertions ---
