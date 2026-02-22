@@ -3,8 +3,6 @@ package main
 import (
 	"fmt"
 	"strconv"
-
-	"github.com/jpillora/meads/pkg/meads"
 )
 
 type delCmd struct {
@@ -17,7 +15,7 @@ func (c *delCmd) Run() error {
 	if err != nil {
 		return fmt.Errorf("invalid task ID: %s", c.ID)
 	}
-	if err := meads.Delete(c.globals.TasksFile, id); err != nil {
+	if err := c.globals.store().Delete(id); err != nil {
 		return err
 	}
 	postWebhook(c.globals, "delete", map[string]int{"id": id})

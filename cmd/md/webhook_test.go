@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/jpillora/meads/pkg/meads"
 )
 
 func TestPostWebhook_NilGlobals(t *testing.T) {
@@ -181,12 +183,13 @@ func TestWebhookHTTPURL(t *testing.T) {
 }
 
 func TestTasksFileFlag(t *testing.T) {
-	// Test that commands properly use the TasksFile from globals
+	// Test that commands properly use the Store from globals
 	// by creating a task in a custom file path and reading it back.
 	dir := t.TempDir()
 	file := filepath.Join(dir, "custom.md")
+	store := meads.NewFileStore(file)
 
-	g := &globals{TasksFile: file}
+	g := &globals{Store: store, TasksFile: file}
 
 	// Add a task via addCmd
 	add := &addCmd{globals: g, Args: []string{"Test task"}}
@@ -247,12 +250,6 @@ func TestTasksFileFlag(t *testing.T) {
 		t.Fatalf("del: %v", err)
 	}
 
-	// Verify default TASKS.md was NOT created
-	if _, err := os.Stat("TASKS.md"); err == nil {
-		// Check if it already existed before our test (it does in this repo)
-		// Just verify our custom file has the right content
-	}
-
 	// Verify the custom file has remaining task
 	data, err := os.ReadFile(file)
 	if err != nil {
@@ -271,6 +268,7 @@ func TestTasksFileWithWebhook(t *testing.T) {
 	// Test that both features work together: custom file + webhook
 	dir := t.TempDir()
 	file := filepath.Join(dir, "tasks.md")
+	store := meads.NewFileStore(file)
 
 	var actions []string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -282,7 +280,7 @@ func TestTasksFileWithWebhook(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	g := &globals{TasksFile: file, WebhookURL: ts.URL}
+	g := &globals{Store: store, TasksFile: file, WebhookURL: ts.URL}
 
 	// Add
 	add := &addCmd{globals: g, Args: []string{"Webhook test"}}

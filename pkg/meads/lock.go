@@ -7,30 +7,32 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/go-git/go-billy/v5/util"
 )
 
 // acquireLock appends a lock line to the file and checks if we won the race.
 // Returns the lock ID and file contents (without any lock lines) on success.
-func acquireLock(file string) (string, string, error) {
+func (s *Store) acquireLock() (string, string, error) {
 	id, err := randomID()
 	if err != nil {
 		return "", "", fmt.Errorf("generating lock id: %w", err)
 	}
 	now := time.Now().Unix()
 	lockLine := fmt.Sprintf("\nlock:%s:%d\n", id, now)
-	f, err := os.OpenFile(file, os.O_APPEND|os.O_WRONLY, 0644)
+	f, err := s.fs.OpenFile(s.file, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
-		return "", "", fmt.Errorf("opening %s for lock: %w", file, err)
+		return "", "", fmt.Errorf("opening %s for lock: %w", s.file, err)
 	}
-	_, err = f.WriteString(lockLine)
+	_, err = f.Write([]byte(lockLine))
 	f.Close()
 	if err != nil {
 		return "", "", fmt.Errorf("writing lock: %w", err)
 	}
 	// Read back and check if we hold the lock.
-	data, err := os.ReadFile(file)
+	data, err := util.ReadFile(s.fs, s.file)
 	if err != nil {
-		return "", "", fmt.Errorf("reading %s after lock: %w", file, err)
+		return "", "", fmt.Errorf("reading %s after lock: %w", s.file, err)
 	}
 	content := string(data)
 	// Find the first non-expired lock: line.
@@ -63,9 +65,9 @@ func acquireLock(file string) (string, string, error) {
 }
 
 // releaseLock writes the final content back to the file, removing all lock lines.
-func releaseLock(file, content string) error {
+func (s *Store) releaseLock(content string) error {
 	clean := stripLockLines(content)
-	return os.WriteFile(file, []byte(clean), 0644)
+	return util.WriteFile(s.fs, s.file, []byte(clean), 0644)
 }
 
 func stripLockLines(s string) string {

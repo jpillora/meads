@@ -6,18 +6,20 @@ import (
 	"sort"
 	"strconv"
 	"time"
+
+	"github.com/go-git/go-billy/v5/util"
 )
 
 // Add creates a new task, assigning it the next available ID.
 // The provided task must have ID == 0.
-func Add(file string, t Task) (int, error) {
+func (s *Store) Add(t Task) (int, error) {
 	if t.ID != 0 {
 		return 0, fmt.Errorf("task ID must not be set (got %d)", t.ID)
 	}
-	if err := ensureFile(file); err != nil {
+	if err := s.ensureFile(); err != nil {
 		return 0, err
 	}
-	_, content, err := acquireLock(file)
+	_, content, err := s.acquireLock()
 	if err != nil {
 		return 0, err
 	}
@@ -33,15 +35,15 @@ func Add(file string, t Task) (int, error) {
 	ensureProjectMeta(&f, now)
 	f.Meta["updated"] = now
 	f.Meta["next-id"] = strconv.Itoa(t.ID + 1)
-	if err := releaseLock(file, FormatFile(f)); err != nil {
-		return 0, fmt.Errorf("writing %s: %w", file, err)
+	if err := s.releaseLock(FormatFile(f)); err != nil {
+		return 0, fmt.Errorf("writing %s: %w", s.file, err)
 	}
 	return t.ID, nil
 }
 
 // AddMany creates multiple tasks in a single lock acquisition.
 // Each task must have ID == 0. Returns the assigned IDs.
-func AddMany(file string, tasks []Task) ([]int, error) {
+func (s *Store) AddMany(tasks []Task) ([]int, error) {
 	if len(tasks) == 0 {
 		return nil, nil
 	}
@@ -50,10 +52,10 @@ func AddMany(file string, tasks []Task) ([]int, error) {
 			return nil, fmt.Errorf("task %d: ID must not be set (got %d)", i, t.ID)
 		}
 	}
-	if err := ensureFile(file); err != nil {
+	if err := s.ensureFile(); err != nil {
 		return nil, err
 	}
-	_, content, err := acquireLock(file)
+	_, content, err := s.acquireLock()
 	if err != nil {
 		return nil, err
 	}
@@ -73,15 +75,15 @@ func AddMany(file string, tasks []Task) ([]int, error) {
 	ensureProjectMeta(&f, now)
 	f.Meta["updated"] = now
 	f.Meta["next-id"] = strconv.Itoa(tasks[len(tasks)-1].ID + 1)
-	if err := releaseLock(file, FormatFile(f)); err != nil {
-		return nil, fmt.Errorf("writing %s: %w", file, err)
+	if err := s.releaseLock(FormatFile(f)); err != nil {
+		return nil, fmt.Errorf("writing %s: %w", s.file, err)
 	}
 	return ids, nil
 }
 
 // Delete removes a task by ID.
-func Delete(file string, id int) error {
-	_, content, err := acquireLock(file)
+func (s *Store) Delete(id int) error {
+	_, content, err := s.acquireLock()
 	if err != nil {
 		return err
 	}
@@ -96,26 +98,26 @@ func Delete(file string, id int) error {
 		filtered = append(filtered, t)
 	}
 	if !found {
-		releaseLock(file, content)
+		s.releaseLock(content)
 		return fmt.Errorf("task %d not found", id)
 	}
 	f.Tasks = filtered
 	now := time.Now().UTC().Format(time.RFC3339)
 	ensureProjectMeta(&f, now)
 	f.Meta["updated"] = now
-	if err := releaseLock(file, FormatFile(f)); err != nil {
-		return fmt.Errorf("writing %s: %w", file, err)
+	if err := s.releaseLock(FormatFile(f)); err != nil {
+		return fmt.Errorf("writing %s: %w", s.file, err)
 	}
 	return nil
 }
 
 // DeleteMany removes multiple tasks by ID in a single atomic operation.
 // It also removes deleted IDs from other tasks' DependsOn lists.
-func DeleteMany(file string, ids []int) error {
+func (s *Store) DeleteMany(ids []int) error {
 	if len(ids) == 0 {
 		return nil
 	}
-	_, content, err := acquireLock(file)
+	_, content, err := s.acquireLock()
 	if err != nil {
 		return err
 	}
@@ -147,7 +149,7 @@ func DeleteMany(file string, ids []int) error {
 		filtered = append(filtered, t)
 	}
 	if found != len(ids) {
-		releaseLock(file, content)
+		s.releaseLock(content)
 		// Find first missing ID for the error message.
 		existing := make(map[int]bool, len(f.Tasks))
 		for _, t := range f.Tasks {
@@ -163,8 +165,8 @@ func DeleteMany(file string, ids []int) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	ensureProjectMeta(&f, now)
 	f.Meta["updated"] = now
-	if err := releaseLock(file, FormatFile(f)); err != nil {
-		return fmt.Errorf("writing %s: %w", file, err)
+	if err := s.releaseLock(FormatFile(f)); err != nil {
+		return fmt.Errorf("writing %s: %w", s.file, err)
 	}
 	return nil
 }
@@ -172,8 +174,8 @@ func DeleteMany(file string, ids []int) error {
 // Update modifies a task by ID. The provided function receives a pointer
 // to the task for mutation. After mutation, any DependsOn IDs are validated
 // to ensure the referenced tasks exist.
-func Update(file string, id int, fn func(*Task)) error {
-	_, content, err := acquireLock(file)
+func (s *Store) Update(id int, fn func(*Task)) error {
+	_, content, err := s.acquireLock()
 	if err != nil {
 		return err
 	}
@@ -190,18 +192,18 @@ func Update(file string, id int, fn func(*Task)) error {
 		}
 	}
 	if !found {
-		releaseLock(file, content)
+		s.releaseLock(content)
 		return fmt.Errorf("task %d not found", id)
 	}
 	// Validate DependsOn references.
 	if err := validateDeps(&f); err != nil {
-		releaseLock(file, content)
+		s.releaseLock(content)
 		return err
 	}
 	ensureProjectMeta(&f, now)
 	f.Meta["updated"] = now
-	if err := releaseLock(file, FormatFile(f)); err != nil {
-		return fmt.Errorf("writing %s: %w", file, err)
+	if err := s.releaseLock(FormatFile(f)); err != nil {
+		return fmt.Errorf("writing %s: %w", s.file, err)
 	}
 	return nil
 }
@@ -225,8 +227,8 @@ func validateDeps(f *File) error {
 // Get returns tasks from the file. If ids is non-empty only the matching
 // tasks are returned (in the order given). An error is returned for any
 // id that does not exist. If ids is empty all tasks are returned.
-func Get(file string, ids []int) ([]Task, error) {
-	data, err := os.ReadFile(file)
+func (s *Store) Get(ids []int) ([]Task, error) {
+	data, err := util.ReadFile(s.fs, s.file)
 	if err != nil {
 		if os.IsNotExist(err) {
 			if len(ids) > 0 {
@@ -234,7 +236,7 @@ func Get(file string, ids []int) ([]Task, error) {
 			}
 			return nil, nil
 		}
-		return nil, fmt.Errorf("reading %s: %w", file, err)
+		return nil, fmt.Errorf("reading %s: %w", s.file, err)
 	}
 	content := stripLockLines(string(data))
 	f := ParseFile(content)
@@ -257,13 +259,13 @@ func Get(file string, ids []int) ([]Task, error) {
 }
 
 // Ready returns open tasks not blocked by unclosed dependencies, sorted by priority descending.
-func Ready(file string) ([]Task, error) {
-	data, err := os.ReadFile(file)
+func (s *Store) Ready() ([]Task, error) {
+	data, err := util.ReadFile(s.fs, s.file)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("reading %s: %w", file, err)
+		return nil, fmt.Errorf("reading %s: %w", s.file, err)
 	}
 	content := stripLockLines(string(data))
 	f := ParseFile(content)
@@ -329,9 +331,9 @@ func ensureProjectMeta(f *File, now string) {
 	}
 }
 
-func ensureFile(file string) error {
-	if _, err := os.Stat(file); os.IsNotExist(err) {
-		return os.WriteFile(file, []byte(""), 0644)
+func (s *Store) ensureFile() error {
+	if _, err := s.fs.Stat(s.file); os.IsNotExist(err) {
+		return util.WriteFile(s.fs, s.file, []byte(""), 0644)
 	}
 	return nil
 }

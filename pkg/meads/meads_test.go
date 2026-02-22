@@ -1,23 +1,23 @@
 package meads
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/go-git/go-billy/v5/util"
 )
 
 func TestDeleteMany_Basic(t *testing.T) {
-	path := tempTaskFile(t, "")
-	id1, _ := Add(path, Task{Title: "Task 1", Status: "open"})
-	id2, _ := Add(path, Task{Title: "Task 2", Status: "open"})
-	id3, _ := Add(path, Task{Title: "Task 3", Status: "open"})
+	s := newTestStore(t, "")
+	id1, _ := s.Add(Task{Title: "Task 1", Status: "open"})
+	id2, _ := s.Add(Task{Title: "Task 2", Status: "open"})
+	id3, _ := s.Add(Task{Title: "Task 3", Status: "open"})
 
-	if err := DeleteMany(path, []int{id1, id3}); err != nil {
+	if err := s.DeleteMany([]int{id1, id3}); err != nil {
 		t.Fatalf("DeleteMany: %v", err)
 	}
 
-	tasks, _ := Get(path, nil)
+	tasks, _ := s.Get(nil)
 	if len(tasks) != 1 {
 		t.Fatalf("expected 1 task, got %d", len(tasks))
 	}
@@ -27,23 +27,23 @@ func TestDeleteMany_Basic(t *testing.T) {
 }
 
 func TestDeleteMany_Empty(t *testing.T) {
-	path := tempTaskFile(t, "")
-	Add(path, Task{Title: "Task 1", Status: "open"})
+	s := newTestStore(t, "")
+	s.Add(Task{Title: "Task 1", Status: "open"})
 
-	if err := DeleteMany(path, nil); err != nil {
+	if err := s.DeleteMany(nil); err != nil {
 		t.Fatalf("DeleteMany(nil): %v", err)
 	}
-	tasks, _ := Get(path, nil)
+	tasks, _ := s.Get(nil)
 	if len(tasks) != 1 {
 		t.Fatalf("expected 1 task, got %d", len(tasks))
 	}
 }
 
 func TestDeleteMany_NotFound(t *testing.T) {
-	path := tempTaskFile(t, "")
-	Add(path, Task{Title: "Task 1", Status: "open"})
+	s := newTestStore(t, "")
+	s.Add(Task{Title: "Task 1", Status: "open"})
 
-	err := DeleteMany(path, []int{99})
+	err := s.DeleteMany([]int{99})
 	if err == nil {
 		t.Fatal("expected error for missing task, got nil")
 	}
@@ -53,31 +53,31 @@ func TestDeleteMany_NotFound(t *testing.T) {
 }
 
 func TestDeleteMany_CleansDeps(t *testing.T) {
-	path := tempTaskFile(t, "")
-	id1, _ := Add(path, Task{Title: "Parent", Status: "closed"})
-	id2, _ := Add(path, Task{Title: "Child", Status: "open"})
-	Update(path, id2, func(t *Task) {
+	s := newTestStore(t, "")
+	id1, _ := s.Add(Task{Title: "Parent", Status: "closed"})
+	id2, _ := s.Add(Task{Title: "Child", Status: "open"})
+	s.Update(id2, func(t *Task) {
 		t.AddDep(id1)
 	})
 
 	// Verify dep exists before delete
-	tasks, _ := Get(path, []int{id2})
+	tasks, _ := s.Get([]int{id2})
 	if len(tasks[0].DependsOn) != 1 {
 		t.Fatalf("expected 1 dep before delete, got %v", tasks[0].DependsOn)
 	}
 
-	if err := DeleteMany(path, []int{id1}); err != nil {
+	if err := s.DeleteMany([]int{id1}); err != nil {
 		t.Fatalf("DeleteMany: %v", err)
 	}
 
 	// Child should have dep cleaned up
-	tasks, _ = Get(path, []int{id2})
+	tasks, _ = s.Get([]int{id2})
 	if len(tasks[0].DependsOn) != 0 {
 		t.Fatalf("expected 0 deps after delete, got %v", tasks[0].DependsOn)
 	}
 
 	// Child should be updatable (no dangling dep error)
-	if err := Update(path, id2, func(t *Task) {
+	if err := s.Update(id2, func(t *Task) {
 		t.SetPriority("P1")
 	}); err != nil {
 		t.Fatalf("Update after dep cleanup failed: %v", err)
@@ -85,20 +85,20 @@ func TestDeleteMany_CleansDeps(t *testing.T) {
 }
 
 func TestDeleteMany_PreservesRemainingDeps(t *testing.T) {
-	path := tempTaskFile(t, "")
-	id1, _ := Add(path, Task{Title: "Delete me", Status: "closed"})
-	id2, _ := Add(path, Task{Title: "Keep me", Status: "open"})
-	id3, _ := Add(path, Task{Title: "Child", Status: "open"})
-	Update(path, id3, func(t *Task) {
+	s := newTestStore(t, "")
+	id1, _ := s.Add(Task{Title: "Delete me", Status: "closed"})
+	id2, _ := s.Add(Task{Title: "Keep me", Status: "open"})
+	id3, _ := s.Add(Task{Title: "Child", Status: "open"})
+	s.Update(id3, func(t *Task) {
 		t.AddDep(id1)
 		t.AddDep(id2)
 	})
 
-	if err := DeleteMany(path, []int{id1}); err != nil {
+	if err := s.DeleteMany([]int{id1}); err != nil {
 		t.Fatalf("DeleteMany: %v", err)
 	}
 
-	tasks, _ := Get(path, []int{id3})
+	tasks, _ := s.Get([]int{id3})
 	if len(tasks[0].DependsOn) != 1 || tasks[0].DependsOn[0] != id2 {
 		t.Fatalf("expected depends-on [%d], got %v", id2, tasks[0].DependsOn)
 	}
@@ -106,19 +106,18 @@ func TestDeleteMany_PreservesRemainingDeps(t *testing.T) {
 
 func TestDeleteMany_Atomic(t *testing.T) {
 	// Verify that DeleteMany doesn't partially delete tasks on error.
-	path := filepath.Join(t.TempDir(), "TASKS.md")
-	os.WriteFile(path, []byte(""), 0644)
-	id1, _ := Add(path, Task{Title: "Task 1", Status: "open"})
-	id2, _ := Add(path, Task{Title: "Task 2", Status: "open"})
+	s := newTestStore(t, "")
+	id1, _ := s.Add(Task{Title: "Task 1", Status: "open"})
+	id2, _ := s.Add(Task{Title: "Task 2", Status: "open"})
 
 	// Try to delete one valid and one invalid ID
-	err := DeleteMany(path, []int{id1, 99})
+	err := s.DeleteMany([]int{id1, 99})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
 
 	// Both tasks should still exist (no partial deletion)
-	tasks, err := Get(path, nil)
+	tasks, err := s.Get(nil)
 	if err != nil {
 		t.Fatalf("Get after failed DeleteMany: %v", err)
 	}
@@ -135,20 +134,20 @@ func TestDeleteMany_Atomic(t *testing.T) {
 }
 
 func TestUpdate_Description(t *testing.T) {
-	path := tempTaskFile(t, "")
+	s := newTestStore(t, "")
 	// Create a task to update.
-	id, err := Add(path, Task{Title: "Test task", Status: "open"})
+	id, err := s.Add(Task{Title: "Test task", Status: "open"})
 	if err != nil {
 		t.Fatalf("Add failed: %v", err)
 	}
 	// Update with a simple description.
-	err = Update(path, id, func(t *Task) {
+	err = s.Update(id, func(t *Task) {
 		t.Description = "simple description"
 	})
 	if err != nil {
 		t.Fatalf("Update failed: %v", err)
 	}
-	tasks, err := Get(path, []int{id})
+	tasks, err := s.Get([]int{id})
 	if err != nil {
 		t.Fatalf("Get failed: %v", err)
 	}
@@ -158,8 +157,8 @@ func TestUpdate_Description(t *testing.T) {
 }
 
 func TestUpdate_MultilineDescription(t *testing.T) {
-	path := tempTaskFile(t, "")
-	id, err := Add(path, Task{Title: "Crash report", Status: "open"})
+	s := newTestStore(t, "")
+	id, err := s.Add(Task{Title: "Crash report", Status: "open"})
 	if err != nil {
 		t.Fatalf("Add failed: %v", err)
 	}
@@ -172,14 +171,14 @@ Stack trace:
 
 A nil map value inside the state struct causes reflect.Value.Set on a zero value.`
 
-	err = Update(path, id, func(t *Task) {
+	err = s.Update(id, func(t *Task) {
 		t.Description = multilineDesc
 	})
 	if err != nil {
 		t.Fatalf("Update failed: %v", err)
 	}
 	// Read back and verify the multiline description survives the round-trip.
-	tasks, err := Get(path, []int{id})
+	tasks, err := s.Get([]int{id})
 	if err != nil {
 		t.Fatalf("Get failed: %v", err)
 	}
@@ -187,7 +186,7 @@ A nil map value inside the state struct causes reflect.Value.Set on a zero value
 		t.Errorf("Description round-trip failed.\ngot:\n%s\nwant:\n%s", tasks[0].Description, multilineDesc)
 	}
 	// Also verify the raw file contains the description text.
-	data, err := os.ReadFile(path)
+	data, err := util.ReadFile(s.fs, s.file)
 	if err != nil {
 		t.Fatalf("ReadFile failed: %v", err)
 	}
@@ -197,19 +196,19 @@ A nil map value inside the state struct causes reflect.Value.Set on a zero value
 }
 
 func TestUpdate_DescriptionReplace(t *testing.T) {
-	path := tempTaskFile(t, "")
-	id, err := Add(path, Task{Title: "Task with description", Status: "open", Description: "original description"})
+	s := newTestStore(t, "")
+	id, err := s.Add(Task{Title: "Task with description", Status: "open", Description: "original description"})
 	if err != nil {
 		t.Fatalf("Add failed: %v", err)
 	}
 	// Replace the description via update.
-	err = Update(path, id, func(t *Task) {
+	err = s.Update(id, func(t *Task) {
 		t.Description = "replaced description"
 	})
 	if err != nil {
 		t.Fatalf("Update failed: %v", err)
 	}
-	tasks, err := Get(path, []int{id})
+	tasks, err := s.Get([]int{id})
 	if err != nil {
 		t.Fatalf("Get failed: %v", err)
 	}

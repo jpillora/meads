@@ -13,7 +13,7 @@ type listCmd struct {
 }
 
 func (c *listCmd) Run() error {
-	tasks, err := meads.Get(c.globals.TasksFile, nil)
+	tasks, err := c.globals.store().Get(nil)
 	if err != nil {
 		return err
 	}

@@ -9,8 +9,7 @@ import (
 )
 
 // NewServer creates an MCP server exposing task management tools.
-// The file parameter is the path to the TASKS.md file.
-func NewServer(file, version string) *mcp.Server {
+func NewServer(store *meads.Store, version string) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{
 		Name:    "meads",
 		Version: version,
@@ -21,7 +20,7 @@ func NewServer(file, version string) *mcp.Server {
 		Name:        "list_tasks",
 		Description: "List all tasks",
 	}, func(_ context.Context, _ *mcp.CallToolRequest, _ listTasksInput) (*mcp.CallToolResult, any, error) {
-		tasks, err := meads.Get(file, nil)
+		tasks, err := store.Get(nil)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -33,7 +32,7 @@ func NewServer(file, version string) *mcp.Server {
 		Name:        "get_task",
 		Description: "Get a specific task by ID",
 	}, func(_ context.Context, _ *mcp.CallToolRequest, input getTaskInput) (*mcp.CallToolResult, any, error) {
-		tasks, err := meads.Get(file, []int{input.ID})
+		tasks, err := store.Get([]int{input.ID})
 		if err != nil {
 			return nil, nil, err
 		}
@@ -45,7 +44,7 @@ func NewServer(file, version string) *mcp.Server {
 		Name:        "ready_tasks",
 		Description: "List open tasks not blocked by dependencies, sorted by priority",
 	}, func(_ context.Context, _ *mcp.CallToolRequest, _ readyTasksInput) (*mcp.CallToolResult, any, error) {
-		tasks, err := meads.Ready(file)
+		tasks, err := store.Ready()
 		if err != nil {
 			return nil, nil, err
 		}
@@ -75,7 +74,7 @@ func NewServer(file, version string) *mcp.Server {
 		if input.Description != "" {
 			t.Description = input.Description
 		}
-		id, err := meads.Add(file, t)
+		id, err := store.Add(t)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -87,7 +86,7 @@ func NewServer(file, version string) *mcp.Server {
 		Name:        "update_task",
 		Description: "Update an existing task by ID",
 	}, func(_ context.Context, _ *mcp.CallToolRequest, input updateTaskInput) (*mcp.CallToolResult, any, error) {
-		err := meads.Update(file, input.ID, func(t *meads.Task) {
+		err := store.Update(input.ID, func(t *meads.Task) {
 			if input.Status != "" {
 				t.SetStatus(input.Status)
 			}
@@ -112,7 +111,7 @@ func NewServer(file, version string) *mcp.Server {
 		Name:        "delete_task",
 		Description: "Delete a task by ID",
 	}, func(_ context.Context, _ *mcp.CallToolRequest, input deleteTaskInput) (*mcp.CallToolResult, any, error) {
-		if err := meads.Delete(file, input.ID); err != nil {
+		if err := store.Delete(input.ID); err != nil {
 			return nil, nil, err
 		}
 		return textResult("deleted"), nil, nil
@@ -123,7 +122,7 @@ func NewServer(file, version string) *mcp.Server {
 		Name:        "add_dependency",
 		Description: "Make a child task depend on a parent task",
 	}, func(_ context.Context, _ *mcp.CallToolRequest, input addDependencyInput) (*mcp.CallToolResult, any, error) {
-		err := meads.Update(file, input.ChildID, func(t *meads.Task) {
+		err := store.Update(input.ChildID, func(t *meads.Task) {
 			t.AddDep(input.ParentID)
 		})
 		if err != nil {

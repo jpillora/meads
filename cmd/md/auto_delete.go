@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/jpillora/meads/pkg/meads"
+	"github.com/go-git/go-billy/v5/util"
 )
 
 type autoDeleteCmd struct {
@@ -44,17 +44,18 @@ func (c *autoDeleteCmd) runFromHook() error {
 		return nil // Silently exit if TASKS.md has changes
 	}
 
-	tf := c.globals.TasksFile
+	store := c.globals.store()
+	git := c.globals.git()
 
 	// Save backup for recovery — if anything fails after modifying
 	// the file, we restore it so TASKS.md always matches git HEAD.
-	backup, err := os.ReadFile(tf)
+	backup, err := util.ReadFile(store.FS(), store.Path())
 	if err != nil {
-		return fmt.Errorf("reading %s: %w", tf, err)
+		return fmt.Errorf("reading %s: %w", store.Path(), err)
 	}
 
 	// Find all closed tasks
-	tasks, err := meads.Get(tf, nil)
+	tasks, err := store.Get(nil)
 	if err != nil {
 		return fmt.Errorf("reading tasks: %w", err)
 	}
@@ -72,8 +73,8 @@ func (c *autoDeleteCmd) runFromHook() error {
 
 	// Atomic delete: removes all closed tasks and cleans up dangling deps
 	// in a single file write.
-	if err := meads.DeleteMany(tf, closedIDs); err != nil {
-		os.WriteFile(tf, backup, 0644)
+	if err := store.DeleteMany(closedIDs); err != nil {
+		util.WriteFile(store.FS(), store.Path(), backup, 0644)
 		return fmt.Errorf("deleting tasks: %w", err)
 	}
 
@@ -82,16 +83,16 @@ func (c *autoDeleteCmd) runFromHook() error {
 	}
 
 	// Stage the changes
-	if err := c.globals.gitCommand("add", tf).Run(); err != nil {
-		os.WriteFile(tf, backup, 0644)
-		return fmt.Errorf("staging %s: %w", tf, err)
+	if err := git.Run("add", c.globals.TasksFile); err != nil {
+		util.WriteFile(store.FS(), store.Path(), backup, 0644)
+		return fmt.Errorf("staging %s: %w", store.Path(), err)
 	}
 
 	// Amend the commit to include deletions
-	if err := c.globals.gitCommand("commit", "--amend", "--no-edit").Run(); err != nil {
+	if err := git.Run("commit", "--amend", "--no-edit"); err != nil {
 		// Restore file and unstage changes
-		os.WriteFile(tf, backup, 0644)
-		c.globals.gitCommand("reset", "HEAD", "--", tf).Run()
+		util.WriteFile(store.FS(), store.Path(), backup, 0644)
+		git.Run("reset", "HEAD", "--", c.globals.TasksFile)
 		return fmt.Errorf("amending commit: %w", err)
 	}
 
@@ -99,35 +100,35 @@ func (c *autoDeleteCmd) runFromHook() error {
 }
 
 func (c *autoDeleteCmd) isOnDefaultBranch() bool {
+	git := c.globals.git()
+
 	// Get current branch
-	out, err := c.globals.gitCommand("rev-parse", "--abbrev-ref", "HEAD").Output()
+	currentBranch, err := git.Output("rev-parse", "--abbrev-ref", "HEAD")
 	if err != nil {
 		return false
 	}
-	currentBranch := strings.TrimSpace(string(out))
 
 	// Get default branch
-	out, err = c.globals.gitCommand("symbolic-ref", "refs/remotes/origin/HEAD").Output()
+	defaultBranch, err := git.Output("symbolic-ref", "refs/remotes/origin/HEAD")
 	if err != nil {
 		// Fallback: check if current branch is main or master
 		return currentBranch == "main" || currentBranch == "master"
 	}
-	defaultBranch := strings.TrimSpace(string(out))
 	defaultBranch = strings.TrimPrefix(defaultBranch, "refs/remotes/origin/")
 
 	return currentBranch == defaultBranch
 }
 
 func (c *autoDeleteCmd) isTasksFileClean() bool {
+	git := c.globals.git()
+
 	// Check for unstaged changes
-	cmd := c.globals.gitCommand("diff", "--quiet", "HEAD", "--", c.globals.TasksFile)
-	if err := cmd.Run(); err != nil {
+	if err := git.Run("diff", "--quiet", "HEAD", "--", c.globals.TasksFile); err != nil {
 		return false // Has unstaged changes
 	}
 
 	// Check for staged changes
-	cmd = c.globals.gitCommand("diff", "--quiet", "--cached", "--", c.globals.TasksFile)
-	if err := cmd.Run(); err != nil {
+	if err := git.Run("diff", "--quiet", "--cached", "--", c.globals.TasksFile); err != nil {
 		return false // Has staged changes
 	}
 
@@ -232,7 +233,7 @@ func (c *autoDeleteCmd) checkStatus() error {
 }
 
 func (c *autoDeleteCmd) getHookPath() (string, error) {
-	// Find git root
+	// Find git root — uses gitCommand directly since this manages .git/hooks/
 	out, err := c.globals.gitCommand("rev-parse", "--git-dir").Output()
 	if err != nil {
 		return "", fmt.Errorf("not in a git repository")

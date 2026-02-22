@@ -19,7 +19,7 @@ func (c *setStatusCmd) Run() error {
 		return fmt.Errorf("invalid task ID: %s", c.ID)
 	}
 	var updated meads.Task
-	err = meads.Update(c.globals.TasksFile, id, func(t *meads.Task) {
+	err = c.globals.store().Update(id, func(t *meads.Task) {
 		t.SetStatus(c.Status)
 		updated = *t
 	})

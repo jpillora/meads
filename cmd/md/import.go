@@ -15,7 +15,7 @@ func (c *beadsImportCmd) Run() error {
 	if err != nil {
 		return err
 	}
-	result, err := meads.RunImport(c.globals.TasksFile, imp)
+	result, err := c.globals.store().RunImport(imp)
 	if err != nil {
 		return err
 	}

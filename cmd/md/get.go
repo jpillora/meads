@@ -25,7 +25,7 @@ func (c *getCmd) Run() error {
 		}
 		ids[i] = n
 	}
-	tasks, err := meads.Get(c.globals.TasksFile, ids)
+	tasks, err := c.globals.store().Get(ids)
 	if err != nil {
 		return err
 	}

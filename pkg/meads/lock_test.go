@@ -2,27 +2,29 @@ package meads
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/go-git/go-billy/v5/memfs"
+	"github.com/go-git/go-billy/v5/util"
 )
 
-func tempTaskFile(t *testing.T, content string) string {
+func newTestStore(t *testing.T, content string) *Store {
 	t.Helper()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "TASKS.md")
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-		t.Fatal(err)
+	fs := memfs.New()
+	if content != "" {
+		if err := util.WriteFile(fs, "TASKS.md", []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
 	}
-	return path
+	return NewStore(fs, "TASKS.md")
 }
 
 func TestAcquireLock_Basic(t *testing.T) {
-	path := tempTaskFile(t, "# Tasks\n")
-	id, content, err := acquireLock(path)
+	s := newTestStore(t, "# Tasks\n")
+	id, content, err := s.acquireLock()
 	if err != nil {
 		t.Fatalf("acquireLock failed: %v", err)
 	}
@@ -38,13 +40,13 @@ func TestAcquireLock_Basic(t *testing.T) {
 }
 
 func TestReleaseLock_StripsLockLines(t *testing.T) {
-	path := tempTaskFile(t, "")
+	s := newTestStore(t, "")
 	original := "# Tasks\n\n## 1 Do stuff\n"
 	withLocks := original + "\nlock:abc123:1234567890\nlock:def456:1234567890\n"
-	if err := releaseLock(path, withLocks); err != nil {
+	if err := s.releaseLock(withLocks); err != nil {
 		t.Fatalf("releaseLock failed: %v", err)
 	}
-	data, err := os.ReadFile(path)
+	data, err := util.ReadFile(s.fs, s.file)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,9 +79,9 @@ func TestStripLockLines(t *testing.T) {
 
 func TestAcquireLock_ExpiredLockIgnored(t *testing.T) {
 	expired := fmt.Sprintf("lock:oldwriter:%d", time.Now().Unix()-120)
-	path := tempTaskFile(t, "# Tasks\n"+expired+"\n")
+	s := newTestStore(t, "# Tasks\n"+expired+"\n")
 
-	id, content, err := acquireLock(path)
+	id, content, err := s.acquireLock()
 	if err != nil {
 		t.Fatalf("should succeed past expired lock, got: %v", err)
 	}
@@ -93,9 +95,9 @@ func TestAcquireLock_ExpiredLockIgnored(t *testing.T) {
 
 func TestAcquireLock_ActiveLockBlocks(t *testing.T) {
 	active := fmt.Sprintf("lock:otherwriter:%d", time.Now().Unix())
-	path := tempTaskFile(t, "# Tasks\n"+active+"\n")
+	s := newTestStore(t, "# Tasks\n"+active+"\n")
 
-	_, _, err := acquireLock(path)
+	_, _, err := s.acquireLock()
 	if err == nil {
 		t.Fatal("expected lock contention error")
 	}
@@ -105,9 +107,9 @@ func TestAcquireLock_ActiveLockBlocks(t *testing.T) {
 }
 
 func TestAcquireLock_MalformedLockIgnored(t *testing.T) {
-	path := tempTaskFile(t, "# Tasks\nlock:nope\nlock:also:bad:extra\n")
+	s := newTestStore(t, "# Tasks\nlock:nope\nlock:also:bad:extra\n")
 
-	id, _, err := acquireLock(path)
+	id, _, err := s.acquireLock()
 	if err != nil {
 		t.Fatalf("should succeed past malformed locks, got: %v", err)
 	}
@@ -117,7 +119,7 @@ func TestAcquireLock_MalformedLockIgnored(t *testing.T) {
 }
 
 func TestConcurrentWriters_OneWins(t *testing.T) {
-	path := tempTaskFile(t, "# Tasks\n")
+	s := newTestStore(t, "# Tasks\n")
 
 	n := 10
 	var mu sync.Mutex
@@ -129,7 +131,7 @@ func TestConcurrentWriters_OneWins(t *testing.T) {
 	for i := 0; i < n; i++ {
 		go func() {
 			defer wg.Done()
-			id, _, err := acquireLock(path)
+			id, _, err := s.acquireLock()
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
@@ -151,9 +153,9 @@ func TestConcurrentWriters_OneWins(t *testing.T) {
 
 func TestAcquireRelease_RoundTrip(t *testing.T) {
 	original := "# Tasks\n\n## 1 My task\n\n* status: open\n"
-	path := tempTaskFile(t, original)
+	s := newTestStore(t, original)
 
-	id, content, err := acquireLock(path)
+	id, content, err := s.acquireLock()
 	if err != nil {
 		t.Fatalf("acquire failed: %v", err)
 	}
@@ -162,11 +164,11 @@ func TestAcquireRelease_RoundTrip(t *testing.T) {
 	}
 
 	updated := content + "\n## 2 New task\n\n* status: open\n"
-	if err := releaseLock(path, updated); err != nil {
+	if err := s.releaseLock(updated); err != nil {
 		t.Fatalf("release failed: %v", err)
 	}
 
-	data, err := os.ReadFile(path)
+	data, err := util.ReadFile(s.fs, s.file)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -12,6 +12,6 @@ type mcpCmd struct {
 }
 
 func (c *mcpCmd) Run() error {
-	s := mcppkg.NewServer(c.globals.TasksFile, version)
+	s := mcppkg.NewServer(c.globals.store(), version)
 	return s.Run(context.Background(), &mcp.StdioTransport{})
 }

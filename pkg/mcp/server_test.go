@@ -3,25 +3,22 @@ package mcp_test
 import (
 	"context"
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"testing"
 
+	"github.com/go-git/go-billy/v5/memfs"
 	mcppkg "github.com/jpillora/meads/pkg/mcp"
+	"github.com/jpillora/meads/pkg/meads"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// setup creates a temp dir with an empty TASKS.md and returns an MCP client session.
+// setup creates an in-memory store and returns an MCP client session.
 func setup(t *testing.T) *mcp.ClientSession {
 	t.Helper()
-	dir := t.TempDir()
-	file := filepath.Join(dir, "TASKS.md")
-	if err := os.WriteFile(file, []byte(""), 0644); err != nil {
-		t.Fatal(err)
-	}
+	fs := memfs.New()
+	store := meads.NewStore(fs, "TASKS.md")
 
 	ctx := context.Background()
-	server := mcppkg.NewServer(file, "test")
+	server := mcppkg.NewServer(store, "test")
 	st, ct := mcp.NewInMemoryTransports()
 	if _, err := server.Connect(ctx, st, nil); err != nil {
 		t.Fatal(err)

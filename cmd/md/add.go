@@ -129,7 +129,7 @@ func runAdd(g *globals, args []string, title, status, priority, typ, dependsOn, 
 	if description != "" {
 		t.Description = description
 	}
-	id, err := meads.Add(g.TasksFile, t)
+	id, err := g.store().Add(t)
 	if err != nil {
 		return err
 	}

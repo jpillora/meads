@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 
+	"github.com/jpillora/meads/pkg/meads"
 	"github.com/jpillora/opts"
 )
 
@@ -17,18 +18,37 @@ func defaultTasksFile() string {
 }
 
 type globals struct {
-	TasksFile  string `help:"the tasks markdown file to manage"`
-	WebhookURL string `help:"a url to POST to with {meads:true,action,data}"`
-	Dir        string `opts:"-"`
+	Store      *meads.Store `opts:"-"`
+	Git        meads.Git    `opts:"-"`
+	TasksFile  string       `help:"the tasks markdown file to manage"`
+	WebhookURL string       `help:"a url to POST to with {meads:true,action,data}"`
+	Dir        string       `opts:"-"`
 }
 
 // gitCommand creates an exec.Command for git with Dir set.
+// Used by hook management (enable/disable/checkStatus) which needs exec.Cmd directly.
 func (g *globals) gitCommand(args ...string) *exec.Cmd {
 	cmd := exec.Command("git", args...)
 	if g.Dir != "" {
 		cmd.Dir = g.Dir
 	}
 	return cmd
+}
+
+// store returns the Store, lazily initializing from TasksFile if not set.
+func (g *globals) store() *meads.Store {
+	if g.Store == nil {
+		g.Store = meads.NewFileStore(g.TasksFile)
+	}
+	return g.Store
+}
+
+// git returns the Git implementation, lazily initializing if not set.
+func (g *globals) git() meads.Git {
+	if g.Git == nil {
+		g.Git = &meads.ExecGit{Dir: g.Dir}
+	}
+	return g.Git
 }
 
 type root struct {

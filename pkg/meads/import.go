@@ -3,6 +3,8 @@ package meads
 import (
 	"fmt"
 	"os"
+
+	"github.com/go-git/go-billy/v5/util"
 )
 
 // Importer defines the interface for importing tasks from external sources.
@@ -36,7 +38,7 @@ type ImportResult struct {
 
 // RunImport imports tasks from the given importer, deduplicating by
 // "<name>-id" meta key. New tasks are appended via AddMany.
-func RunImport(file string, imp Importer) (ImportResult, error) {
+func (s *Store) RunImport(imp Importer) (ImportResult, error) {
 	tasks, err := imp.Import()
 	if err != nil {
 		return ImportResult{}, fmt.Errorf("importing from %s: %w", imp.Name(), err)
@@ -44,13 +46,15 @@ func RunImport(file string, imp Importer) (ImportResult, error) {
 	// Load existing tasks for dedup.
 	metaKey := imp.Name() + "-id"
 	existing := make(map[string]bool)
-	if data, err := os.ReadFile(file); err == nil {
+	if data, err := util.ReadFile(s.fs, s.file); err == nil {
 		f := ParseFile(stripLockLines(string(data)))
 		for _, t := range f.Tasks {
 			if v, ok := t.Meta[metaKey]; ok {
 				existing[v] = true
 			}
 		}
+	} else if !os.IsNotExist(err) {
+		return ImportResult{}, fmt.Errorf("reading %s: %w", s.file, err)
 	}
 	var toAdd []Task
 	skipped := 0
@@ -65,7 +69,7 @@ func RunImport(file string, imp Importer) (ImportResult, error) {
 	if len(toAdd) == 0 {
 		return ImportResult{Skipped: skipped}, nil
 	}
-	ids, err := AddMany(file, toAdd)
+	ids, err := s.AddMany(toAdd)
 	if err != nil {
 		return ImportResult{}, err
 	}

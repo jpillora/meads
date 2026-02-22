@@ -1,9 +1,9 @@
 package meads
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
+
+	"github.com/go-git/go-billy/v5/util"
 )
 
 type fakeImporter struct {
@@ -16,15 +16,14 @@ func (f *fakeImporter) Import() ([]Task, error) {
 }
 
 func TestRunImport_NewTasks(t *testing.T) {
-	dir := t.TempDir()
-	file := filepath.Join(dir, "TASKS.md")
+	s := newTestStore(t, "")
 	imp := &fakeImporter{
 		tasks: []Task{
 			{Title: "Task A", Meta: map[string]string{"fake-id": "1", "status": "open"}, Status: "open"},
 			{Title: "Task B", Meta: map[string]string{"fake-id": "2", "status": "open"}, Status: "open"},
 		},
 	}
-	result, err := RunImport(file, imp)
+	result, err := s.RunImport(imp)
 	if err != nil {
 		t.Fatalf("RunImport error: %v", err)
 	}
@@ -35,7 +34,7 @@ func TestRunImport_NewTasks(t *testing.T) {
 		t.Errorf("Skipped = %d, want 0", result.Skipped)
 	}
 	// Verify tasks were written.
-	data, _ := os.ReadFile(file)
+	data, _ := util.ReadFile(s.fs, s.file)
 	f := ParseFile(string(data))
 	if len(f.Tasks) != 2 {
 		t.Fatalf("expected 2 tasks in file, got %d", len(f.Tasks))
@@ -43,8 +42,7 @@ func TestRunImport_NewTasks(t *testing.T) {
 }
 
 func TestRunImport_Dedup(t *testing.T) {
-	dir := t.TempDir()
-	file := filepath.Join(dir, "TASKS.md")
+	s := newTestStore(t, "")
 	imp := &fakeImporter{
 		tasks: []Task{
 			{Title: "Task A", Meta: map[string]string{"fake-id": "1", "status": "open"}, Status: "open"},
@@ -52,12 +50,12 @@ func TestRunImport_Dedup(t *testing.T) {
 		},
 	}
 	// First import.
-	_, err := RunImport(file, imp)
+	_, err := s.RunImport(imp)
 	if err != nil {
 		t.Fatalf("first RunImport error: %v", err)
 	}
 	// Second import — same tasks, should all be skipped.
-	result, err := RunImport(file, imp)
+	result, err := s.RunImport(imp)
 	if err != nil {
 		t.Fatalf("second RunImport error: %v", err)
 	}
@@ -68,7 +66,7 @@ func TestRunImport_Dedup(t *testing.T) {
 		t.Errorf("Skipped = %d, want 2", result.Skipped)
 	}
 	// Verify still only 2 tasks.
-	data, _ := os.ReadFile(file)
+	data, _ := util.ReadFile(s.fs, s.file)
 	f := ParseFile(string(data))
 	if len(f.Tasks) != 2 {
 		t.Fatalf("expected 2 tasks in file, got %d", len(f.Tasks))
@@ -76,14 +74,13 @@ func TestRunImport_Dedup(t *testing.T) {
 }
 
 func TestRunImport_PartialDedup(t *testing.T) {
-	dir := t.TempDir()
-	file := filepath.Join(dir, "TASKS.md")
+	s := newTestStore(t, "")
 	imp1 := &fakeImporter{
 		tasks: []Task{
 			{Title: "Task A", Meta: map[string]string{"fake-id": "1", "status": "open"}, Status: "open"},
 		},
 	}
-	_, err := RunImport(file, imp1)
+	_, err := s.RunImport(imp1)
 	if err != nil {
 		t.Fatalf("first RunImport error: %v", err)
 	}
@@ -94,7 +91,7 @@ func TestRunImport_PartialDedup(t *testing.T) {
 			{Title: "Task C", Meta: map[string]string{"fake-id": "3", "status": "open"}, Status: "open"},
 		},
 	}
-	result, err := RunImport(file, imp2)
+	result, err := s.RunImport(imp2)
 	if err != nil {
 		t.Fatalf("second RunImport error: %v", err)
 	}
@@ -107,10 +104,9 @@ func TestRunImport_PartialDedup(t *testing.T) {
 }
 
 func TestRunImport_EmptyList(t *testing.T) {
-	dir := t.TempDir()
-	file := filepath.Join(dir, "TASKS.md")
+	s := newTestStore(t, "")
 	imp := &fakeImporter{tasks: []Task{}}
-	result, err := RunImport(file, imp)
+	result, err := s.RunImport(imp)
 	if err != nil {
 		t.Fatalf("RunImport error: %v", err)
 	}

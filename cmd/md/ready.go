@@ -2,8 +2,6 @@ package main
 
 import (
 	"fmt"
-
-	"github.com/jpillora/meads/pkg/meads"
 )
 
 type readyCmd struct {
@@ -12,7 +10,7 @@ type readyCmd struct {
 }
 
 func (c *readyCmd) Run() error {
-	tasks, err := meads.Ready(c.globals.TasksFile)
+	tasks, err := c.globals.store().Ready()
 	if err != nil {
 		return err
 	}

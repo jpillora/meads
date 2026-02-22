@@ -26,7 +26,7 @@ func (c *addDepCmd) Run() error {
 		return fmt.Errorf("a task cannot depend on itself")
 	}
 	var updated meads.Task
-	err = meads.Update(c.globals.TasksFile, child, func(t *meads.Task) {
+	err = c.globals.store().Update(child, func(t *meads.Task) {
 		t.AddDep(parent)
 		updated = *t
 	})

@@ -16,16 +16,21 @@ type testHarness struct {
 	t       *testing.T
 	dir     string
 	globals *globals
+	store   *meads.Store
 }
 
 // newHarness creates a temp dir with an initialized git repo and returns a harness.
 func newHarness(t *testing.T) *testHarness {
 	t.Helper()
 	dir := t.TempDir()
+	store := meads.NewFileStore(filepath.Join(dir, "TASKS.md"))
 	h := &testHarness{
-		t:   t,
-		dir: dir,
+		t:     t,
+		dir:   dir,
+		store: store,
 		globals: &globals{
+			Store:     store,
+			Git:       &meads.ExecGit{Dir: dir},
 			TasksFile: filepath.Join(dir, "TASKS.md"),
 			Dir:       dir,
 		},
@@ -108,7 +113,7 @@ func (h *testHarness) addTask(title string) int {
 	h.t.Helper()
 	t := meads.Task{Title: title}
 	t.SetStatus("open")
-	id, err := meads.Add(h.globals.TasksFile, t)
+	id, err := h.store.Add(t)
 	if err != nil {
 		h.t.Fatalf("addTask(%q): %v", title, err)
 	}
@@ -118,7 +123,7 @@ func (h *testHarness) addTask(title string) int {
 // closeTask sets a task's status to closed.
 func (h *testHarness) closeTask(id int) {
 	h.t.Helper()
-	err := meads.Update(h.globals.TasksFile, id, func(t *meads.Task) {
+	err := h.store.Update(id, func(t *meads.Task) {
 		t.SetStatus("closed")
 	})
 	if err != nil {
@@ -129,7 +134,7 @@ func (h *testHarness) closeTask(id int) {
 // setStatus sets a task's status.
 func (h *testHarness) setStatus(id int, status string) {
 	h.t.Helper()
-	err := meads.Update(h.globals.TasksFile, id, func(t *meads.Task) {
+	err := h.store.Update(id, func(t *meads.Task) {
 		t.SetStatus(status)
 	})
 	if err != nil {
@@ -140,7 +145,7 @@ func (h *testHarness) setStatus(id int, status string) {
 // updatePriority sets a task's priority.
 func (h *testHarness) updatePriority(id int, priority string) {
 	h.t.Helper()
-	err := meads.Update(h.globals.TasksFile, id, func(t *meads.Task) {
+	err := h.store.Update(id, func(t *meads.Task) {
 		t.SetPriority(priority)
 	})
 	if err != nil {
@@ -151,7 +156,7 @@ func (h *testHarness) updatePriority(id int, priority string) {
 // updateDescription sets a task's description.
 func (h *testHarness) updateDescription(id int, desc string) {
 	h.t.Helper()
-	err := meads.Update(h.globals.TasksFile, id, func(t *meads.Task) {
+	err := h.store.Update(id, func(t *meads.Task) {
 		t.Description = desc
 	})
 	if err != nil {
@@ -162,7 +167,7 @@ func (h *testHarness) updateDescription(id int, desc string) {
 // deleteTask removes a task.
 func (h *testHarness) deleteTask(id int) {
 	h.t.Helper()
-	if err := meads.Delete(h.globals.TasksFile, id); err != nil {
+	if err := h.store.Delete(id); err != nil {
 		h.t.Fatalf("deleteTask(%d): %v", id, err)
 	}
 }
@@ -170,7 +175,7 @@ func (h *testHarness) deleteTask(id int) {
 // getTask returns a single task by ID.
 func (h *testHarness) getTask(id int) meads.Task {
 	h.t.Helper()
-	tasks, err := meads.Get(h.globals.TasksFile, []int{id})
+	tasks, err := h.store.Get([]int{id})
 	if err != nil {
 		h.t.Fatalf("getTask(%d): %v", id, err)
 	}
@@ -180,17 +185,17 @@ func (h *testHarness) getTask(id int) meads.Task {
 // getTasks returns all tasks.
 func (h *testHarness) getTasks() []meads.Task {
 	h.t.Helper()
-	tasks, err := meads.Get(h.globals.TasksFile, nil)
+	tasks, err := h.store.Get(nil)
 	if err != nil {
 		h.t.Fatalf("getTasks: %v", err)
 	}
 	return tasks
 }
 
-// readyTasks returns tasks from meads.Ready.
+// readyTasks returns tasks from store.Ready.
 func (h *testHarness) readyTasks() []meads.Task {
 	h.t.Helper()
-	tasks, err := meads.Ready(h.globals.TasksFile)
+	tasks, err := h.store.Ready()
 	if err != nil {
 		h.t.Fatalf("readyTasks: %v", err)
 	}
@@ -200,7 +205,7 @@ func (h *testHarness) readyTasks() []meads.Task {
 // addDep makes child depend on parent.
 func (h *testHarness) addDep(child, parent int) {
 	h.t.Helper()
-	err := meads.Update(h.globals.TasksFile, child, func(t *meads.Task) {
+	err := h.store.Update(child, func(t *meads.Task) {
 		t.AddDep(parent)
 	})
 	if err != nil {
@@ -289,7 +294,7 @@ func (h *testHarness) assertTaskCount(expected int) {
 
 func (h *testHarness) assertTaskExists(id int) {
 	h.t.Helper()
-	_, err := meads.Get(h.globals.TasksFile, []int{id})
+	_, err := h.store.Get([]int{id})
 	if err != nil {
 		h.t.Fatalf("expected task %d to exist, but got: %v", id, err)
 	}
@@ -297,7 +302,7 @@ func (h *testHarness) assertTaskExists(id int) {
 
 func (h *testHarness) assertTaskNotExists(id int) {
 	h.t.Helper()
-	_, err := meads.Get(h.globals.TasksFile, []int{id})
+	_, err := h.store.Get([]int{id})
 	if err == nil {
 		h.t.Fatalf("expected task %d to not exist, but it does", id)
 	}
