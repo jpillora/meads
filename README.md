@@ -23,6 +23,28 @@ md set-status 1 closed
 # updated task 1
 ```
 
+```markdown
+$ cat TASKS.md
+# TASKS
+
+a [meads](https://github.com/jpillora/meads) (`md`) managed task log
+
+* created: 2025-01-15T09:00:00Z
+* next-id: 3
+
+## 1. Fix the login bug
+
+* status: closed
+* created: 2025-01-15T09:00:00Z
+
+500 error when session cookie is expired
+
+## 2. Write tests for login fix
+
+* status: open
+* created: 2025-01-15T09:00:01Z
+```
+
 All state lives in `TASKS.md`. Commit it to git and you get full history for free.
 
 ## Commands
