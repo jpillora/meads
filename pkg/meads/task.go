@@ -257,6 +257,7 @@ func FormatFile(f File) string {
 	}
 	for _, t := range f.Tasks {
 		sb.WriteString("\n")
+		t.Description = RaiseHeadings(t.Description, 3)
 		sb.WriteString(FormatTask(t))
 	}
 	return sb.String()

@@ -93,7 +93,8 @@ func parseTask(section string) (Task, bool) {
 		bodyStart++
 	}
 	// Remaining lines form the description. Trim trailing whitespace.
-	description := strings.TrimRight(strings.Join(lines[bodyStart:], "\n"), "\n \t")
+	// Lower headings back to natural levels for in-memory representation.
+	description := LowerHeadings(strings.TrimRight(strings.Join(lines[bodyStart:], "\n"), "\n \t"))
 	t := Task{
 		ID:          id,
 		Title:       title,
