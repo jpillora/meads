@@ -14,7 +14,7 @@ type addCmd struct {
 	Args        []string `opts:"mode=arg,min=0" help:"Input text (e.g. 'bug: Fix login P3')"`
 	Title       string   `help:"Set task title"`
 	Status      string   `help:"Set task status (draft, open, inprogress, closed)"`
-	Priority    string   `help:"Set task priority (1-9)"`
+	Priority    string   `help:"Set task priority (P0-P9 or 0-9)"`
 	Type        string   `help:"Set task type (bug, task, feature)"`
 	DependsOn   string   `opts:"name=depends-on" help:"Set dependency task ID"`
 	Description string   `help:"Set task description"`
@@ -26,7 +26,7 @@ type createCmd struct {
 	Args        []string `opts:"mode=arg,min=0" help:"Input text (e.g. 'bug: Fix login P3')"`
 	Title       string   `help:"Set task title"`
 	Status      string   `help:"Set task status (draft, open, inprogress, closed)"`
-	Priority    string   `help:"Set task priority (1-9)"`
+	Priority    string   `help:"Set task priority (P0-P9 or 0-9)"`
 	Type        string   `help:"Set task type (bug, task, feature)"`
 	DependsOn   string   `opts:"name=depends-on" help:"Set dependency task ID"`
 	Description string   `help:"Set task description"`
@@ -114,7 +114,11 @@ func runAdd(g *globals, args []string, title, status, priority, typ, dependsOn, 
 	t.Title = title
 	t.SetStatus(status)
 	if priority != "" {
-		t.SetPriority(priority)
+		p, err := meads.NormalizePriority(priority)
+		if err != nil {
+			return err
+		}
+		t.SetPriority(p)
 	}
 	if dependsOn != "" {
 		n, err := strconv.Atoi(dependsOn)

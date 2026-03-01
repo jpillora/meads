@@ -133,6 +133,37 @@ func TestDeleteMany_Atomic(t *testing.T) {
 	}
 }
 
+func TestNormalizePriority(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+		err   bool
+	}{
+		{"P0", "P0", false},
+		{"P9", "P9", false},
+		{"p1", "P1", false},
+		{"0", "P0", false},
+		{"5", "P5", false},
+		{" P3 ", "P3", false},
+		{"P10", "", true},
+		{"", "", true},
+		{"banana", "", true},
+		{"PP1", "", true},
+		{"P", "", true},
+		{"-1", "", true},
+	}
+	for _, tt := range tests {
+		got, err := NormalizePriority(tt.input)
+		if (err != nil) != tt.err {
+			t.Errorf("NormalizePriority(%q): err=%v, wantErr=%v", tt.input, err, tt.err)
+			continue
+		}
+		if got != tt.want {
+			t.Errorf("NormalizePriority(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
 func TestUpdate_Description(t *testing.T) {
 	s := newTestStore(t, "")
 	// Create a task to update.

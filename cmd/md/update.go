@@ -21,13 +21,21 @@ func (c *updateCmd) Run() error {
 	if err != nil {
 		return fmt.Errorf("invalid task ID: %s", c.ID)
 	}
+	priority := c.Priority
+	if priority != "" {
+		var perr error
+		priority, perr = meads.NormalizePriority(priority)
+		if perr != nil {
+			return perr
+		}
+	}
 	var updated meads.Task
 	err = c.globals.store().Update(id, func(t *meads.Task) {
 		if c.Status != "" {
 			t.SetStatus(c.Status)
 		}
-		if c.Priority != "" {
-			t.SetPriority(c.Priority)
+		if priority != "" {
+			t.SetPriority(priority)
 		}
 		if c.Title != "" {
 			t.Title = c.Title

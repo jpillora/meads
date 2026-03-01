@@ -75,6 +75,18 @@ func (t *Task) SetStatus(s string) {
 	t.Meta["status"] = s
 }
 
+// NormalizePriority accepts priority in various formats ("P1", "p1", "1")
+// and returns the canonical "P#" form, or an error for invalid input.
+func NormalizePriority(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	// Strip leading P/p prefix if present
+	num := strings.TrimPrefix(strings.TrimPrefix(s, "P"), "p")
+	if len(num) != 1 || num[0] < '0' || num[0] > '9' {
+		return "", fmt.Errorf("invalid priority %q: must be P0-P9 or 0-9", s)
+	}
+	return "P" + num, nil
+}
+
 // SetPriority updates the task priority in both the field and Meta map.
 func (t *Task) SetPriority(p string) {
 	t.Priority = p

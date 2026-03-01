@@ -66,7 +66,11 @@ func NewServer(store *meads.Store, version string) *mcp.Server {
 		}
 		t.SetStatus(status)
 		if input.Priority != "" {
-			t.SetPriority(input.Priority)
+			p, perr := meads.NormalizePriority(input.Priority)
+			if perr != nil {
+				return nil, nil, perr
+			}
+			t.SetPriority(p)
 		}
 		if input.Type != "" {
 			t.SetType(input.Type)
@@ -86,12 +90,20 @@ func NewServer(store *meads.Store, version string) *mcp.Server {
 		Name:        "update_task",
 		Description: "Update an existing task by ID",
 	}, func(_ context.Context, _ *mcp.CallToolRequest, input updateTaskInput) (*mcp.CallToolResult, any, error) {
+		priority := input.Priority
+		if priority != "" {
+			var perr error
+			priority, perr = meads.NormalizePriority(priority)
+			if perr != nil {
+				return nil, nil, perr
+			}
+		}
 		err := store.Update(input.ID, func(t *meads.Task) {
 			if input.Status != "" {
 				t.SetStatus(input.Status)
 			}
-			if input.Priority != "" {
-				t.SetPriority(input.Priority)
+			if priority != "" {
+				t.SetPriority(priority)
 			}
 			if input.Title != "" {
 				t.Title = input.Title

@@ -415,6 +415,59 @@ func TestIntegration_AutoDelete_StagedTASKSmd(t *testing.T) {
 	h.assertTaskExists(id)
 }
 
+func TestIntegration_PriorityNormalization(t *testing.T) {
+	t.Run("bare number via flag", func(t *testing.T) {
+		h := newHarness(t)
+		cmd := &addCmd{globals: h.globals}
+		cmd.Title = "Bare number priority"
+		cmd.Priority = "1"
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("addCmd.Run: %v", err)
+		}
+		task := h.getTask(1)
+		if task.Priority != "P1" {
+			t.Fatalf("expected P1, got %s", task.Priority)
+		}
+	})
+
+	t.Run("lowercase via flag", func(t *testing.T) {
+		h := newHarness(t)
+		cmd := &addCmd{globals: h.globals}
+		cmd.Title = "Lowercase priority"
+		cmd.Priority = "p3"
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("addCmd.Run: %v", err)
+		}
+		task := h.getTask(1)
+		if task.Priority != "P3" {
+			t.Fatalf("expected P3, got %s", task.Priority)
+		}
+	})
+
+	t.Run("invalid priority rejected", func(t *testing.T) {
+		h := newHarness(t)
+		cmd := &addCmd{globals: h.globals}
+		cmd.Title = "Bad priority"
+		cmd.Priority = "banana"
+		if err := cmd.Run(); err == nil {
+			t.Fatal("expected error for invalid priority")
+		}
+	})
+
+	t.Run("update normalizes", func(t *testing.T) {
+		h := newHarness(t)
+		h.addTask("Update me")
+		cmd := &updateCmd{globals: h.globals, ID: "1", Priority: "3"}
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("updateCmd.Run: %v", err)
+		}
+		task := h.getTask(1)
+		if task.Priority != "P3" {
+			t.Fatalf("expected P3, got %s", task.Priority)
+		}
+	})
+}
+
 func TestIntegration_CommandStructs(t *testing.T) {
 	t.Run("addCmd", func(t *testing.T) {
 		h := newHarness(t)
