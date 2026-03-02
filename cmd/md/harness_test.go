@@ -21,6 +21,11 @@ type testHarness struct {
 
 // newHarness creates a temp dir with an initialized git repo and returns a harness.
 func newHarness(t *testing.T) *testHarness {
+	return newHarnessWithBranch(t, "main")
+}
+
+// newHarnessWithBranch creates a harness with a bare remote so origin/HEAD resolves correctly.
+func newHarnessWithBranch(t *testing.T, branch string) *testHarness {
 	t.Helper()
 	dir := t.TempDir()
 	store := meads.NewFileStore(filepath.Join(dir, "TASKS.md"))
@@ -35,17 +40,24 @@ func newHarness(t *testing.T) *testHarness {
 			Dir:       dir,
 		},
 	}
-	// Initialize git repo
-	h.git("init", "-b", "main")
+	h.git("init", "-b", branch)
 	h.git("config", "user.name", "Test")
 	h.git("config", "user.email", "test@test.com")
-	// Create initial commit so HEAD exists
 	initial := filepath.Join(dir, ".gitkeep")
 	if err := os.WriteFile(initial, []byte(""), 0644); err != nil {
 		t.Fatal(err)
 	}
 	h.git("add", ".")
 	h.git("commit", "-m", "initial")
+	// Create a bare remote so symbolic-ref and set-head work
+	bareDir := t.TempDir()
+	cmd := exec.Command("git", "clone", "--bare", dir, bareDir)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("creating bare remote: %v\n%s", err, out)
+	}
+	h.git("remote", "add", "origin", bareDir)
+	h.git("fetch", "origin")
+	h.git("branch", "--set-upstream-to=origin/"+branch, branch)
 	return h
 }
 

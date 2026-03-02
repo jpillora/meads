@@ -51,6 +51,39 @@ func TestIntegration_AutoDelete_OnlyOnDefaultBranch(t *testing.T) {
 	h.assertTaskExists(id)
 }
 
+func TestIntegration_AutoDelete_NonStandardDefaultBranch(t *testing.T) {
+	h := newHarnessWithBranch(t, "beta")
+
+	id := h.addTask("Task on beta")
+	h.closeTask(id)
+	h.commit("close task")
+
+	if err := h.runAutoDelete(); err != nil {
+		t.Fatalf("runAutoDelete: %v", err)
+	}
+
+	h.assertTaskCount(0)
+	h.assertTaskNotExists(id)
+}
+
+func TestIntegration_AutoDelete_NonStandardDefaultBranch_SkipsFeature(t *testing.T) {
+	h := newHarnessWithBranch(t, "beta")
+
+	id := h.addTask("Task on feature branch")
+	h.closeTask(id)
+	h.commit("close task")
+
+	h.branch("feature/test")
+	h.checkout("feature/test")
+
+	if err := h.runAutoDelete(); err != nil {
+		t.Fatalf("runAutoDelete: %v", err)
+	}
+
+	h.assertTaskCount(1)
+	h.assertTaskExists(id)
+}
+
 func TestIntegration_AutoDelete_SkipsUncommittedChanges(t *testing.T) {
 	h := newHarness(t)
 

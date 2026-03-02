@@ -101,21 +101,28 @@ func (c *autoDeleteCmd) runFromHook() error {
 
 func (c *autoDeleteCmd) isOnDefaultBranch() bool {
 	git := c.globals.git()
-
-	// Get current branch
 	currentBranch, err := git.Output("rev-parse", "--abbrev-ref", "HEAD")
 	if err != nil {
 		return false
 	}
-
-	// Get default branch
 	defaultBranch, err := git.Output("symbolic-ref", "refs/remotes/origin/HEAD")
 	if err != nil {
-		// Fallback: check if current branch is main or master
-		return currentBranch == "main" || currentBranch == "master"
+		// Try to auto-detect from remote
+		if err := git.Run("remote", "set-head", "origin", "--auto"); err != nil {
+			// Network unavailable or no remote; check remote tracking branches
+			for _, name := range []string{"main", "master", currentBranch} {
+				if err := git.Run("rev-parse", "--verify", "refs/remotes/origin/"+name); err == nil {
+					return currentBranch == name
+				}
+			}
+			return false
+		}
+		defaultBranch, err = git.Output("symbolic-ref", "refs/remotes/origin/HEAD")
+		if err != nil {
+			return currentBranch == "main" || currentBranch == "master"
+		}
 	}
 	defaultBranch = strings.TrimPrefix(defaultBranch, "refs/remotes/origin/")
-
 	return currentBranch == defaultBranch
 }
 
