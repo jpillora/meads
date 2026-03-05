@@ -1,5 +1,7 @@
 # 🍻 meads
 
+> [beads](https://github.com/steveyegge/beads) but much simpler
+
 Git-native task tracking in a single Markdown file. No database, no server, no dependencies — just `TASKS.md` and git.
 
 ## Quick Start
