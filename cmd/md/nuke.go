@@ -51,8 +51,27 @@ func (c *nukeCmd) Run() error {
 	gitDir, err := gitDir()
 	if err == nil {
 		hooksDir := filepath.Join(gitDir, "hooks")
-		c.removeBeadsHook(hooksDir, "pre-commit", &errors)
-		c.removeBeadsHook(hooksDir, "post-merge", &errors)
+		for _, hook := range []string{"pre-commit", "post-merge", "pre-push", "post-checkout"} {
+			c.removeBeadsHook(hooksDir, hook, &errors)
+			// Remove beads backup files
+			backup := filepath.Join(hooksDir, hook+".backup")
+			if _, err := os.Stat(backup); err == nil {
+				if err := os.Remove(backup); err != nil {
+					errors = append(errors, fmt.Sprintf("removing %s.backup: %v", hook, err))
+				} else {
+					fmt.Printf("removed %s.backup\n", hook)
+				}
+			}
+		}
+		// Remove beads-worktrees directory
+		worktreesDir := filepath.Join(gitDir, "beads-worktrees")
+		if _, err := os.Stat(worktreesDir); err == nil {
+			if err := os.RemoveAll(worktreesDir); err != nil {
+				errors = append(errors, fmt.Sprintf("removing beads-worktrees: %v", err))
+			} else {
+				fmt.Println("removed .git/beads-worktrees/")
+			}
+		}
 	}
 
 	// 3. Remove beads merge driver from local git config
@@ -84,6 +103,11 @@ func (c *nukeCmd) Run() error {
 	}
 	for _, p := range claudeSettingsPaths {
 		c.removeBeadsClaudeHooks(p, &errors)
+	}
+
+	// 7. Remove beads marketplace plugin
+	if home, err := os.UserHomeDir(); err == nil {
+		c.removeBeadsMarketplace(home, &errors)
 	}
 
 	if len(errors) > 0 {
@@ -360,6 +384,52 @@ func (c *nukeCmd) removeBeadsClaudeHooks(path string, errors *[]string) {
 func isBeadsPrimeCommand(cmd string) bool {
 	cmd = strings.TrimSpace(cmd)
 	return cmd == "bd prime" || strings.HasPrefix(cmd, "bd prime ")
+}
+
+// removeBeadsMarketplace removes the beads marketplace plugin from Claude Code.
+func (c *nukeCmd) removeBeadsMarketplace(home string, errors *[]string) {
+	pluginsDir := filepath.Join(home, ".claude", "plugins")
+
+	// Remove the marketplace directory
+	mktDir := filepath.Join(pluginsDir, "marketplaces", "beads-marketplace")
+	if _, err := os.Stat(mktDir); err == nil {
+		if err := os.RemoveAll(mktDir); err != nil {
+			*errors = append(*errors, fmt.Sprintf("removing beads marketplace: %v", err))
+		} else {
+			fmt.Println("removed beads marketplace plugin")
+		}
+	}
+
+	// Remove from known_marketplaces.json
+	knownPath := filepath.Join(pluginsDir, "known_marketplaces.json")
+	content, err := os.ReadFile(knownPath)
+	if err != nil {
+		return
+	}
+
+	var known map[string]json.RawMessage
+	if err := json.Unmarshal(content, &known); err != nil {
+		return
+	}
+
+	if _, ok := known["beads-marketplace"]; !ok {
+		return
+	}
+
+	delete(known, "beads-marketplace")
+
+	out, err := json.MarshalIndent(known, "", "  ")
+	if err != nil {
+		*errors = append(*errors, fmt.Sprintf("serializing known_marketplaces.json: %v", err))
+		return
+	}
+
+	if err := os.WriteFile(knownPath, append(out, '\n'), 0644); err != nil {
+		*errors = append(*errors, fmt.Sprintf("writing known_marketplaces.json: %v", err))
+		return
+	}
+
+	fmt.Println("removed beads from known_marketplaces.json")
 }
 
 func gitDir() (string, error) {
