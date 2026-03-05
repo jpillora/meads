@@ -1,14 +1,36 @@
-# 🍻 meads
+# meads
 
 > [beads](https://github.com/steveyegge/beads) but much simpler
 
 Git-native task tracking in a single Markdown file. No database, no server, no dependencies — just `TASKS.md` and git.
 
-## Quick Start
+[![GoDev](https://img.shields.io/static/v1?label=godoc&message=reference&color=00add8)](https://pkg.go.dev/github.com/jpillora/meads)
+[![CI](https://github.com/jpillora/meads/workflows/CI/badge.svg)](https://github.com/jpillora/meads/actions?workflow=CI)
 
-```bash
+### Features
+
+- All state lives in a single `TASKS.md` file — commit it to git and get full history for free
+- Rich input parsing: type prefixes (`bug:`, `feature:`), priority (`P0`-`P9`), title and description in one string
+- Task dependencies with automatic blocking detection
+- Concurrent-write safe via optimistic locking
+- AI-friendly — `md prime` prints LLM context, `md mcp` runs an MCP server over stdio
+
+### Install
+
+**Binaries**
+
+[![Releases](https://img.shields.io/github/release/jpillora/meads.svg)](https://github.com/jpillora/meads/releases)
+[![Releases](https://img.shields.io/github/downloads/jpillora/meads/total.svg)](https://github.com/jpillora/meads/releases)
+
+Find [the latest pre-compiled binaries here](https://github.com/jpillora/meads/releases/latest) or download and install it now with `curl https://i.jpillora.com/meads! | bash`
+
+**Source**
+
+```sh
 go install github.com/jpillora/meads/cmd/md@latest
 ```
+
+### Quick Start
 
 ```bash
 md add "Fix the login bug. 500 error when session cookie is expired"
@@ -25,8 +47,9 @@ md set-status 1 closed
 # updated task 1
 ```
 
+The resulting `TASKS.md`:
+
 ```markdown
-$ cat TASKS.md
 # TASKS
 
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
@@ -47,9 +70,7 @@ a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 * created: 2025-01-15T09:00:01Z
 ```
 
-All state lives in `TASKS.md`. Commit it to git and you get full history for free.
-
-## Commands
+### Usage
 
 ```
 md add "title"                        Add a simple task
@@ -62,12 +83,11 @@ md update <id> --priority=P1          Update task fields
 md set-status <id> <status>           Change status (draft|open|inprogress|closed)
 md del <id>                           Delete a task
 md add-dep <child> <parent>           Add a dependency
-md import beads                       Import from beads issue tracker
 md prime                              Print LLM context for using md
 md mcp                                Start MCP server over stdio
 ```
 
-## Examples
+### Examples
 
 **Add a task with type, priority, and body:**
 
@@ -95,28 +115,10 @@ md set-status 3 inprogress   # claim it
 md set-status 3 closed       # done
 ```
 
-## Installation
+### Notes
 
-Requires Go 1.25.6+.
-
-```bash
-go install github.com/jpillora/meads/cmd/md@latest
-```
-
-Or download a binary from [releases](https://github.com/jpillora/meads/releases).
-
-Or build from source:
-
-```bash
-git clone https://github.com/jpillora/meads.git
-cd meads
-go install ./cmd/md
-```
-
-## Notes
-
-- **Format** — Tasks are stored as Markdown headings (`## 1 Title`) with `* key: value` metadata. The file is human-readable but all writes should go through the `md` CLI to maintain consistency.
+- **Format** — Tasks are stored as Markdown headings (`## 1. Title`) with `* key: value` metadata. The file is human-readable but all writes should go through the `md` CLI to maintain consistency.
 - **Metadata** — Built-in keys are `status`, `priority`, `type`, and `depends-on`.
-- **Concurrency** — Concurrent writes are safe. `meads` uses optimistic locking so multiple processes (or AI agents) can write to `TASKS.md` simultaneously without corruption.
+- **Concurrency** — Concurrent writes are safe via optimistic file locking, so multiple processes (or AI agents) can write to `TASKS.md` simultaneously without corruption.
 - **AI-friendly** — The Markdown format is designed to be readable and writable by LLMs. Use `md prime` to print context for an AI agent, or `md mcp` to run an MCP server over stdio.
-- **Minimal dependencies** — single static binary, no config files.
+- **Minimal** — Single static binary, no config files.
