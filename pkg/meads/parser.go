@@ -78,12 +78,18 @@ func parseTask(section string) (Task, bool) {
 	if bodyStart < len(lines) && strings.TrimSpace(lines[bodyStart]) == "" {
 		bodyStart++
 	}
-	// Parse "* key: value" metadata lines.
+	// Parse "* key: value" metadata lines, allowing blank lines between groups.
 	for bodyStart < len(lines) {
 		line := lines[bodyStart]
 		if key, val, ok := parseMetaLine(line); ok {
 			meta[key] = val
 			bodyStart++
+		} else if strings.TrimSpace(line) == "" && bodyStart+1 < len(lines) {
+			if _, _, ok := parseMetaLine(lines[bodyStart+1]); ok {
+				bodyStart++
+				continue
+			}
+			break
 		} else {
 			break
 		}
@@ -146,6 +152,7 @@ func splitHeading(s string) (id int, title string) {
 }
 
 // parseMetaLine parses "* key: value" and returns key, value, true. Returns false if not a meta line.
+// Also accepts "* key:" with no value (empty string).
 func parseMetaLine(line string) (string, string, bool) {
 	trimmed := strings.TrimSpace(line)
 	if !strings.HasPrefix(trimmed, "* ") {
@@ -153,8 +160,11 @@ func parseMetaLine(line string) (string, string, bool) {
 	}
 	kv := strings.TrimPrefix(trimmed, "* ")
 	i := strings.Index(kv, ": ")
-	if i < 0 {
-		return "", "", false
+	if i >= 0 {
+		return kv[:i], kv[i+2:], true
 	}
-	return kv[:i], kv[i+2:], true
+	if strings.HasSuffix(kv, ":") {
+		return kv[:len(kv)-1], "", true
+	}
+	return "", "", false
 }

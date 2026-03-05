@@ -541,6 +541,43 @@ func TestNewFields_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestParseFile_SplitMetaGroups(t *testing.T) {
+	input := `## 22. Browser integration
+
+* status: closed
+* priority: P2
+* type: task
+* updated: 2026-03-05T09:13:03Z
+
+* depends-on:
+* created: 2026-02-14T10:38:21Z
+* bead-id: rais-pqth
+* owner: dev@jpillora.com
+
+Browser integration feature.`
+
+	f := ParseFile(input)
+	if len(f.Tasks) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(f.Tasks))
+	}
+	task := f.Tasks[0]
+	if task.Status != "closed" {
+		t.Errorf("Status = %q, want %q", task.Status, "closed")
+	}
+	if task.Meta["bead-id"] != "rais-pqth" {
+		t.Errorf("Meta[bead-id] = %q, want %q", task.Meta["bead-id"], "rais-pqth")
+	}
+	if task.Meta["owner"] != "dev@jpillora.com" {
+		t.Errorf("Meta[owner] = %q, want %q", task.Meta["owner"], "dev@jpillora.com")
+	}
+	if task.Meta["created"] != "2026-02-14T10:38:21Z" {
+		t.Errorf("Meta[created] = %q, want %q", task.Meta["created"], "2026-02-14T10:38:21Z")
+	}
+	if task.Description != "Browser integration feature." {
+		t.Errorf("Description = %q, want %q", task.Description, "Browser integration feature.")
+	}
+}
+
 func TestParseFile_StringPriority(t *testing.T) {
 	input := `## 1 P-string task
 
