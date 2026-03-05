@@ -5,6 +5,7 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-git/go-billy/v5/util"
@@ -302,6 +303,42 @@ func (s *Store) Ready() ([]Task, error) {
 		return pi < pj
 	})
 	return ready, nil
+}
+
+// GetHistory returns all tasks that have ever existed across git history,
+// using the most recent version of each task. Tasks are sorted by ID ascending.
+func (s *Store) GetHistory(git Git) ([]Task, error) {
+	// Get all commits that touched the tasks file.
+	out, err := git.Output("log", "--all", "--format=%H", "--", s.file)
+	if err != nil {
+		return nil, fmt.Errorf("git log: %w", err)
+	}
+	if out == "" {
+		return nil, nil
+	}
+	commits := strings.Split(out, "\n")
+	// Iterate from most recent to oldest; keep first seen version of each task.
+	byID := make(map[int]Task)
+	for _, hash := range commits {
+		content, err := git.Output("show", hash+":"+s.file)
+		if err != nil {
+			continue // file may not exist in this commit
+		}
+		f := ParseFile(content)
+		for _, t := range f.Tasks {
+			if _, exists := byID[t.ID]; !exists {
+				byID[t.ID] = t
+			}
+		}
+	}
+	tasks := make([]Task, 0, len(byID))
+	for _, t := range byID {
+		tasks = append(tasks, t)
+	}
+	sort.Slice(tasks, func(i, j int) bool {
+		return tasks[i].ID < tasks[j].ID
+	})
+	return tasks, nil
 }
 
 // nextID returns the next task ID from project metadata, or computes it from tasks.
