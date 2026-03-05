@@ -13,7 +13,7 @@ type getCmd struct {
 	globals *globals
 	JSON    bool     `help:"Output tasks as JSON"`
 	Short   bool     `help:"Output short format (ID TITLE)"`
-	IDs     []string `opts:"mode=arg,min=1" help:"Task IDs to retrieve"`
+	IDs     []string `opts:"mode=arg,min=1,name=id" help:"Task IDs to retrieve"`
 }
 
 func (c *getCmd) Run() error {
