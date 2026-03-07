@@ -27,8 +27,8 @@ The login page throws a 500 when the session cookie is expired.`
 	if task.Status != "open" {
 		t.Errorf("Status = %q, want %q", task.Status, "open")
 	}
-	if task.Priority != "P1" {
-		t.Errorf("Priority = %q, want %q", task.Priority, "P1")
+	if task.Priority != "1" {
+		t.Errorf("Priority = %q, want %q", task.Priority, "1")
 	}
 	if len(task.DependsOn) != 1 || task.DependsOn[0] != 3 {
 		t.Errorf("DependsOn = %v, want [3]", task.DependsOn)
@@ -66,7 +66,7 @@ Working on it.`
 	if f.Tasks[0].ID != 1 || f.Tasks[0].Title != "First task" {
 		t.Errorf("task 0: ID=%d Title=%q", f.Tasks[0].ID, f.Tasks[0].Title)
 	}
-	if f.Tasks[0].Status != "open" || f.Tasks[0].Priority != "P2" {
+	if f.Tasks[0].Status != "open" || f.Tasks[0].Priority != "2" {
 		t.Errorf("task 0: Status=%q Priority=%q", f.Tasks[0].Status, f.Tasks[0].Priority)
 	}
 	if f.Tasks[1].ID != 2 || f.Tasks[1].Status != "closed" {

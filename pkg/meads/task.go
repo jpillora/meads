@@ -52,9 +52,11 @@ func (t Task) MarshalJSON() ([]byte, error) {
 	}
 	type taskJSON Task
 	out := taskJSON(t)
-	// Fill in inferred defaults for JSON output.
+	// Fill in inferred defaults and normalize for JSON output.
 	if out.Priority == "" {
 		out.Priority = "P2"
+	} else if norm, err := NormalizePriority(out.Priority); err == nil {
+		out.Priority = norm
 	}
 	if out.Type == "" {
 		out.Type = "task"
