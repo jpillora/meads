@@ -111,6 +111,10 @@ func parseTask(section string) (Task, bool) {
 		t.Status = v
 	}
 	if v, ok := meta["priority"]; ok {
+		if norm, err := NormalizePriority(v); err == nil {
+			v = norm
+			meta["priority"] = norm
+		}
 		t.Priority = v
 	}
 	if v, ok := meta["type"]; ok {

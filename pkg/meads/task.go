@@ -88,7 +88,11 @@ func NormalizePriority(s string) (string, error) {
 }
 
 // SetPriority updates the task priority in both the field and Meta map.
+// It normalizes the value to canonical "P#" form if valid.
 func (t *Task) SetPriority(p string) {
+	if norm, err := NormalizePriority(p); err == nil {
+		p = norm
+	}
 	t.Priority = p
 	t.ensureMeta()
 	t.Meta["priority"] = p
