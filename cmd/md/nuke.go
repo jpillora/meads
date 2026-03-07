@@ -22,12 +22,6 @@ func (c *nukeCmd) Run() error {
 	}
 	repoRoot := strings.TrimSpace(string(out))
 
-	beadsDir := filepath.Join(repoRoot, ".beads")
-	if _, err := os.Stat(beadsDir); os.IsNotExist(err) {
-		fmt.Println("beads is not installed in this repository")
-		return nil
-	}
-
 	if !c.Force {
 		fmt.Print("This will completely remove beads from this repository. Continue? [y/N] ")
 		var answer string
@@ -41,10 +35,13 @@ func (c *nukeCmd) Run() error {
 	var errors []string
 
 	// 1. Remove .beads/ directory
-	if err := os.RemoveAll(beadsDir); err != nil {
-		errors = append(errors, fmt.Sprintf("removing .beads/: %v", err))
-	} else {
-		fmt.Println("removed .beads/")
+	beadsDir := filepath.Join(repoRoot, ".beads")
+	if _, err := os.Stat(beadsDir); err == nil {
+		if err := os.RemoveAll(beadsDir); err != nil {
+			errors = append(errors, fmt.Sprintf("removing .beads/: %v", err))
+		} else {
+			fmt.Println("removed .beads/")
+		}
 	}
 
 	// 2. Remove beads git hooks
