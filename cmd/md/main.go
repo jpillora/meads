@@ -14,6 +14,9 @@ func defaultTasksFile() string {
 	if v := os.Getenv("MD_TASKS"); v != "" {
 		return v
 	}
+	if _, err := os.Stat("TASKS.csv"); err == nil {
+		return "TASKS.csv"
+	}
 	return "TASKS.md"
 }
 
@@ -52,7 +55,7 @@ func (g *globals) git() meads.Git {
 }
 
 type root struct {
-	Globals    globals       `opts:"mode=embedded"`
+	Globals     globals        `opts:"mode=embedded"`
 	Add         addCmd         `opts:"mode=cmd,group=Basic" help:"Add a new task"`
 	Create      createCmd      `opts:"mode=cmd,group=Basic" help:"Create a new task (alias for add)"`
 	Get         getCmd         `opts:"mode=cmd,group=Basic" help:"Get tasks by ID"`
@@ -62,6 +65,8 @@ type root struct {
 	SetStatus   setStatusCmd   `opts:"mode=cmd,name=set-status,group=Basic" help:"Set a task's status"`
 	AddDep      addDepCmd      `opts:"mode=cmd,name=add-dep,group=Basic" help:"Add a dependency to a task"`
 	Ready       readyCmd       `opts:"mode=cmd,group=Basic" help:"List open tasks not blocked by dependencies"`
+	Init        initCmd        `opts:"mode=cmd,group=Misc" help:"Initialize a new tasks file"`
+	Convert     convertCmd     `opts:"mode=cmd,group=Misc" help:"Convert between TASKS.md and TASKS.csv formats"`
 	Prime       primeCmd       `opts:"mode=cmd,group=Misc" help:"Print LLM context for using md"`
 	Mcp         mcpCmd         `opts:"mode=cmd,group=Misc" help:"Start MCP server over stdio"`
 	AutoDelete  autoDeleteCmd  `opts:"mode=cmd,name=auto-delete,group=Misc" help:"Auto-delete closed tasks via git hook"`
@@ -83,6 +88,8 @@ func main() {
 	c.SetStatus.globals = g
 	c.AddDep.globals = g
 	c.Ready.globals = g
+	c.Init.globals = g
+	c.Convert.globals = g
 	c.BeadsImport.globals = g
 	c.Mcp.globals = g
 	c.AutoDelete.globals = g

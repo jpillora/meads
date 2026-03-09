@@ -1,6 +1,7 @@
 package main
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -538,4 +539,115 @@ func TestIntegration_CommandStructs(t *testing.T) {
 		}
 		h.assertTaskStatus(id, "closed")
 	})
+}
+
+// --- CSV Integration Tests ---
+
+func TestCSVIntegration_FullLifecycle(t *testing.T) {
+	h := newCSVHarness(t)
+
+	// Add tasks
+	id1 := h.addTask("First CSV task")
+	id2 := h.addTask("Second CSV task")
+	h.assertTaskCount(2)
+	h.assertTaskStatus(id1, "open")
+	h.assertTaskStatus(id2, "open")
+
+	// Update priority
+	h.updatePriority(id1, "P1")
+	task := h.getTask(id1)
+	if task.Priority != "P1" {
+		t.Fatalf("expected priority P1, got %s", task.Priority)
+	}
+
+	// Close a task
+	h.closeTask(id1)
+	h.assertTaskStatus(id1, "closed")
+
+	// Delete a task (soft-delete)
+	h.deleteTask(id2)
+	h.assertTaskCount(1) // only id1 visible (closed)
+	h.assertTaskNotExists(id2)
+
+	// New task should get correct ID
+	id3 := h.addTask("Third CSV task")
+	if id3 != 3 {
+		t.Fatalf("expected ID 3, got %d", id3)
+	}
+	h.assertTaskCount(2) // id1 (closed) + id3 (open)
+}
+
+func TestCSVIntegration_Dependencies(t *testing.T) {
+	h := newCSVHarness(t)
+
+	parent := h.addTask("Parent task")
+	child := h.addTask("Child task")
+	h.addDep(child, parent)
+
+	// Child should be blocked
+	h.assertReadyCount(1)
+	h.assertReadyContains(parent)
+	h.assertReadyNotContains(child)
+
+	// Close parent
+	h.closeTask(parent)
+
+	// Now child should be ready
+	h.assertReadyCount(1)
+	h.assertReadyContains(child)
+}
+
+func TestCSVIntegration_SoftDeleteCleansDeps(t *testing.T) {
+	h := newCSVHarness(t)
+
+	parent := h.addTask("Parent")
+	child := h.addTask("Child")
+	h.addDep(child, parent)
+
+	// Delete parent
+	h.deleteTask(parent)
+
+	// Child should have clean deps
+	task := h.getTask(child)
+	if len(task.DependsOn) != 0 {
+		t.Fatalf("expected empty depends-on, got %v", task.DependsOn)
+	}
+
+	// Child should be updatable
+	h.updatePriority(child, "P0")
+	task = h.getTask(child)
+	if task.Priority != "P0" {
+		t.Fatalf("expected priority P0, got %s", task.Priority)
+	}
+}
+
+func TestCSVIntegration_CommitAndShow(t *testing.T) {
+	h := newCSVHarness(t)
+
+	h.addTask("CSV task one")
+	h.addTask("CSV task two")
+	h.commit("add tasks")
+
+	// Verify git show contains CSV data
+	taskFile := filepath.Base(h.globals.TasksFile)
+	showOutput := h.git("show", "HEAD:"+taskFile)
+	if !strings.Contains(showOutput, "CSV task one") {
+		t.Fatal("committed file missing 'CSV task one'")
+	}
+	if !strings.Contains(showOutput, "CSV task two") {
+		t.Fatal("committed file missing 'CSV task two'")
+	}
+}
+
+func TestCSVIntegration_MultilineDescription(t *testing.T) {
+	h := newCSVHarness(t)
+
+	id := h.addTask("Bug report")
+	multiline := "Line one.\n\nLine two with detail.\n\nLine three."
+	h.updateDescription(id, multiline)
+
+	task := h.getTask(id)
+	if task.Description != multiline {
+		t.Errorf("description round-trip failed:\ngot:  %q\nwant: %q", task.Description, multiline)
+	}
 }

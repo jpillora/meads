@@ -24,11 +24,21 @@ func newHarness(t *testing.T) *testHarness {
 	return newHarnessWithBranch(t, "main")
 }
 
+// newCSVHarness creates a harness that uses TASKS.csv instead of TASKS.md.
+func newCSVHarness(t *testing.T) *testHarness {
+	return newHarnessWithBranchAndFile(t, "main", "TASKS.csv")
+}
+
 // newHarnessWithBranch creates a harness with a bare remote so origin/HEAD resolves correctly.
 func newHarnessWithBranch(t *testing.T, branch string) *testHarness {
+	return newHarnessWithBranchAndFile(t, branch, "TASKS.md")
+}
+
+// newHarnessWithBranchAndFile creates a harness with configurable branch and task file.
+func newHarnessWithBranchAndFile(t *testing.T, branch, taskFile string) *testHarness {
 	t.Helper()
 	dir := t.TempDir()
-	store := meads.NewFileStore(filepath.Join(dir, "TASKS.md"))
+	store := meads.NewFileStore(filepath.Join(dir, taskFile))
 	h := &testHarness{
 		t:     t,
 		dir:   dir,
@@ -36,7 +46,7 @@ func newHarnessWithBranch(t *testing.T, branch string) *testHarness {
 		globals: &globals{
 			Store:     store,
 			Git:       &meads.ExecGit{Dir: dir},
-			TasksFile: filepath.Join(dir, "TASKS.md"),
+			TasksFile: filepath.Join(dir, taskFile),
 			Dir:       dir,
 		},
 	}
@@ -75,10 +85,10 @@ func (h *testHarness) git(args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
-// commit stages TASKS.md and commits with the given message.
+// commit stages the tasks file and commits with the given message.
 func (h *testHarness) commit(msg string) {
 	h.t.Helper()
-	h.git("add", "TASKS.md")
+	h.git("add", filepath.Base(h.globals.TasksFile))
 	h.git("commit", "-m", msg)
 }
 
@@ -279,18 +289,19 @@ func (h *testHarness) tasksFileContent() string {
 	return string(data)
 }
 
-// assertTasksFileClean verifies TASKS.md has no staged or unstaged changes vs HEAD.
+// assertTasksFileClean verifies the tasks file has no staged or unstaged changes vs HEAD.
 func (h *testHarness) assertTasksFileClean() {
 	h.t.Helper()
-	cmd := exec.Command("git", "diff", "--quiet", "HEAD", "--", "TASKS.md")
+	taskFile := filepath.Base(h.globals.TasksFile)
+	cmd := exec.Command("git", "diff", "--quiet", "HEAD", "--", taskFile)
 	cmd.Dir = h.dir
 	if err := cmd.Run(); err != nil {
-		h.t.Fatal("TASKS.md has unstaged changes (expected clean)")
+		h.t.Fatalf("%s has unstaged changes (expected clean)", taskFile)
 	}
-	cmd = exec.Command("git", "diff", "--quiet", "--cached", "--", "TASKS.md")
+	cmd = exec.Command("git", "diff", "--quiet", "--cached", "--", taskFile)
 	cmd.Dir = h.dir
 	if err := cmd.Run(); err != nil {
-		h.t.Fatal("TASKS.md has staged changes (expected clean)")
+		h.t.Fatalf("%s has staged changes (expected clean)", taskFile)
 	}
 }
 

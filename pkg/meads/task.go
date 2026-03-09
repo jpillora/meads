@@ -198,7 +198,7 @@ func splitTags(s string) []string {
 }
 
 var (
-	projectMetaOrder = []string{"created", "updated", "next-id"}
+	projectMetaOrder = []string{"created", "updated"}
 	taskMetaOrder    = []string{"status", "priority", "type", "depends-on", "close-reason", "tags", "created", "updated"}
 )
 

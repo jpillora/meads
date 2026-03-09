@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -24,7 +23,7 @@ func (s *Store) Add(t Task) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	f := ParseFile(content)
+	f := s.parseFn(content)
 	now := time.Now().UTC().Format(time.RFC3339)
 	// Assign next ID.
 	t.ID = nextID(&f)
@@ -32,11 +31,13 @@ func (s *Store) Add(t Task) (int, error) {
 	t.ensureMeta()
 	t.Meta["created"] = now
 	f.Tasks = append(f.Tasks, t)
+	pruneTombstones(&f)
 	// Update project meta.
-	ensureProjectMeta(&f, now)
-	f.Meta["updated"] = now
-	f.Meta["next-id"] = strconv.Itoa(t.ID + 1)
-	if err := s.releaseLock(FormatFile(f)); err != nil {
+	if !s.csvMode {
+		ensureProjectMeta(&f, now)
+		f.Meta["updated"] = now
+	}
+	if err := s.releaseLock(s.formatFn(f)); err != nil {
 		return 0, fmt.Errorf("writing %s: %w", s.file, err)
 	}
 	return t.ID, nil
@@ -60,7 +61,7 @@ func (s *Store) AddMany(tasks []Task) ([]int, error) {
 	if err != nil {
 		return nil, err
 	}
-	f := ParseFile(content)
+	f := s.parseFn(content)
 	now := time.Now().UTC().Format(time.RFC3339)
 	ids := make([]int, len(tasks))
 	for i := range tasks {
@@ -73,46 +74,71 @@ func (s *Store) AddMany(tasks []Task) ([]int, error) {
 		f.Tasks = append(f.Tasks, tasks[i])
 		ids[i] = tasks[i].ID
 	}
-	ensureProjectMeta(&f, now)
-	f.Meta["updated"] = now
-	f.Meta["next-id"] = strconv.Itoa(tasks[len(tasks)-1].ID + 1)
-	if err := s.releaseLock(FormatFile(f)); err != nil {
+	pruneTombstones(&f)
+	if !s.csvMode {
+		ensureProjectMeta(&f, now)
+		f.Meta["updated"] = now
+	}
+	if err := s.releaseLock(s.formatFn(f)); err != nil {
 		return nil, fmt.Errorf("writing %s: %w", s.file, err)
 	}
 	return ids, nil
 }
 
-// Delete removes a task by ID.
+// Delete soft-deletes a task by ID, replacing it with a tombstone.
 func (s *Store) Delete(id int) error {
 	_, content, err := s.acquireLock()
 	if err != nil {
 		return err
 	}
-	f := ParseFile(content)
-	filtered := make([]Task, 0, len(f.Tasks))
+	f := s.parseFn(content)
 	found := false
-	for _, t := range f.Tasks {
-		if t.ID == id {
+	for i := range f.Tasks {
+		if f.Tasks[i].ID == id {
+			f.Tasks[i] = Task{
+				ID:     id,
+				Title:  "deleted",
+				Status: "deleted",
+				Meta:   map[string]string{"status": "deleted"},
+			}
 			found = true
-			continue
+			break
 		}
-		filtered = append(filtered, t)
 	}
 	if !found {
 		s.releaseLock(content)
 		return fmt.Errorf("task %d not found", id)
 	}
-	f.Tasks = filtered
+	// Clean dangling deps.
+	for i := range f.Tasks {
+		if f.Tasks[i].Status == "deleted" {
+			continue
+		}
+		if len(f.Tasks[i].DependsOn) > 0 {
+			var clean []int
+			for _, dep := range f.Tasks[i].DependsOn {
+				if dep != id {
+					clean = append(clean, dep)
+				}
+			}
+			if len(clean) != len(f.Tasks[i].DependsOn) {
+				f.Tasks[i].SetDependsOn(clean)
+			}
+		}
+	}
+	pruneTombstones(&f)
 	now := time.Now().UTC().Format(time.RFC3339)
-	ensureProjectMeta(&f, now)
-	f.Meta["updated"] = now
-	if err := s.releaseLock(FormatFile(f)); err != nil {
+	if !s.csvMode {
+		ensureProjectMeta(&f, now)
+		f.Meta["updated"] = now
+	}
+	if err := s.releaseLock(s.formatFn(f)); err != nil {
 		return fmt.Errorf("writing %s: %w", s.file, err)
 	}
 	return nil
 }
 
-// DeleteMany removes multiple tasks by ID in a single atomic operation.
+// DeleteMany soft-deletes multiple tasks by ID in a single atomic operation.
 // It also removes deleted IDs from other tasks' DependsOn lists.
 func (s *Store) DeleteMany(ids []int) error {
 	if len(ids) == 0 {
@@ -122,32 +148,23 @@ func (s *Store) DeleteMany(ids []int) error {
 	if err != nil {
 		return err
 	}
-	f := ParseFile(content)
+	f := s.parseFn(content)
 	deleteSet := make(map[int]bool, len(ids))
 	for _, id := range ids {
 		deleteSet[id] = true
 	}
-	// Filter out deleted tasks and clean up dangling deps.
-	filtered := make([]Task, 0, len(f.Tasks))
+	// Mark tasks as deleted and count found.
 	found := 0
-	for _, t := range f.Tasks {
-		if deleteSet[t.ID] {
+	for i := range f.Tasks {
+		if deleteSet[f.Tasks[i].ID] {
 			found++
-			continue
-		}
-		// Remove deleted IDs from DependsOn.
-		if len(t.DependsOn) > 0 {
-			var cleanDeps []int
-			for _, dep := range t.DependsOn {
-				if !deleteSet[dep] {
-					cleanDeps = append(cleanDeps, dep)
-				}
-			}
-			if len(cleanDeps) != len(t.DependsOn) {
-				t.SetDependsOn(cleanDeps)
+			f.Tasks[i] = Task{
+				ID:     f.Tasks[i].ID,
+				Title:  "deleted",
+				Status: "deleted",
+				Meta:   map[string]string{"status": "deleted"},
 			}
 		}
-		filtered = append(filtered, t)
 	}
 	if found != len(ids) {
 		s.releaseLock(content)
@@ -162,11 +179,30 @@ func (s *Store) DeleteMany(ids []int) error {
 			}
 		}
 	}
-	f.Tasks = filtered
+	// Clean up dangling deps on non-deleted tasks.
+	for i := range f.Tasks {
+		if f.Tasks[i].Status == "deleted" {
+			continue
+		}
+		if len(f.Tasks[i].DependsOn) > 0 {
+			var cleanDeps []int
+			for _, dep := range f.Tasks[i].DependsOn {
+				if !deleteSet[dep] {
+					cleanDeps = append(cleanDeps, dep)
+				}
+			}
+			if len(cleanDeps) != len(f.Tasks[i].DependsOn) {
+				f.Tasks[i].SetDependsOn(cleanDeps)
+			}
+		}
+	}
+	pruneTombstones(&f)
 	now := time.Now().UTC().Format(time.RFC3339)
-	ensureProjectMeta(&f, now)
-	f.Meta["updated"] = now
-	if err := s.releaseLock(FormatFile(f)); err != nil {
+	if !s.csvMode {
+		ensureProjectMeta(&f, now)
+		f.Meta["updated"] = now
+	}
+	if err := s.releaseLock(s.formatFn(f)); err != nil {
 		return fmt.Errorf("writing %s: %w", s.file, err)
 	}
 	return nil
@@ -180,11 +216,15 @@ func (s *Store) Update(id int, fn func(*Task)) error {
 	if err != nil {
 		return err
 	}
-	f := ParseFile(content)
+	f := s.parseFn(content)
 	found := false
 	now := time.Now().UTC().Format(time.RFC3339)
 	for i := range f.Tasks {
 		if f.Tasks[i].ID == id {
+			if f.Tasks[i].Status == "deleted" {
+				s.releaseLock(content)
+				return fmt.Errorf("task %d not found", id)
+			}
 			fn(&f.Tasks[i])
 			f.Tasks[i].ensureMeta()
 			f.Tasks[i].Meta["updated"] = now
@@ -201,21 +241,28 @@ func (s *Store) Update(id int, fn func(*Task)) error {
 		s.releaseLock(content)
 		return err
 	}
-	ensureProjectMeta(&f, now)
-	f.Meta["updated"] = now
-	if err := s.releaseLock(FormatFile(f)); err != nil {
+	if !s.csvMode {
+		ensureProjectMeta(&f, now)
+		f.Meta["updated"] = now
+	}
+	if err := s.releaseLock(s.formatFn(f)); err != nil {
 		return fmt.Errorf("writing %s: %w", s.file, err)
 	}
 	return nil
 }
 
-// validateDeps checks that all DependsOn IDs reference existing tasks.
+// validateDeps checks that all DependsOn IDs reference existing non-deleted tasks.
 func validateDeps(f *File) error {
 	ids := make(map[int]bool, len(f.Tasks))
 	for _, t := range f.Tasks {
-		ids[t.ID] = true
+		if t.Status != "deleted" {
+			ids[t.ID] = true
+		}
 	}
 	for _, t := range f.Tasks {
+		if t.Status == "deleted" {
+			continue
+		}
 		for _, dep := range t.DependsOn {
 			if !ids[dep] {
 				return fmt.Errorf("task %d depends on non-existent task %d", t.ID, dep)
@@ -228,6 +275,7 @@ func validateDeps(f *File) error {
 // Get returns tasks from the file. If ids is non-empty only the matching
 // tasks are returned (in the order given). An error is returned for any
 // id that does not exist. If ids is empty all tasks are returned.
+// Deleted (tombstone) tasks are always excluded.
 func (s *Store) Get(ids []int) ([]Task, error) {
 	data, err := util.ReadFile(s.fs, s.file)
 	if err != nil {
@@ -240,12 +288,14 @@ func (s *Store) Get(ids []int) ([]Task, error) {
 		return nil, fmt.Errorf("reading %s: %w", s.file, err)
 	}
 	content := stripLockLines(string(data))
-	f := ParseFile(content)
+	f := s.parseFn(content)
+	// Filter out deleted tasks.
+	active := filterDeleted(f.Tasks)
 	if len(ids) == 0 {
-		return f.Tasks, nil
+		return active, nil
 	}
-	byID := make(map[int]Task, len(f.Tasks))
-	for _, t := range f.Tasks {
+	byID := make(map[int]Task, len(active))
+	for _, t := range active {
 		byID[t.ID] = t
 	}
 	out := make([]Task, 0, len(ids))
@@ -260,6 +310,7 @@ func (s *Store) Get(ids []int) ([]Task, error) {
 }
 
 // Ready returns open tasks not blocked by unclosed dependencies, sorted by priority descending.
+// Deleted tasks are excluded.
 func (s *Store) Ready() ([]Task, error) {
 	data, err := util.ReadFile(s.fs, s.file)
 	if err != nil {
@@ -269,13 +320,14 @@ func (s *Store) Ready() ([]Task, error) {
 		return nil, fmt.Errorf("reading %s: %w", s.file, err)
 	}
 	content := stripLockLines(string(data))
-	f := ParseFile(content)
-	statusByID := make(map[int]string, len(f.Tasks))
-	for _, t := range f.Tasks {
+	f := s.parseFn(content)
+	active := filterDeleted(f.Tasks)
+	statusByID := make(map[int]string, len(active))
+	for _, t := range active {
 		statusByID[t.ID] = t.Status
 	}
 	var ready []Task
-	for _, t := range f.Tasks {
+	for _, t := range active {
 		if t.Status != "open" {
 			continue
 		}
@@ -307,6 +359,7 @@ func (s *Store) Ready() ([]Task, error) {
 
 // GetHistory returns all tasks that have ever existed across git history,
 // using the most recent version of each task. Tasks are sorted by ID ascending.
+// Deleted tasks are excluded.
 func (s *Store) GetHistory(git Git) ([]Task, error) {
 	// Get all commits that touched the tasks file.
 	out, err := git.Output("log", "--all", "--format=%H", "--", s.file)
@@ -324,7 +377,15 @@ func (s *Store) GetHistory(git Git) ([]Task, error) {
 		if err != nil {
 			continue // file may not exist in this commit
 		}
-		f := ParseFile(content)
+		// Try primary parser first; fallback to the other for mid-history format migrations.
+		f := s.parseFn(content)
+		if len(f.Tasks) == 0 {
+			if s.csvMode {
+				f = ParseFile(content)
+			} else {
+				f = ParseCSV(content)
+			}
+		}
 		for _, t := range f.Tasks {
 			if _, exists := byID[t.ID]; !exists {
 				byID[t.ID] = t
@@ -333,7 +394,9 @@ func (s *Store) GetHistory(git Git) ([]Task, error) {
 	}
 	tasks := make([]Task, 0, len(byID))
 	for _, t := range byID {
-		tasks = append(tasks, t)
+		if t.Status != "deleted" {
+			tasks = append(tasks, t)
+		}
 	}
 	sort.Slice(tasks, func(i, j int) bool {
 		return tasks[i].ID < tasks[j].ID
@@ -341,15 +404,9 @@ func (s *Store) GetHistory(git Git) ([]Task, error) {
 	return tasks, nil
 }
 
-// nextID returns the next task ID from project metadata, or computes it from tasks.
+// nextID computes the next task ID from the maximum existing task ID.
 func nextID(f *File) int {
 	next := 1
-	if v, ok := f.Meta["next-id"]; ok {
-		if n, err := strconv.Atoi(v); err == nil && n > next {
-			next = n
-		}
-	}
-	// Ensure next-id is higher than any existing task ID.
 	for _, t := range f.Tasks {
 		if t.ID >= next {
 			next = t.ID + 1
@@ -370,7 +427,53 @@ func ensureProjectMeta(f *File, now string) {
 
 func (s *Store) ensureFile() error {
 	if _, err := s.fs.Stat(s.file); os.IsNotExist(err) {
-		return util.WriteFile(s.fs, s.file, []byte(""), 0644)
+		initial := ""
+		if s.csvMode {
+			initial = csvHeaderRow()
+		}
+		return util.WriteFile(s.fs, s.file, []byte(initial), 0644)
 	}
 	return nil
 }
+
+// pruneTombstones keeps at most one tombstone: the highest-ID deleted task,
+// and only when no active task has a higher ID. This prevents ID reuse.
+func pruneTombstones(f *File) {
+	maxActive := 0
+	maxDeleted := 0
+	for _, t := range f.Tasks {
+		if t.Status == "deleted" {
+			if t.ID > maxDeleted {
+				maxDeleted = t.ID
+			}
+		} else {
+			if t.ID > maxActive {
+				maxActive = t.ID
+			}
+		}
+	}
+	filtered := make([]Task, 0, len(f.Tasks))
+	for _, t := range f.Tasks {
+		if t.Status == "deleted" {
+			// Keep only if it's the highest-ID deleted AND no active task is higher.
+			if t.ID == maxDeleted && maxDeleted > maxActive {
+				filtered = append(filtered, t)
+			}
+			continue
+		}
+		filtered = append(filtered, t)
+	}
+	f.Tasks = filtered
+}
+
+// filterDeleted returns only non-deleted tasks.
+func filterDeleted(tasks []Task) []Task {
+	out := make([]Task, 0, len(tasks))
+	for _, t := range tasks {
+		if t.Status != "deleted" {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
