@@ -47,7 +47,7 @@ func (s *Store) RunImport(imp Importer) (ImportResult, error) {
 	metaKey := imp.Name() + "-id"
 	existing := make(map[string]bool)
 	if data, err := util.ReadFile(s.fs, s.file); err == nil {
-		f := s.parseFn(stripLockLines(string(data)))
+		f := s.fmt.Parse(stripLockLines(string(data)))
 		for _, t := range f.Tasks {
 			if v, ok := t.Meta[metaKey]; ok {
 				existing[v] = true

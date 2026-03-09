@@ -9,6 +9,14 @@ import (
 	"strings"
 )
 
+// csvFormat implements Format for TASKS.csv files.
+type csvFormat struct{}
+
+func (csvFormat) Parse(content string) File { return ParseCSV(content) }
+func (csvFormat) Format(f File) string      { return FormatCSV(f) }
+func (csvFormat) HasPreamble() bool         { return false }
+func (csvFormat) EmptyFile() string          { return csvHeaderRow() }
+
 // CSV column order — header row is static.
 var csvColumns = []string{
 	"id", "title", "status", "priority", "type",

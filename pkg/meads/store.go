@@ -10,43 +10,34 @@ import (
 
 // Store manages task storage backed by a billy.Filesystem.
 type Store struct {
-	fs       billy.Filesystem
-	file     string // e.g. "TASKS.md" or "TASKS.csv"
-	csvMode  bool
-	parseFn  func(string) File
-	formatFn func(File) string
+	fs   billy.Filesystem
+	file string // e.g. "TASKS.md" or "TASKS.csv"
+	fmt  Format
 }
 
 // NewStore creates a Store using the given filesystem and file path.
 func NewStore(fs billy.Filesystem, file string) *Store {
-	s := &Store{fs: fs, file: file}
-	s.detectFormat()
-	return s
+	return &Store{fs: fs, file: file, fmt: detectFormat(file)}
 }
 
 // NewFileStore creates a Store backed by the OS filesystem.
 // The file path is split into a directory (for osfs) and a basename.
 func NewFileStore(file string) *Store {
 	dir := filepath.Dir(file)
-	s := &Store{
+	base := filepath.Base(file)
+	return &Store{
 		fs:   osfs.New(dir),
-		file: filepath.Base(file),
+		file: base,
+		fmt:  detectFormat(base),
 	}
-	s.detectFormat()
-	return s
 }
 
-// detectFormat sets parseFn, formatFn, and csvMode based on the file extension.
-func (s *Store) detectFormat() {
-	if strings.HasSuffix(s.file, ".csv") {
-		s.csvMode = true
-		s.parseFn = ParseCSV
-		s.formatFn = FormatCSV
-	} else {
-		s.csvMode = false
-		s.parseFn = ParseFile
-		s.formatFn = FormatFile
+// detectFormat returns the appropriate Format implementation based on file extension.
+func detectFormat(file string) Format {
+	if strings.HasSuffix(file, ".csv") {
+		return csvFormat{}
 	}
+	return markdownFormat{}
 }
 
 // FS returns the underlying filesystem.

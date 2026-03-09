@@ -3,7 +3,6 @@ package meads
 import (
 	"encoding/json"
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
 )
@@ -197,86 +196,3 @@ func splitTags(s string) []string {
 	return tags
 }
 
-var (
-	projectMetaOrder = []string{"created", "updated"}
-	taskMetaOrder    = []string{"status", "priority", "type", "depends-on", "close-reason", "tags", "created", "updated"}
-)
-
-// formatMetaBlock formats a metadata map as "* key: value" lines.
-// orderedKeys controls which keys appear first, in the given order.
-// The "updated" key is skipped if its value equals the "created" value.
-func formatMetaBlock(meta map[string]string, orderedKeys []string) string {
-	if len(meta) == 0 {
-		return ""
-	}
-	var sb strings.Builder
-	written := make(map[string]bool)
-	for _, key := range orderedKeys {
-		val, ok := meta[key]
-		if !ok {
-			continue
-		}
-		if key == "updated" {
-			if created, ok := meta["created"]; ok && val == created {
-				written[key] = true
-				continue
-			}
-		}
-		fmt.Fprintf(&sb, "* %s: %s\n", key, flattenMetaValue(val))
-		written[key] = true
-	}
-	var rest []string
-	for k := range meta {
-		if !written[k] {
-			rest = append(rest, k)
-		}
-	}
-	sort.Strings(rest)
-	for _, k := range rest {
-		fmt.Fprintf(&sb, "* %s: %s\n", k, flattenMetaValue(meta[k]))
-	}
-	return sb.String()
-}
-
-// flattenMetaValue replaces newlines with spaces so meta values stay on one line.
-func flattenMetaValue(s string) string {
-	return strings.Join(strings.Fields(s), " ")
-}
-
-// FormatTask formats a single Task as a markdown section.
-func FormatTask(t Task) string {
-	var sb strings.Builder
-	if t.Title != "" {
-		fmt.Fprintf(&sb, "## %d. %s\n", t.ID, t.Title)
-	} else {
-		fmt.Fprintf(&sb, "## %d.\n", t.ID)
-	}
-	if metaBlock := formatMetaBlock(t.Meta, taskMetaOrder); metaBlock != "" {
-		sb.WriteString("\n")
-		sb.WriteString(metaBlock)
-	}
-	if t.Description != "" {
-		sb.WriteString("\n")
-		sb.WriteString(t.Description)
-		sb.WriteString("\n")
-	}
-	return sb.String()
-}
-
-const fileHeader = "# TASKS\n\na [meads](https://github.com/jpillora/meads) (`md`) managed task log\n"
-
-// FormatFile formats a complete TASKS.md file.
-func FormatFile(f File) string {
-	var sb strings.Builder
-	sb.WriteString(fileHeader)
-	if metaBlock := formatMetaBlock(f.Meta, projectMetaOrder); metaBlock != "" {
-		sb.WriteString("\n")
-		sb.WriteString(metaBlock)
-	}
-	for _, t := range f.Tasks {
-		sb.WriteString("\n")
-		t.Description = RaiseHeadings(t.Description, 3)
-		sb.WriteString(FormatTask(t))
-	}
-	return sb.String()
-}
