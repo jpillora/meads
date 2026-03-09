@@ -226,6 +226,164 @@ A nil map value inside the state struct causes reflect.Value.Set on a zero value
 	}
 }
 
+func TestAdd_NonZeroID(t *testing.T) {
+	s := newTestStore(t, "")
+	_, err := s.Add(Task{ID: 5, Title: "Bad", Status: "open"})
+	if err == nil {
+		t.Fatal("expected error for non-zero ID")
+	}
+	if !strings.Contains(err.Error(), "must not be set") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestAddMany_NonZeroID(t *testing.T) {
+	s := newTestStore(t, "")
+	_, err := s.AddMany([]Task{{ID: 1, Title: "Bad"}})
+	if err == nil {
+		t.Fatal("expected error for non-zero ID")
+	}
+	if !strings.Contains(err.Error(), "must not be set") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestAddMany_Empty(t *testing.T) {
+	s := newTestStore(t, "")
+	ids, err := s.AddMany(nil)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if ids != nil {
+		t.Fatalf("expected nil ids, got %v", ids)
+	}
+}
+
+func TestAddMany_PreservesImportCreated(t *testing.T) {
+	s := newCSVTestStore(t, "")
+	tasks := []Task{
+		{Title: "Imported", Status: "open", Meta: map[string]string{"created": "2020-01-01T00:00:00Z"}},
+	}
+	ids, err := s.AddMany(tasks)
+	if err != nil {
+		t.Fatalf("AddMany: %v", err)
+	}
+	got, _ := s.Get(ids)
+	if got[0].Meta["created"] != "2020-01-01T00:00:00Z" {
+		t.Errorf("created = %q, want preserved value", got[0].Meta["created"])
+	}
+}
+
+func TestDelete_NotFound(t *testing.T) {
+	s := newTestStore(t, "")
+	s.Add(Task{Title: "Task 1", Status: "open"})
+
+	err := s.Delete(99)
+	if err == nil {
+		t.Fatal("expected error for missing task")
+	}
+	if !strings.Contains(err.Error(), "task 99 not found") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestDelete_AlreadyDeleted(t *testing.T) {
+	s := newCSVTestStore(t, "")
+	s.Add(Task{Title: "Task 1", Status: "open"})
+	id2, _ := s.Add(Task{Title: "Task 2", Status: "open"})
+
+	// Delete task 1. Since task 2 has a higher ID, the tombstone for 1 gets pruned.
+	s.Delete(1)
+
+	// Task 1 no longer exists (pruned tombstone). Deleting again should fail.
+	err := s.Delete(1)
+	if err == nil {
+		t.Fatal("expected error for pruned deleted task")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("unexpected error: %v", err)
+	}
+	_ = id2
+}
+
+func TestUpdate_NotFound(t *testing.T) {
+	s := newTestStore(t, "")
+	s.Add(Task{Title: "Task 1", Status: "open"})
+
+	err := s.Update(99, func(t *Task) { t.SetStatus("closed") })
+	if err == nil {
+		t.Fatal("expected error for missing task")
+	}
+	if !strings.Contains(err.Error(), "task 99 not found") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestUpdate_DeletedTask(t *testing.T) {
+	s := newCSVTestStore(t, "")
+	id, _ := s.Add(Task{Title: "Task 1", Status: "open"})
+	s.Delete(id)
+
+	err := s.Update(id, func(t *Task) { t.SetStatus("closed") })
+	if err == nil {
+		t.Fatal("expected error for deleted task")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestUpdate_InvalidDep(t *testing.T) {
+	s := newCSVTestStore(t, "")
+	id, _ := s.Add(Task{Title: "Task 1", Status: "open"})
+
+	err := s.Update(id, func(t *Task) {
+		t.SetDependsOn([]int{99})
+	})
+	if err == nil {
+		t.Fatal("expected error for invalid dep")
+	}
+	if !strings.Contains(err.Error(), "non-existent task 99") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestDelete_CleansDepOnOtherTasks(t *testing.T) {
+	s := newCSVTestStore(t, "")
+	id1, _ := s.Add(Task{Title: "Parent", Status: "closed"})
+	id2, _ := s.Add(Task{Title: "Child", Status: "open"})
+	s.Update(id2, func(t *Task) {
+		t.AddDep(id1)
+	})
+
+	// Verify dep exists.
+	tasks, _ := s.Get([]int{id2})
+	if len(tasks[0].DependsOn) != 1 {
+		t.Fatalf("expected 1 dep, got %v", tasks[0].DependsOn)
+	}
+
+	// Delete parent — dep should be cleaned from child.
+	s.Delete(id1)
+	tasks, _ = s.Get([]int{id2})
+	if len(tasks[0].DependsOn) != 0 {
+		t.Fatalf("expected 0 deps after delete, got %v", tasks[0].DependsOn)
+	}
+}
+
+func TestDelete_MarkdownFormat(t *testing.T) {
+	s := newTestStore(t, "")
+	id1, _ := s.Add(Task{Title: "MD Task 1", Status: "open"})
+	id2, _ := s.Add(Task{Title: "MD Task 2", Status: "open"})
+
+	if err := s.Delete(id1); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	tasks, _ := s.Get(nil)
+	if len(tasks) != 1 || tasks[0].ID != id2 {
+		t.Fatalf("expected only task %d, got %v", id2, tasks)
+	}
+}
+
 func TestUpdate_DescriptionReplace(t *testing.T) {
 	s := newTestStore(t, "")
 	id, err := s.Add(Task{Title: "Task with description", Status: "open", Description: "original description"})

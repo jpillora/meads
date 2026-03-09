@@ -344,6 +344,18 @@ func TestFormatTask_NoMeta(t *testing.T) {
 	}
 }
 
+func TestFormatTask_EmptyTitle(t *testing.T) {
+	task := Task{
+		ID:   4,
+		Meta: map[string]string{"status": "open"},
+	}
+	got := FormatTask(task)
+	want := "## 4.\n\n* status: open\n"
+	if got != want {
+		t.Errorf("FormatTask =\n%q\nwant\n%q", got, want)
+	}
+}
+
 func TestFormatTask_UpdatedSameAsCreated(t *testing.T) {
 	task := Task{
 		ID:    1,

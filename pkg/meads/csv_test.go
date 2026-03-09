@@ -247,6 +247,66 @@ func TestCSV_SortedByID(t *testing.T) {
 	}
 }
 
+func TestParseCSV_InvalidCSV(t *testing.T) {
+	// Mismatched quotes produce a CSV parse error.
+	f := ParseCSV("\"unclosed quote\n")
+	if len(f.Tasks) != 0 {
+		t.Fatalf("expected 0 tasks for invalid CSV, got %d", len(f.Tasks))
+	}
+}
+
+func TestParseCSV_InvalidID(t *testing.T) {
+	input := csvHeaderRow() + "abc,Bad ID,open,P1,bug,,,desc,,,," + "{}\n" +
+		"0,Zero ID,open,P1,bug,,,desc,,,," + "{}\n" +
+		"-1,Negative,open,P1,bug,,,desc,,,," + "{}\n" +
+		"1,Good,open,P1,bug,,,desc,,,," + "{}\n"
+	f := ParseCSV(input)
+	if len(f.Tasks) != 1 {
+		t.Fatalf("expected 1 valid task, got %d", len(f.Tasks))
+	}
+	if f.Tasks[0].Title != "Good" {
+		t.Errorf("task title = %q, want %q", f.Tasks[0].Title, "Good")
+	}
+}
+
+func TestParseCSV_NoMetaColumn(t *testing.T) {
+	// CSV with fewer columns than expected — no meta column.
+	input := "id,title,status\n1,Test,open\n"
+	f := ParseCSV(input)
+	if len(f.Tasks) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(f.Tasks))
+	}
+	if f.Tasks[0].Title != "Test" {
+		t.Errorf("title = %q", f.Tasks[0].Title)
+	}
+}
+
+func TestInitCSV(t *testing.T) {
+	content := InitCSV()
+	if !strings.HasPrefix(content, "id,") {
+		t.Errorf("InitCSV() = %q, expected CSV header", content)
+	}
+	// Should be parseable.
+	f := ParseCSV(content)
+	if len(f.Tasks) != 0 {
+		t.Errorf("InitCSV content should have 0 tasks, got %d", len(f.Tasks))
+	}
+}
+
+func TestFormatCSV_NilMeta(t *testing.T) {
+	f := File{
+		Tasks: []Task{
+			{ID: 1, Title: "No meta", Status: "open", Meta: nil},
+		},
+	}
+	// Should not panic.
+	csv := FormatCSV(f)
+	parsed := ParseCSV(csv)
+	if len(parsed.Tasks) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(parsed.Tasks))
+	}
+}
+
 // --- Store-level tests with CSV backend ---
 
 func TestCSVStore_Add(t *testing.T) {

@@ -149,6 +149,16 @@ func TestLowerHeadings(t *testing.T) {
 	}
 }
 
+func TestShiftHeadings_ClampToOne(t *testing.T) {
+	// Test that shifting with a negative offset clamps to H1.
+	lines := []string{"## Heading"}
+	got := shiftHeadings(lines, -5) // H2 + (-5) = -3 → clamped to H1
+	want := "# Heading"
+	if got != want {
+		t.Errorf("shiftHeadings with clamp = %q, want %q", got, want)
+	}
+}
+
 func TestRoundTrip(t *testing.T) {
 	tests := []struct {
 		name  string

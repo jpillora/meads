@@ -132,6 +132,25 @@ func TestBeadToTask_OptionalFields(t *testing.T) {
 	}
 }
 
+func TestBeadToTask_CustomStatus(t *testing.T) {
+	b := beadIssue{ID: "1", Title: "t", Status: "custom_status"}
+	task := beadToTask(b)
+	if task.Status != "custom_status" {
+		t.Errorf("Status = %q, want %q", task.Status, "custom_status")
+	}
+}
+
+func TestBeadToTask_CustomIssueType(t *testing.T) {
+	b := beadIssue{ID: "1", Title: "t", IssueType: "epic"}
+	task := beadToTask(b)
+	if task.Type != "" {
+		t.Errorf("Type = %q, want empty", task.Type)
+	}
+	if task.Meta["bead-type"] != "epic" {
+		t.Errorf("Meta[bead-type] = %q, want %q", task.Meta["bead-type"], "epic")
+	}
+}
+
 func TestBeadToTask_EmptyOptionalFieldsOmitted(t *testing.T) {
 	b := beadIssue{ID: "1", Title: "t"}
 	task := beadToTask(b)
