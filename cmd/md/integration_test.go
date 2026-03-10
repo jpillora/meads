@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -836,5 +838,44 @@ func TestIntegration_ListFilter_NoFilters(t *testing.T) {
 	tasks := cmd.filterTasks(h.getTasks())
 	if len(tasks) != 3 {
 		t.Fatalf("expected 3 tasks with no filters, got %d", len(tasks))
+	}
+}
+
+func TestIntegration_ReadyJSON(t *testing.T) {
+	h := newHarness(t)
+
+	h.addTask("Task A")
+	parent := h.addTask("Task B")
+	child := h.addTask("Task C")
+	h.addDep(child, parent)
+
+	// Capture stdout from readyCmd with JSON=true
+	r, w, _ := os.Pipe()
+	oldStdout := os.Stdout
+	os.Stdout = w
+
+	cmd := &readyCmd{globals: h.globals, JSON: true}
+	if err := cmd.Run(); err != nil {
+		os.Stdout = oldStdout
+		t.Fatalf("readyCmd.Run: %v", err)
+	}
+	w.Close()
+	os.Stdout = oldStdout
+
+	var got []meads.Task
+	if err := json.NewDecoder(r).Decode(&got); err != nil {
+		t.Fatalf("failed to decode JSON: %v", err)
+	}
+
+	// Task A and Task B should be ready; Task C is blocked
+	if len(got) != 2 {
+		t.Fatalf("expected 2 ready tasks in JSON, got %d", len(got))
+	}
+	titles := map[string]bool{}
+	for _, task := range got {
+		titles[task.Title] = true
+	}
+	if !titles["Task A"] || !titles["Task B"] {
+		t.Fatalf("expected Task A and Task B, got %v", titles)
 	}
 }

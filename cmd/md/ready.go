@@ -1,12 +1,9 @@
 package main
 
-import (
-	"fmt"
-)
-
 type readyCmd struct {
 	globals *globals
-	Limit   int `opts:"short=n" help:"Limit number of results"`
+	JSON    bool `help:"Output tasks as JSON"`
+	Limit   int  `opts:"short=n" help:"Limit number of results"`
 }
 
 func (c *readyCmd) Run() error {
@@ -17,8 +14,5 @@ func (c *readyCmd) Run() error {
 	if c.Limit > 0 && len(tasks) > c.Limit {
 		tasks = tasks[:c.Limit]
 	}
-	for _, t := range tasks {
-		fmt.Printf("%d. %s\n", t.ID, t.Title)
-	}
-	return nil
+	return printTasks(tasks, c.JSON)
 }
