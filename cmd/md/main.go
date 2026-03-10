@@ -69,6 +69,7 @@ type root struct {
 	Convert     convertCmd     `opts:"mode=cmd,group=Misc" help:"Convert between TASKS.md and TASKS.csv formats"`
 	Prime       primeCmd       `opts:"mode=cmd,group=Misc" help:"Print LLM context for using md"`
 	Mcp         mcpCmd         `opts:"mode=cmd,group=Misc" help:"Start MCP server over stdio"`
+	Doctor      doctorCmd      `opts:"mode=cmd,group=Misc" help:"Detect and fix duplicate task IDs"`
 	AutoDelete  autoDeleteCmd  `opts:"mode=cmd,name=auto-delete,group=Misc" help:"Auto-delete closed tasks via git hook"`
 	BeadsImport beadsImportCmd `opts:"mode=cmd,name=beads-import,group=Beads" help:"Import tasks from beads"`
 	BeadsNuke   nukeCmd        `opts:"mode=cmd,name=beads-nuke,group=Beads" help:"Completely remove beads from the current repository"`
@@ -92,6 +93,7 @@ func main() {
 	c.Convert.globals = g
 	c.BeadsImport.globals = g
 	c.Mcp.globals = g
+	c.Doctor.globals = g
 	c.AutoDelete.globals = g
 	c.BeadsNuke.globals = g
 

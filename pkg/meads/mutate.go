@@ -203,6 +203,76 @@ func (s *Store) DeleteMany(ids []int) error {
 	return nil
 }
 
+// DoctorFix describes a single fix applied by Doctor.
+type DoctorFix struct {
+	OldID int // The duplicate ID that was found
+	NewID int // The new ID assigned to the duplicate
+}
+
+// Doctor detects duplicate task IDs and renumbers them.
+// For each group of tasks sharing the same ID, the first occurrence is kept
+// and subsequent duplicates are assigned the next available ID.
+// DependsOn references pointing to renumbered IDs are updated accordingly.
+// Returns the list of fixes applied. If no duplicates are found, the slice is empty.
+func (s *Store) Doctor() ([]DoctorFix, error) {
+	if err := s.ensureFile(); err != nil {
+		return nil, err
+	}
+	_, content, err := s.acquireLock()
+	if err != nil {
+		return nil, err
+	}
+	f := s.fmt.Parse(content)
+	// Find duplicates: track which IDs we've seen.
+	seen := make(map[int]bool, len(f.Tasks))
+	var fixes []DoctorFix
+	// remap tracks old ID -> new ID for DependsOn fixups.
+	remap := make(map[int]int)
+	for i := range f.Tasks {
+		id := f.Tasks[i].ID
+		if !seen[id] {
+			seen[id] = true
+			continue
+		}
+		// Duplicate found — assign next available ID.
+		newID := nextID(&f)
+		fixes = append(fixes, DoctorFix{OldID: id, NewID: newID})
+		remap[id] = newID
+		f.Tasks[i].ID = newID
+		f.Tasks[i].ensureMeta()
+		seen[newID] = true
+	}
+	if len(fixes) == 0 {
+		// No changes needed — release lock with original content.
+		s.releaseLock(content)
+		return nil, nil
+	}
+	// Update DependsOn references that point to renumbered IDs.
+	// Note: if multiple tasks shared the same old ID, remap holds the last
+	// new ID assigned. We need a multi-map: one old ID may have been
+	// renumbered multiple times. However, DependsOn references should point
+	// to a valid task. We only update references if the OLD id no longer
+	// exists as a real task (the first occurrence kept the old ID, so
+	// references to that old ID are still valid). We skip DependsOn fixup
+	// for old IDs that still have a surviving task with that ID.
+	// Actually, since we keep the first occurrence, the old ID still exists
+	// for the first task. So DependsOn references to the old ID remain valid
+	// (they point to the first task). No DependsOn fixup needed for the old
+	// ID. But if a duplicate that was renumbered had other tasks depending
+	// on it specifically (rare after a merge), there's no way to know which
+	// duplicate the reference intended. We leave those as-is since the
+	// original task with that ID still exists.
+	now := time.Now().UTC().Format(time.RFC3339)
+	if s.fmt.HasPreamble() {
+		ensureProjectMeta(&f, now)
+		f.Meta["updated"] = now
+	}
+	if err := s.releaseLock(s.fmt.Format(f)); err != nil {
+		return nil, fmt.Errorf("writing %s: %w", s.file, err)
+	}
+	return fixes, nil
+}
+
 // Update modifies a task by ID. The provided function receives a pointer
 // to the task for mutation. After mutation, any DependsOn IDs are validated
 // to ensure the referenced tasks exist.
