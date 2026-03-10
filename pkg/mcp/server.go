@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/jpillora/meads/pkg/meads"
@@ -24,7 +25,7 @@ func NewServer(store *meads.Store, version string) *mcp.Server {
 		if err != nil {
 			return nil, nil, err
 		}
-		return nil, tasks, nil
+		return nil, briefTasks(tasks), nil
 	})
 
 	// get_task - Get a specific task by ID
@@ -48,7 +49,7 @@ func NewServer(store *meads.Store, version string) *mcp.Server {
 		if err != nil {
 			return nil, nil, err
 		}
-		return nil, tasks, nil
+		return nil, briefTasks(tasks), nil
 	})
 
 	// add_task - Add a new task
@@ -144,6 +145,27 @@ func NewServer(store *meads.Store, version string) *mcp.Server {
 	})
 
 	return s
+}
+
+// BriefTask is a lightweight task representation for list responses.
+// It omits Description, Tags, Meta, and CloseReason to save tokens.
+type BriefTask struct {
+	ID        int    `json:"id"`
+	Title     string `json:"title"`
+	Status    string `json:"status"`
+	Priority  string `json:"priority"`
+	Type      string `json:"type"`
+	DependsOn []int  `json:"depends_on,omitempty"`
+}
+
+func briefTasks(tasks []meads.Task) []BriefTask {
+	out := make([]BriefTask, len(tasks))
+	for i, t := range tasks {
+		// Marshal/unmarshal to get normalized fields (defaults applied).
+		raw, _ := json.Marshal(t)
+		_ = json.Unmarshal(raw, &out[i])
+	}
+	return out
 }
 
 // Input/output types for tools

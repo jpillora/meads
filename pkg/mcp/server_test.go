@@ -241,6 +241,70 @@ func TestAddDependency(t *testing.T) {
 	}
 }
 
+func TestBriefResponses(t *testing.T) {
+	cs := setup(t)
+	ctx := context.Background()
+
+	// Add a task with description
+	addRes := callTool(t, cs, ctx, "add_task", map[string]any{
+		"title":       "Brief test",
+		"priority":    "P1",
+		"type":        "bug",
+		"description": "Detailed description that should be stripped",
+	})
+	var addOut struct{ ID int }
+	unmarshalContent(t, addRes, &addOut)
+
+	// list_tasks should return brief format (no description)
+	listRes := callTool(t, cs, ctx, "list_tasks", map[string]any{})
+	var listRaw []json.RawMessage
+	unmarshalContent(t, listRes, &listRaw)
+	if len(listRaw) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(listRaw))
+	}
+	var listFields map[string]any
+	if err := json.Unmarshal(listRaw[0], &listFields); err != nil {
+		t.Fatal(err)
+	}
+	// Should have brief fields
+	for _, key := range []string{"id", "title", "status", "priority", "type"} {
+		if _, ok := listFields[key]; !ok {
+			t.Errorf("list_tasks: missing expected field %q", key)
+		}
+	}
+	// Should NOT have full fields
+	for _, key := range []string{"description", "tags", "meta", "close_reason"} {
+		if _, ok := listFields[key]; ok {
+			t.Errorf("list_tasks: should not contain field %q, but it does", key)
+		}
+	}
+
+	// ready_tasks should also return brief format
+	readyRes := callTool(t, cs, ctx, "ready_tasks", map[string]any{})
+	var readyRaw []json.RawMessage
+	unmarshalContent(t, readyRes, &readyRaw)
+	if len(readyRaw) != 1 {
+		t.Fatalf("expected 1 ready task, got %d", len(readyRaw))
+	}
+	var readyFields map[string]any
+	if err := json.Unmarshal(readyRaw[0], &readyFields); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"description", "tags", "meta", "close_reason"} {
+		if _, ok := readyFields[key]; ok {
+			t.Errorf("ready_tasks: should not contain field %q, but it does", key)
+		}
+	}
+
+	// get_task should still return full objects with description
+	getRes := callTool(t, cs, ctx, "get_task", map[string]any{"id": addOut.ID})
+	var getFields map[string]any
+	unmarshalContent(t, getRes, &getFields)
+	if getFields["description"] != "Detailed description that should be stripped" {
+		t.Errorf("get_task: expected full description, got %v", getFields["description"])
+	}
+}
+
 func TestGetTaskNotFound(t *testing.T) {
 	cs := setup(t)
 	ctx := context.Background()
