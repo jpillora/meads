@@ -123,12 +123,12 @@ func TestGetHistory_CSV(t *testing.T) {
 	s := newCSVStore(t)
 	header := meads.InitCSV()
 	commit1 := header +
-		"1,Fix login,closed,P1,bug,,,,,,," + "{}\n" +
-		"2,deleted,deleted,,,,,,,,," + "\n" +
-		"3,Write docs,open,P2,task,,,,,,," + "{}\n"
+		"1,Fix login,closed,P1,bug,,,,,,,,," + "{}\n" +
+		"2,Was open,open,,,,,,,,,,true," + "\n" +
+		"3,Write docs,open,P2,task,,,,,,,,," + "{}\n"
 	commit2 := header +
-		"1,Fix login,open,P1,bug,,,,,,," + "{}\n" +
-		"2,Add tests,open,P2,task,,,,,,," + "{}\n"
+		"1,Fix login,open,P1,bug,,,,,,,,," + "{}\n" +
+		"2,Add tests,open,P2,task,,,,,,,,," + "{}\n"
 
 	git := &fakeGit{
 		commits: map[string]string{"aaa:TASKS.csv": commit1, "bbb:TASKS.csv": commit2},

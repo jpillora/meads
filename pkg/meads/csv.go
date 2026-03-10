@@ -70,10 +70,6 @@ func ParseCSV(content string) File {
 			Deleted:      get(row, "deleted") == "true",
 			Description:  unescapeNewlines(get(row, "description")),
 		}
-		// Backward compatibility: old format used Status="deleted" for tombstones.
-		if t.Status == "deleted" {
-			t.Deleted = true
-		}
 		if depsStr := get(row, "depends-on"); depsStr != "" {
 			t.DependsOn = parseIntSlice(depsStr)
 		}

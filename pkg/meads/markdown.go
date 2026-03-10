@@ -146,10 +146,6 @@ func parseTask(section string) (Task, bool) {
 		t.StatusReason = v
 		delete(meta, "status-reason")
 	}
-	// Backward compatibility: old format used Status="deleted" for tombstones.
-	if t.Status == "deleted" {
-		t.Deleted = true
-	}
 	return t, true
 }
 

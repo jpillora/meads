@@ -137,14 +137,17 @@ func TestCSV_MetaJSONRoundTrip(t *testing.T) {
 }
 
 func TestCSV_TombstoneIncluded(t *testing.T) {
-	input := meads.InitCSV() + "1,Fix login,open,P1,bug,,,Session cookie expires,,,,{}\n" +
-		"2,deleted,deleted,,,,,,,,,\n"
+	input := meads.InitCSV() + "1,Fix login,open,P1,bug,,,Session cookie expires,,,,,,,{}\n" +
+		"2,Was closed,closed,,,,,,,,,,true,\n"
 	f := meads.ParseCSV(input)
 	if len(f.Tasks) != 2 {
 		t.Fatalf("expected 2 tasks (including tombstone), got %d", len(f.Tasks))
 	}
-	if f.Tasks[1].Status != "deleted" {
-		t.Errorf("task 2 status = %q, want %q", f.Tasks[1].Status, "deleted")
+	if !f.Tasks[1].Deleted {
+		t.Error("task 2 should have Deleted=true")
+	}
+	if f.Tasks[1].Status != "closed" {
+		t.Errorf("task 2 status = %q, want %q (preserved)", f.Tasks[1].Status, "closed")
 	}
 }
 
@@ -369,21 +372,5 @@ func TestCSV_DeletedRoundTrip(t *testing.T) {
 	}
 	if parsed.Tasks[1].Deleted {
 		t.Error("task 2 should have Deleted=false")
-	}
-}
-
-func TestCSV_BackwardCompat_OldDeletedFormat(t *testing.T) {
-	// Old format used Status="deleted" without a "deleted" column.
-	// Test that ParseCSV sets Deleted=true for backward compatibility.
-	input := "id,title,status\n1,Old tombstone,deleted\n2,Active,open\n"
-	f := meads.ParseCSV(input)
-	if len(f.Tasks) != 2 {
-		t.Fatalf("expected 2 tasks, got %d", len(f.Tasks))
-	}
-	if !f.Tasks[0].Deleted {
-		t.Error("old-format deleted task should have Deleted=true")
-	}
-	if f.Tasks[1].Deleted {
-		t.Error("active task should have Deleted=false")
 	}
 }
