@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/jpillora/meads/pkg/meads"
 )
 
 func TestIntegration_FullLifecycle(t *testing.T) {
@@ -649,5 +651,190 @@ func TestCSVIntegration_MultilineDescription(t *testing.T) {
 	task := h.getTask(id)
 	if task.Description != multiline {
 		t.Errorf("description round-trip failed:\ngot:  %q\nwant: %q", task.Description, multiline)
+	}
+}
+
+// --- List Filter Tests ---
+
+func TestIntegration_ListFilter_Status(t *testing.T) {
+	h := newHarness(t)
+
+	h.addTask("Open task")
+	id2 := h.addTask("Closed task")
+	id3 := h.addTask("InProgress task")
+	h.closeTask(id2)
+	h.setStatus(id3, "inprogress")
+
+	cmd := &listCmd{globals: h.globals}
+	cmd.Status = "open"
+	tasks := cmd.filterTasks(h.getTasks())
+	if len(tasks) != 1 {
+		t.Fatalf("expected 1 open task, got %d", len(tasks))
+	}
+	if tasks[0].Title != "Open task" {
+		t.Fatalf("expected 'Open task', got %q", tasks[0].Title)
+	}
+
+	cmd.Status = "inprogress"
+	tasks = cmd.filterTasks(h.getTasks())
+	if len(tasks) != 1 {
+		t.Fatalf("expected 1 inprogress task, got %d", len(tasks))
+	}
+	if tasks[0].Title != "InProgress task" {
+		t.Fatalf("expected 'InProgress task', got %q", tasks[0].Title)
+	}
+
+	cmd.Status = "closed"
+	tasks = cmd.filterTasks(h.getTasks())
+	if len(tasks) != 1 {
+		t.Fatalf("expected 1 closed task, got %d", len(tasks))
+	}
+}
+
+func TestIntegration_ListFilter_Priority(t *testing.T) {
+	h := newHarness(t)
+
+	id1 := h.addTask("Default priority task")
+	id2 := h.addTask("High priority task")
+	h.addTask("Another default priority task")
+	h.updatePriority(id2, "P0")
+
+	// Default priority is P2
+	cmd := &listCmd{globals: h.globals}
+	cmd.Priority = "P2"
+	tasks := cmd.filterTasks(h.getTasks())
+	if len(tasks) != 2 {
+		t.Fatalf("expected 2 P2 tasks, got %d", len(tasks))
+	}
+
+	cmd.Priority = "P0"
+	tasks = cmd.filterTasks(h.getTasks())
+	if len(tasks) != 1 {
+		t.Fatalf("expected 1 P0 task, got %d", len(tasks))
+	}
+	if tasks[0].ID != id2 {
+		t.Fatalf("expected task %d, got %d", id2, tasks[0].ID)
+	}
+
+	cmd.Priority = "P9"
+	tasks = cmd.filterTasks(h.getTasks())
+	if len(tasks) != 0 {
+		t.Fatalf("expected 0 P9 tasks, got %d", len(tasks))
+	}
+	_ = id1
+}
+
+func TestIntegration_ListFilter_Type(t *testing.T) {
+	h := newHarness(t)
+
+	h.addTask("Default task")
+	id2 := h.addTask("Bug task")
+	h.store.Update(id2, func(t *meads.Task) {
+		t.SetType("bug")
+	})
+
+	// Default type is "task"
+	cmd := &listCmd{globals: h.globals}
+	cmd.Type = "task"
+	tasks := cmd.filterTasks(h.getTasks())
+	if len(tasks) != 1 {
+		t.Fatalf("expected 1 task-type task, got %d", len(tasks))
+	}
+	if tasks[0].Title != "Default task" {
+		t.Fatalf("expected 'Default task', got %q", tasks[0].Title)
+	}
+
+	cmd.Type = "bug"
+	tasks = cmd.filterTasks(h.getTasks())
+	if len(tasks) != 1 {
+		t.Fatalf("expected 1 bug task, got %d", len(tasks))
+	}
+	if tasks[0].Title != "Bug task" {
+		t.Fatalf("expected 'Bug task', got %q", tasks[0].Title)
+	}
+}
+
+func TestIntegration_ListFilter_Tag(t *testing.T) {
+	h := newHarness(t)
+
+	id1 := h.addTask("Tagged task")
+	h.addTask("Untagged task")
+	h.store.Update(id1, func(t *meads.Task) {
+		t.SetTags([]string{"urgent", "frontend"})
+	})
+
+	cmd := &listCmd{globals: h.globals}
+	cmd.Tag = "urgent"
+	tasks := cmd.filterTasks(h.getTasks())
+	if len(tasks) != 1 {
+		t.Fatalf("expected 1 urgent task, got %d", len(tasks))
+	}
+	if tasks[0].Title != "Tagged task" {
+		t.Fatalf("expected 'Tagged task', got %q", tasks[0].Title)
+	}
+
+	cmd.Tag = "frontend"
+	tasks = cmd.filterTasks(h.getTasks())
+	if len(tasks) != 1 {
+		t.Fatalf("expected 1 frontend task, got %d", len(tasks))
+	}
+
+	cmd.Tag = "nonexistent"
+	tasks = cmd.filterTasks(h.getTasks())
+	if len(tasks) != 0 {
+		t.Fatalf("expected 0 tasks with nonexistent tag, got %d", len(tasks))
+	}
+}
+
+func TestIntegration_ListFilter_Combined(t *testing.T) {
+	h := newHarness(t)
+
+	id1 := h.addTask("Open bug P0")
+	id2 := h.addTask("Open bug P1")
+	id3 := h.addTask("Closed bug P0")
+	h.addTask("Open task P0")
+
+	h.store.Update(id1, func(t *meads.Task) {
+		t.SetType("bug")
+		t.SetPriority("P0")
+	})
+	h.store.Update(id2, func(t *meads.Task) {
+		t.SetType("bug")
+		t.SetPriority("P1")
+	})
+	h.store.Update(id3, func(t *meads.Task) {
+		t.SetType("bug")
+		t.SetPriority("P0")
+		t.SetStatus("closed")
+	})
+	h.store.Update(4, func(t *meads.Task) {
+		t.SetPriority("P0")
+	})
+
+	// Filter: open + bug + P0
+	cmd := &listCmd{globals: h.globals}
+	cmd.Status = "open"
+	cmd.Type = "bug"
+	cmd.Priority = "P0"
+	tasks := cmd.filterTasks(h.getTasks())
+	if len(tasks) != 1 {
+		t.Fatalf("expected 1 task matching open+bug+P0, got %d", len(tasks))
+	}
+	if tasks[0].ID != id1 {
+		t.Fatalf("expected task %d, got %d", id1, tasks[0].ID)
+	}
+}
+
+func TestIntegration_ListFilter_NoFilters(t *testing.T) {
+	h := newHarness(t)
+
+	h.addTask("Task A")
+	h.addTask("Task B")
+	h.addTask("Task C")
+
+	cmd := &listCmd{globals: h.globals}
+	tasks := cmd.filterTasks(h.getTasks())
+	if len(tasks) != 3 {
+		t.Fatalf("expected 3 tasks with no filters, got %d", len(tasks))
 	}
 }
