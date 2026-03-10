@@ -3,22 +3,12 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-03-10T13:34:22Z
+* updated: 2026-03-10T13:36:45Z
 * next-id: 13
 
 ## 6. auto-set next-id
 
 to allow hand writing of the TASKS.md file. any time the TASKS.md file is locked. it should confirm that `next-id` is set HIGHER than the highest-id. if not, it should automatically reset it to highest-id + 1.
-
-## 8. CLI filtering on list
-
-* status: inprogress
-* priority: P2
-* type: feature
-* created: 2026-03-10T13:30:51Z
-* updated: 2026-03-10T13:34:22Z
-
-Add --status, --priority, --type, and --tag flags to md list. Simple post-parse filtering covers 90% of real query needs.
 
 ## 9. md doctor command
 
