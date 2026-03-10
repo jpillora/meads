@@ -4,7 +4,7 @@ import _ "embed"
 
 // AgentsCLI contains LLM context instructions for using md via CLI commands.
 //
-//go:embed AGENTS.md
+//go:embed AGENTS_CLI.md
 var AgentsCLI string
 
 // AgentsMCP contains LLM context instructions for using md via MCP tools.
