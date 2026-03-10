@@ -60,6 +60,101 @@ func TestValidateDeps_SkipsDeleted(t *testing.T) {
 	}
 }
 
+func TestValidateDeps_CycleDetection_Simple(t *testing.T) {
+	// A → B → A (direct cycle between two tasks)
+	f := &File{Tasks: []Task{
+		{ID: 1, Status: "open", DependsOn: []int{2}},
+		{ID: 2, Status: "open", DependsOn: []int{1}},
+	}}
+	err := validateDeps(f)
+	if err == nil {
+		t.Fatal("expected error for circular dependency")
+	}
+	if !strings.Contains(err.Error(), "circular dependency detected:") {
+		t.Errorf("unexpected error: %v", err)
+	}
+	// The cycle path should contain both task IDs and the arrow separator.
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "1") || !strings.Contains(errMsg, "2") {
+		t.Errorf("cycle error should mention tasks 1 and 2: %v", err)
+	}
+	if !strings.Contains(errMsg, "→") {
+		t.Errorf("cycle error should contain arrow separator: %v", err)
+	}
+}
+
+func TestValidateDeps_CycleDetection_ThreeNodes(t *testing.T) {
+	// 1 → 2 → 3 → 1
+	f := &File{Tasks: []Task{
+		{ID: 1, Status: "open", DependsOn: []int{2}},
+		{ID: 2, Status: "open", DependsOn: []int{3}},
+		{ID: 3, Status: "open", DependsOn: []int{1}},
+	}}
+	err := validateDeps(f)
+	if err == nil {
+		t.Fatal("expected error for circular dependency")
+	}
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "circular dependency detected:") {
+		t.Errorf("unexpected error: %v", err)
+	}
+	// All three should appear in the cycle.
+	if !strings.Contains(errMsg, "1") || !strings.Contains(errMsg, "2") || !strings.Contains(errMsg, "3") {
+		t.Errorf("cycle error should mention tasks 1, 2, and 3: %v", err)
+	}
+}
+
+func TestValidateDeps_CycleDetection_SelfLoop(t *testing.T) {
+	// A task depends on itself.
+	f := &File{Tasks: []Task{
+		{ID: 1, Status: "open", DependsOn: []int{1}},
+	}}
+	err := validateDeps(f)
+	if err == nil {
+		t.Fatal("expected error for self-referencing dependency")
+	}
+	if !strings.Contains(err.Error(), "circular dependency detected:") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateDeps_NoCycle_ValidChain(t *testing.T) {
+	// 1 → 2 → 3 (linear chain, no cycle)
+	f := &File{Tasks: []Task{
+		{ID: 1, Status: "open", DependsOn: []int{2}},
+		{ID: 2, Status: "open", DependsOn: []int{3}},
+		{ID: 3, Status: "open"},
+	}}
+	if err := validateDeps(f); err != nil {
+		t.Errorf("expected nil error for valid chain, got %v", err)
+	}
+}
+
+func TestValidateDeps_NoCycle_DiamondShape(t *testing.T) {
+	// Diamond: 1 → {2, 3}, 2 → 4, 3 → 4 (no cycle)
+	f := &File{Tasks: []Task{
+		{ID: 1, Status: "open", DependsOn: []int{2, 3}},
+		{ID: 2, Status: "open", DependsOn: []int{4}},
+		{ID: 3, Status: "open", DependsOn: []int{4}},
+		{ID: 4, Status: "open"},
+	}}
+	if err := validateDeps(f); err != nil {
+		t.Errorf("expected nil error for diamond dependency, got %v", err)
+	}
+}
+
+func TestValidateDeps_CycleDetection_SkipsDeletedTasks(t *testing.T) {
+	// Deleted task in the middle should not form a cycle.
+	f := &File{Tasks: []Task{
+		{ID: 1, Status: "open", DependsOn: []int{3}},
+		{ID: 2, Status: "deleted", DependsOn: []int{1}},
+		{ID: 3, Status: "open"},
+	}}
+	if err := validateDeps(f); err != nil {
+		t.Errorf("expected nil error when deleted task breaks cycle, got %v", err)
+	}
+}
+
 func TestValidateDeps_DepOnDeletedIsInvalid(t *testing.T) {
 	// An active task depending on a deleted task is invalid.
 	f := &File{Tasks: []Task{
