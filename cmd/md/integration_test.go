@@ -25,12 +25,22 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 	// Commit TASKS.md (simulates a normal workflow commit)
 	h.commit("close task")
 
-	// Run auto-delete (simulates post-commit hook)
+	// First auto-clean: marks closed task as deleted (new commit, not amend).
+	// The closed state is preserved in the previous commit.
 	if err := h.runAutoDelete(); err != nil {
-		t.Fatalf("runAutoDelete: %v", err)
+		t.Fatalf("runAutoDelete (phase 1): %v", err)
 	}
 
-	// The closed task should be deleted
+	// Task is now marked deleted — invisible to Get but still in the file.
+	h.assertTaskCount(0)
+	h.assertTaskNotExists(id)
+
+	// Second auto-clean: removes the deleted tombstone (it was committed as deleted).
+	if err := h.runAutoDelete(); err != nil {
+		t.Fatalf("runAutoDelete (phase 2): %v", err)
+	}
+
+	// Task is now physically gone.
 	h.assertTaskCount(0)
 	h.assertTaskNotExists(id)
 }
@@ -67,6 +77,7 @@ func TestIntegration_AutoDelete_NonStandardDefaultBranch(t *testing.T) {
 		t.Fatalf("runAutoDelete: %v", err)
 	}
 
+	// Task marked deleted — invisible to Get
 	h.assertTaskCount(0)
 	h.assertTaskNotExists(id)
 }
@@ -126,7 +137,7 @@ func TestIntegration_AutoDelete_MultipleClosed(t *testing.T) {
 		t.Fatalf("runAutoDelete: %v", err)
 	}
 
-	// Only the open task should remain
+	// Closed tasks marked deleted — only open task visible
 	h.assertTaskCount(1)
 	h.assertTaskExists(id2)
 	h.assertTaskNotExists(id1)
@@ -146,10 +157,10 @@ func TestIntegration_AutoDelete_NoClosed(t *testing.T) {
 		t.Fatalf("runAutoDelete: %v", err)
 	}
 
-	// No amend should have happened, commit count unchanged
+	// No new commit should have happened, commit count unchanged
 	countAfter := h.commitCount()
 	if countAfter != countBefore {
-		t.Fatalf("expected %d commits, got %d (amend happened when it shouldn't)", countBefore, countAfter)
+		t.Fatalf("expected %d commits, got %d (commit happened when it shouldn't)", countBefore, countAfter)
 	}
 
 	h.assertTaskCount(2)
@@ -197,7 +208,7 @@ func TestIntegration_AutoDelete_MixedStatuses(t *testing.T) {
 		t.Fatalf("runAutoDelete: %v", err)
 	}
 
-	// Only closed tasks should be deleted
+	// Closed tasks marked deleted — only non-closed tasks visible
 	h.assertTaskNotExists(id1)
 	h.assertTaskExists(id2)
 	h.assertTaskExists(id3)
@@ -280,7 +291,7 @@ func TestIntegration_AutoDelete_CleansDanglingDeps(t *testing.T) {
 	}
 }
 
-func TestIntegration_AutoDelete_RestoresOnAmendFailure(t *testing.T) {
+func TestIntegration_AutoDelete_RestoresOnCommitFailure(t *testing.T) {
 	h := newHarness(t)
 
 	id1 := h.addTask("Open task")
@@ -290,7 +301,7 @@ func TestIntegration_AutoDelete_RestoresOnAmendFailure(t *testing.T) {
 
 	contentBefore := h.tasksFileContent()
 
-	// Install a pre-commit hook that blocks the amend
+	// Install a pre-commit hook that blocks the new commit
 	h.installPreCommitHook("#!/bin/sh\nexit 1\n")
 
 	err := h.runAutoDelete()
@@ -304,7 +315,7 @@ func TestIntegration_AutoDelete_RestoresOnAmendFailure(t *testing.T) {
 	// TASKS.md should be restored to pre-delete state
 	contentAfter := h.tasksFileContent()
 	if contentAfter != contentBefore {
-		t.Fatal("TASKS.md content was not restored after amend failure")
+		t.Fatal("TASKS.md content was not restored after commit failure")
 	}
 
 	// Both tasks should still exist
@@ -349,7 +360,7 @@ func TestIntegration_AutoDelete_RestoresOnGitAddFailure(t *testing.T) {
 	h.assertTaskExists(id2)
 }
 
-func TestIntegration_AutoDelete_Idempotent(t *testing.T) {
+func TestIntegration_AutoDelete_TwoPhaseLifecycle(t *testing.T) {
 	h := newHarness(t)
 
 	id1 := h.addTask("Open task")
@@ -357,7 +368,7 @@ func TestIntegration_AutoDelete_Idempotent(t *testing.T) {
 	h.closeTask(id2)
 	h.commit("close task")
 
-	// First run: deletes closed task
+	// Phase 1: marks closed task as deleted
 	if err := h.runAutoDelete(); err != nil {
 		t.Fatalf("first runAutoDelete: %v", err)
 	}
@@ -365,17 +376,20 @@ func TestIntegration_AutoDelete_Idempotent(t *testing.T) {
 	h.assertTaskExists(id1)
 	h.assertTaskNotExists(id2)
 
-	commitCountAfterFirst := h.commitCount()
-
-	// Second run: no-op (no closed tasks remain)
+	// Phase 2: removes the committed tombstone
 	if err := h.runAutoDelete(); err != nil {
 		t.Fatalf("second runAutoDelete: %v", err)
 	}
 	h.assertTaskCount(1)
 
-	// No amend should have happened
-	if h.commitCount() != commitCountAfterFirst {
-		t.Fatal("second auto-delete should be a no-op but modified commits")
+	commitCountAfterSecond := h.commitCount()
+
+	// Third run: no-op (nothing to clean)
+	if err := h.runAutoDelete(); err != nil {
+		t.Fatalf("third runAutoDelete: %v", err)
+	}
+	if h.commitCount() != commitCountAfterSecond {
+		t.Fatal("third auto-delete should be a no-op but created a commit")
 	}
 }
 
@@ -387,20 +401,40 @@ func TestIntegration_AutoDelete_CommitIncludesDeletions(t *testing.T) {
 	h.closeTask(id2)
 	h.commit("close task")
 
+	commitsBefore := h.commitCount()
+
 	if err := h.runAutoDelete(); err != nil {
 		t.Fatalf("runAutoDelete: %v", err)
 	}
 
-	// Verify the amended commit has the clean TASKS.md
+	// Verify a NEW commit was created (not an amend)
+	commitsAfter := h.commitCount()
+	if commitsAfter != commitsBefore+1 {
+		t.Fatalf("expected %d commits (new commit), got %d", commitsBefore+1, commitsAfter)
+	}
+
+	// Verify the new commit message
+	msg := h.lastCommitMessage()
+	if msg != "md: auto-clean tasks" {
+		t.Fatalf("expected commit message 'md: auto-clean tasks', got %q", msg)
+	}
+
+	// Verify the tasks file is clean
 	h.assertTasksFileClean()
 
-	// Verify git show HEAD:TASKS.md does NOT contain the closed task
+	// Verify the PREVIOUS commit (HEAD~1) still has the closed task (history preserved)
+	prevOutput := h.git("show", "HEAD~1:TASKS.md")
+	if !strings.Contains(prevOutput, "Closed task") {
+		t.Fatal("previous commit should preserve the closed task")
+	}
+
+	// Verify the current commit has the task marked deleted (not the title "Closed task")
 	showOutput := h.git("show", "HEAD:TASKS.md")
 	if strings.Contains(showOutput, "Closed task") {
-		t.Fatal("amended commit still contains deleted task")
+		t.Fatal("current commit should not contain original task title")
 	}
 	if !strings.Contains(showOutput, "Open task") {
-		t.Fatal("amended commit is missing the open task")
+		t.Fatal("current commit is missing the open task")
 	}
 }
 
@@ -420,6 +454,7 @@ func TestIntegration_AutoDelete_ClosedWithMultipleDependents(t *testing.T) {
 		t.Fatalf("runAutoDelete: %v", err)
 	}
 
+	// Parent marked deleted — not visible to Get
 	h.assertTaskNotExists(parent)
 	h.assertTaskCount(2)
 

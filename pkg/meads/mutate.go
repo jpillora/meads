@@ -273,6 +273,100 @@ func (s *Store) Doctor() ([]DoctorFix, error) {
 	return fixes, nil
 }
 
+// AutoCleanResult describes changes made by AutoClean.
+type AutoCleanResult struct {
+	Marked  []int // IDs of closed tasks that were marked deleted
+	Removed []int // IDs of deleted tasks that were physically removed
+}
+
+// AutoClean performs two-phase cleanup for the auto-delete hook.
+// Phase 1: physically remove tasks that were already "deleted" in prevContent (except tombstone).
+// Phase 2: mark "closed" tasks as "deleted".
+// prevContent is the file content from the previous commit (HEAD~1).
+// Returns the IDs affected in each phase, or nil if no changes were needed.
+func (s *Store) AutoClean(prevContent string) (*AutoCleanResult, error) {
+	_, content, err := s.acquireLock()
+	if err != nil {
+		return nil, err
+	}
+	f := s.fmt.Parse(content)
+
+	// Build set of task IDs that were "deleted" in the previous commit.
+	prevDeleted := make(map[int]bool)
+	if prevContent != "" {
+		prev := s.fmt.Parse(prevContent)
+		for _, t := range prev.Tasks {
+			if t.Status == "deleted" {
+				prevDeleted[t.ID] = true
+			}
+		}
+	}
+
+	var result AutoCleanResult
+
+	// Phase 1: physically remove tasks that were already committed as deleted.
+	if len(prevDeleted) > 0 {
+		filtered := make([]Task, 0, len(f.Tasks))
+		for _, t := range f.Tasks {
+			if t.Status == "deleted" && prevDeleted[t.ID] {
+				result.Removed = append(result.Removed, t.ID)
+				continue
+			}
+			filtered = append(filtered, t)
+		}
+		f.Tasks = filtered
+	}
+
+	// Phase 2: mark closed tasks as deleted.
+	for i := range f.Tasks {
+		if f.Tasks[i].Status == "closed" {
+			result.Marked = append(result.Marked, f.Tasks[i].ID)
+			// Clean dangling deps from other tasks.
+			delID := f.Tasks[i].ID
+			for j := range f.Tasks {
+				if j == i || f.Tasks[j].Status == "deleted" {
+					continue
+				}
+				if len(f.Tasks[j].DependsOn) > 0 {
+					var clean []int
+					for _, dep := range f.Tasks[j].DependsOn {
+						if dep != delID {
+							clean = append(clean, dep)
+						}
+					}
+					if len(clean) != len(f.Tasks[j].DependsOn) {
+						f.Tasks[j].SetDependsOn(clean)
+					}
+				}
+			}
+			f.Tasks[i] = Task{
+				ID:     delID,
+				Title:  "deleted",
+				Status: "deleted",
+				Meta:   map[string]string{"status": "deleted"},
+			}
+		}
+	}
+
+	if len(result.Marked) == 0 && len(result.Removed) == 0 {
+		s.releaseLock(content)
+		return nil, nil
+	}
+
+	// Prune tombstones: keep at most one for ID safety.
+	pruneTombstones(&f)
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	if s.fmt.HasPreamble() {
+		ensureProjectMeta(&f, now)
+		f.Meta["updated"] = now
+	}
+	if err := s.releaseLock(s.fmt.Format(f)); err != nil {
+		return nil, fmt.Errorf("writing %s: %w", s.file, err)
+	}
+	return &result, nil
+}
+
 // Update modifies a task by ID. The provided function receives a pointer
 // to the task for mutation. After mutation, any DependsOn IDs are validated
 // to ensure the referenced tasks exist.

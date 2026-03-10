@@ -39,47 +39,40 @@ func (c *autoDeleteCmd) runFromHook() error {
 		return nil // Silently exit if not on default branch
 	}
 
-	// Safety check 2: TASKS.md must have no changes at all
+	// Safety check 2: Tasks file must have no uncommitted changes
 	if !c.isTasksFileClean() {
-		return nil // Silently exit if TASKS.md has changes
+		return nil // Silently exit if tasks file has changes
 	}
 
 	store := c.globals.store()
 	git := c.globals.git()
 
 	// Save backup for recovery — if anything fails after modifying
-	// the file, we restore it so TASKS.md always matches git HEAD.
+	// the file, we restore it so the tasks file always matches git HEAD.
 	backup, err := util.ReadFile(store.FS(), store.Path())
 	if err != nil {
 		return fmt.Errorf("reading %s: %w", store.Path(), err)
 	}
 
-	// Find all closed tasks
-	tasks, err := store.Get(nil)
+	// Get previous commit's file content for two-phase cleanup.
+	// Phase 1 removes tasks that were already "deleted" in the previous commit.
+	// Phase 2 marks "closed" tasks as "deleted" (preserving the closed state in this commit).
+	prevContent, _ := git.Output("show", "HEAD~1:"+c.globals.TasksFile)
+
+	result, err := store.AutoClean(prevContent)
 	if err != nil {
-		return fmt.Errorf("reading tasks: %w", err)
-	}
-
-	var closedIDs []int
-	for _, t := range tasks {
-		if t.Status == "closed" {
-			closedIDs = append(closedIDs, t.ID)
-		}
-	}
-
-	if len(closedIDs) == 0 {
-		return nil // Nothing to delete
-	}
-
-	// Atomic delete: removes all closed tasks and cleans up dangling deps
-	// in a single file write.
-	if err := store.DeleteMany(closedIDs); err != nil {
 		util.WriteFile(store.FS(), store.Path(), backup, 0644)
-		return fmt.Errorf("deleting tasks: %w", err)
+		return fmt.Errorf("auto-clean: %w", err)
+	}
+	if result == nil {
+		return nil // Nothing to do
 	}
 
-	for _, id := range closedIDs {
-		fmt.Fprintf(os.Stderr, "md: auto-deleted closed task %d\n", id)
+	for _, id := range result.Removed {
+		fmt.Fprintf(os.Stderr, "md: removed deleted task %d\n", id)
+	}
+	for _, id := range result.Marked {
+		fmt.Fprintf(os.Stderr, "md: marked closed task %d as deleted\n", id)
 	}
 
 	// Stage the changes
@@ -88,12 +81,12 @@ func (c *autoDeleteCmd) runFromHook() error {
 		return fmt.Errorf("staging %s: %w", store.Path(), err)
 	}
 
-	// Amend the commit to include deletions
-	if err := git.Run("commit", "--amend", "--no-edit"); err != nil {
+	// Create a NEW commit (not amend) so the closed state is preserved in history.
+	if err := git.Run("commit", "-m", "md: auto-clean tasks"); err != nil {
 		// Restore file and unstage changes
 		util.WriteFile(store.FS(), store.Path(), backup, 0644)
 		git.Run("reset", "HEAD", "--", c.globals.TasksFile)
-		return fmt.Errorf("amending commit: %w", err)
+		return fmt.Errorf("committing: %w", err)
 	}
 
 	return nil
