@@ -2,7 +2,7 @@
 
 ## Overview
 
-`md` is a git-native task tracker that stores all tasks in a single `TASKS.md` file. No database, no config files - just Markdown and git.
+`md` is a git-native task tracker that stores all tasks in a single file — `TASKS.md` (Markdown) or `TASKS.csv` (CSV). No database, no config files — just your task file and git.
 
 ## MCP Server
 
@@ -45,8 +45,8 @@ The `md` MCP server is enabled. **Use MCP tools instead of CLI commands** for al
 1. Call `update_task(id, status="closed")` to mark done
 
 ## Rules
-- **Do NOT read or edit TASKS.md directly** - always use MCP tools to read and modify tasks
+- **Do NOT read or edit the task file (TASKS.md or TASKS.csv) directly** - always use MCP tools to read and modify tasks
 - **Do NOT shell out to `md` CLI commands** - use the MCP tools above
-- **ALWAYS include changes to TASKS.md in the next git commit after task is closed**
+- **ALWAYS include changes to the task file in the next git commit after task is closed**
 - Task IDs are auto-assigned integers
 - Git handles versioning and history

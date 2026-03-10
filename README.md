@@ -2,14 +2,15 @@
 
 > [beads](https://github.com/steveyegge/beads) but much simpler
 
-Git-native task tracking in a single Markdown file. No database, no server, no dependencies — just `TASKS.md` and git.
+Git-native task tracking in a single file. No database, no server, no dependencies — just `TASKS.md` (or `TASKS.csv`) and git.
 
 [![GoDev](https://img.shields.io/static/v1?label=godoc&message=reference&color=00add8)](https://pkg.go.dev/github.com/jpillora/meads)
 [![CI](https://github.com/jpillora/meads/workflows/CI/badge.svg)](https://github.com/jpillora/meads/actions?workflow=CI)
 
 ### Features
 
-- All state lives in a single `TASKS.md` file — commit it to git and get full history for free
+- All state lives in a single file — `TASKS.md` (Markdown) or `TASKS.csv` (CSV) — commit it to git and get full history for free
+- Two storage formats: Markdown for human-readable diffs, CSV for tooling and spreadsheets
 - Rich input parsing: type prefixes (`bug:`, `feature:`), priority (`P0`-`P9`), title and description in one string
 - Task dependencies with automatic blocking detection
 - Concurrent-write safe via optimistic locking
@@ -117,8 +118,10 @@ md set-status 3 closed       # done
 
 ### Notes
 
-- **Format** — Tasks are stored as Markdown headings (`## 1. Title`) with `* key: value` metadata. The file is human-readable but all writes should go through the `md` CLI to maintain consistency.
+- **Format** — Two storage backends, auto-detected by file extension:
+  - `TASKS.md` — Markdown headings (`## 1. Title`) with `* key: value` metadata. Human-readable diffs.
+  - `TASKS.csv` — Standard CSV with soft-delete and computed next-id. Easy to import into spreadsheets and other tools.
 - **Metadata** — Built-in keys are `status`, `priority`, `type`, and `depends-on`.
-- **Concurrency** — Concurrent writes are safe via optimistic file locking, so multiple processes (or AI agents) can write to `TASKS.md` simultaneously without corruption.
-- **AI-friendly** — The Markdown format is designed to be readable and writable by LLMs. Use `md prime` to print context for an AI agent, or `md mcp` to run an MCP server over stdio.
+- **Concurrency** — Concurrent writes are safe via optimistic file locking, so multiple processes (or AI agents) can write to the task file simultaneously without corruption.
+- **AI-friendly** — Both formats are designed to be readable and writable by LLMs. Use `md prime` to print context for an AI agent, or `md mcp` to run an MCP server over stdio.
 - **Minimal** — Single static binary, no config files.
