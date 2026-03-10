@@ -19,7 +19,7 @@ func TestNextID_WithTasks(t *testing.T) {
 	f := &File{Tasks: []Task{
 		{ID: 3, Status: "open"},
 		{ID: 1, Status: "open"},
-		{ID: 5, Status: "deleted"},
+		{ID: 5, Deleted: true},
 	}}
 	if got := nextID(f); got != 6 {
 		t.Errorf("nextID = %d, want 6", got)
@@ -52,7 +52,7 @@ func TestValidateDeps_Invalid(t *testing.T) {
 func TestValidateDeps_SkipsDeleted(t *testing.T) {
 	// A deleted task's deps should not be validated.
 	f := &File{Tasks: []Task{
-		{ID: 1, Status: "deleted", DependsOn: []int{99}},
+		{ID: 1, Deleted: true, DependsOn: []int{99}},
 		{ID: 2, Status: "open"},
 	}}
 	if err := validateDeps(f); err != nil {
@@ -147,7 +147,7 @@ func TestValidateDeps_CycleDetection_SkipsDeletedTasks(t *testing.T) {
 	// Deleted task in the middle should not form a cycle.
 	f := &File{Tasks: []Task{
 		{ID: 1, Status: "open", DependsOn: []int{3}},
-		{ID: 2, Status: "deleted", DependsOn: []int{1}},
+		{ID: 2, Deleted: true, DependsOn: []int{1}},
 		{ID: 3, Status: "open"},
 	}}
 	if err := validateDeps(f); err != nil {
@@ -158,7 +158,7 @@ func TestValidateDeps_CycleDetection_SkipsDeletedTasks(t *testing.T) {
 func TestValidateDeps_DepOnDeletedIsInvalid(t *testing.T) {
 	// An active task depending on a deleted task is invalid.
 	f := &File{Tasks: []Task{
-		{ID: 1, Status: "deleted"},
+		{ID: 1, Deleted: true},
 		{ID: 2, Status: "open", DependsOn: []int{1}},
 	}}
 	err := validateDeps(f)
@@ -170,7 +170,7 @@ func TestValidateDeps_DepOnDeletedIsInvalid(t *testing.T) {
 func TestFilterDeleted(t *testing.T) {
 	tasks := []Task{
 		{ID: 1, Status: "open"},
-		{ID: 2, Status: "deleted"},
+		{ID: 2, Deleted: true},
 		{ID: 3, Status: "closed"},
 	}
 	filtered := filterDeleted(tasks)
@@ -178,7 +178,7 @@ func TestFilterDeleted(t *testing.T) {
 		t.Fatalf("expected 2, got %d", len(filtered))
 	}
 	for _, task := range filtered {
-		if task.Status == "deleted" {
+		if task.Deleted {
 			t.Errorf("deleted task %d should be filtered", task.ID)
 		}
 	}

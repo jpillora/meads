@@ -112,6 +112,9 @@ func NewServer(store *meads.Store, version string) *mcp.Server {
 			if input.Description != "" {
 				t.Description = input.Description
 			}
+			if input.StatusReason != "" {
+				t.StatusReason = input.StatusReason
+			}
 		})
 		if err != nil {
 			return nil, nil, err
@@ -150,12 +153,13 @@ func NewServer(store *meads.Store, version string) *mcp.Server {
 // BriefTask is a lightweight task representation for list responses.
 // It omits Description, Tags, Meta, and CloseReason to save tokens.
 type BriefTask struct {
-	ID        int    `json:"id"`
-	Title     string `json:"title"`
-	Status    string `json:"status"`
-	Priority  string `json:"priority"`
-	Type      string `json:"type"`
-	DependsOn []int  `json:"depends_on,omitempty"`
+	ID           int    `json:"id"`
+	Title        string `json:"title"`
+	Status       string `json:"status"`
+	Priority     string `json:"priority"`
+	Type         string `json:"type"`
+	DependsOn    []int  `json:"depends_on,omitempty"`
+	StatusReason string `json:"status_reason,omitempty"`
 }
 
 func briefTasks(tasks []meads.Task) []BriefTask {
@@ -191,11 +195,12 @@ type addTaskOutput struct {
 }
 
 type updateTaskInput struct {
-	ID          int    `json:"id" jsonschema:"task ID to update,required"`
-	Status      string `json:"status,omitempty" jsonschema:"new status (draft, open, inprogress, closed)"`
-	Priority    string `json:"priority,omitempty" jsonschema:"new priority (P0-P9)"`
-	Title       string `json:"title,omitempty" jsonschema:"new title"`
-	Description string `json:"description,omitempty" jsonschema:"new description"`
+	ID           int    `json:"id" jsonschema:"task ID to update,required"`
+	Status       string `json:"status,omitempty" jsonschema:"new status (draft, open, inprogress, closed)"`
+	Priority     string `json:"priority,omitempty" jsonschema:"new priority (P0-P9)"`
+	Title        string `json:"title,omitempty" jsonschema:"new title"`
+	Description  string `json:"description,omitempty" jsonschema:"new description"`
+	StatusReason string `json:"status_reason,omitempty" jsonschema:"reason for status change"`
 }
 
 type deleteTaskInput struct {

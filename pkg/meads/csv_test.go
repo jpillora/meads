@@ -56,7 +56,7 @@ func TestPruneTombstones_NoTombstones(t *testing.T) {
 
 func TestPruneTombstones_ActiveHigherThanDeleted(t *testing.T) {
 	f := &File{Tasks: []Task{
-		{ID: 1, Status: "deleted"}, {ID: 2, Status: "deleted"}, {ID: 3, Status: "open"},
+		{ID: 1, Deleted: true}, {ID: 2, Deleted: true}, {ID: 3, Status: "open"},
 	}}
 	pruneTombstones(f)
 	if len(f.Tasks) != 1 || f.Tasks[0].ID != 3 {
@@ -66,7 +66,7 @@ func TestPruneTombstones_ActiveHigherThanDeleted(t *testing.T) {
 
 func TestPruneTombstones_DeletedHigherThanActive(t *testing.T) {
 	f := &File{Tasks: []Task{
-		{ID: 1, Status: "open"}, {ID: 2, Status: "deleted"}, {ID: 3, Status: "deleted"},
+		{ID: 1, Status: "open"}, {ID: 2, Deleted: true}, {ID: 3, Deleted: true},
 	}}
 	pruneTombstones(f)
 	if len(f.Tasks) != 2 {
@@ -83,7 +83,7 @@ func TestPruneTombstones_DeletedHigherThanActive(t *testing.T) {
 
 func TestPruneTombstones_AllDeleted(t *testing.T) {
 	f := &File{Tasks: []Task{
-		{ID: 1, Status: "deleted"}, {ID: 2, Status: "deleted"}, {ID: 3, Status: "deleted"},
+		{ID: 1, Deleted: true}, {ID: 2, Deleted: true}, {ID: 3, Deleted: true},
 	}}
 	pruneTombstones(f)
 	if len(f.Tasks) != 1 || f.Tasks[0].ID != 3 {

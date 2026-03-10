@@ -138,6 +138,18 @@ func parseTask(section string) (Task, bool) {
 	if v, ok := meta["tags"]; ok {
 		t.Tags = splitTags(v)
 	}
+	if v, ok := meta["deleted"]; ok {
+		t.Deleted = v == "true"
+		delete(meta, "deleted")
+	}
+	if v, ok := meta["status-reason"]; ok {
+		t.StatusReason = v
+		delete(meta, "status-reason")
+	}
+	// Backward compatibility: old format used Status="deleted" for tombstones.
+	if t.Status == "deleted" {
+		t.Deleted = true
+	}
 	return t, true
 }
 
@@ -185,7 +197,7 @@ func parseMetaLine(line string) (string, string, bool) {
 
 var (
 	projectMetaOrder = []string{"created", "updated"}
-	taskMetaOrder    = []string{"status", "priority", "type", "depends-on", "close-reason", "tags", "created", "updated"}
+	taskMetaOrder    = []string{"status", "priority", "type", "depends-on", "close-reason", "status-reason", "tags", "created", "updated", "deleted"}
 )
 
 const fileHeader = "# TASKS\n\na [meads](https://github.com/jpillora/meads) (`md`) managed task log\n"
@@ -214,7 +226,21 @@ func FormatTask(t Task) string {
 	} else {
 		fmt.Fprintf(&sb, "## %d.\n", t.ID)
 	}
-	if metaBlock := formatMetaBlock(t.Meta, taskMetaOrder); metaBlock != "" {
+	// Build meta map including struct-only fields for formatting.
+	meta := t.Meta
+	if t.Deleted || t.StatusReason != "" {
+		meta = make(map[string]string, len(t.Meta)+2)
+		for k, v := range t.Meta {
+			meta[k] = v
+		}
+		if t.Deleted {
+			meta["deleted"] = "true"
+		}
+		if t.StatusReason != "" {
+			meta["status-reason"] = t.StatusReason
+		}
+	}
+	if metaBlock := formatMetaBlock(meta, taskMetaOrder); metaBlock != "" {
 		sb.WriteString("\n")
 		sb.WriteString(metaBlock)
 	}

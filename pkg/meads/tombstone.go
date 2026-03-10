@@ -26,13 +26,13 @@ func validateDeps(f *File) error {
 	ids := make(map[int]bool, len(f.Tasks))
 	adj := make(map[int][]int, len(f.Tasks))
 	for _, t := range f.Tasks {
-		if t.Status != "deleted" {
+		if !t.Deleted {
 			ids[t.ID] = true
 			adj[t.ID] = t.DependsOn
 		}
 	}
 	for _, t := range f.Tasks {
-		if t.Status == "deleted" {
+		if t.Deleted {
 			continue
 		}
 		for _, dep := range t.DependsOn {
@@ -103,7 +103,7 @@ func pruneTombstones(f *File) {
 	maxActive := 0
 	maxDeleted := 0
 	for _, t := range f.Tasks {
-		if t.Status == "deleted" {
+		if t.Deleted {
 			if t.ID > maxDeleted {
 				maxDeleted = t.ID
 			}
@@ -115,7 +115,7 @@ func pruneTombstones(f *File) {
 	}
 	filtered := make([]Task, 0, len(f.Tasks))
 	for _, t := range f.Tasks {
-		if t.Status == "deleted" {
+		if t.Deleted {
 			// Keep only if it's the highest-ID deleted AND no active task is higher.
 			if t.ID == maxDeleted && maxDeleted > maxActive {
 				filtered = append(filtered, t)
@@ -131,7 +131,7 @@ func pruneTombstones(f *File) {
 func filterDeleted(tasks []Task) []Task {
 	out := make([]Task, 0, len(tasks))
 	for _, t := range tasks {
-		if t.Status != "deleted" {
+		if !t.Deleted {
 			out = append(out, t)
 		}
 	}

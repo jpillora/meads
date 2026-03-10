@@ -428,10 +428,13 @@ func TestIntegration_AutoDelete_CommitIncludesDeletions(t *testing.T) {
 		t.Fatal("previous commit should preserve the closed task")
 	}
 
-	// Verify the current commit has the task marked deleted (not the title "Closed task")
+	// Verify the current commit has the task marked deleted with title preserved
 	showOutput := h.git("show", "HEAD:TASKS.md")
-	if strings.Contains(showOutput, "Closed task") {
-		t.Fatal("current commit should not contain original task title")
+	if !strings.Contains(showOutput, "Closed task") {
+		t.Fatal("current commit should preserve the deleted task's title")
+	}
+	if !strings.Contains(showOutput, "deleted: true") {
+		t.Fatal("current commit should contain 'deleted: true'")
 	}
 	if !strings.Contains(showOutput, "Open task") {
 		t.Fatal("current commit is missing the open task")
@@ -912,5 +915,89 @@ func TestIntegration_ReadyJSON(t *testing.T) {
 	}
 	if !titles["Task A"] || !titles["Task B"] {
 		t.Fatalf("expected Task A and Task B, got %v", titles)
+	}
+}
+
+func TestIntegration_SetStatus_WithReason(t *testing.T) {
+	h := newHarness(t)
+	id := h.addTask("Deploy feature")
+	cmd := &setStatusCmd{globals: h.globals, ID: "1", Status: "closed", Reason: "deployed to prod"}
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("setStatusCmd.Run: %v", err)
+	}
+	task := h.getTask(id)
+	if task.Status != "closed" {
+		t.Fatalf("expected status closed, got %s", task.Status)
+	}
+	if task.StatusReason != "deployed to prod" {
+		t.Fatalf("expected status_reason 'deployed to prod', got %q", task.StatusReason)
+	}
+}
+
+func TestIntegration_Update_StatusReason(t *testing.T) {
+	h := newHarness(t)
+	id := h.addTask("Investigate issue")
+	cmd := &updateCmd{globals: h.globals, ID: "1", Status: "closed", StatusReason: "duplicate"}
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("updateCmd.Run: %v", err)
+	}
+	task := h.getTask(id)
+	if task.Status != "closed" {
+		t.Fatalf("expected status closed, got %s", task.Status)
+	}
+	if task.StatusReason != "duplicate" {
+		t.Fatalf("expected status_reason 'duplicate', got %q", task.StatusReason)
+	}
+}
+
+func TestIntegration_DeletePreservesFields(t *testing.T) {
+	h := newHarness(t)
+	id := h.addTask("Important task")
+	h.updatePriority(id, "P0")
+	h.setStatus(id, "inprogress")
+	h.deleteTask(id)
+
+	// Task should not be visible via Get
+	h.assertTaskNotExists(id)
+
+	// But the raw file should preserve the original fields
+	content := h.tasksFileContent()
+	if !strings.Contains(content, "Important task") {
+		t.Fatal("deleted task should preserve its title in the file")
+	}
+	if !strings.Contains(content, "deleted: true") {
+		t.Fatal("deleted task should have 'deleted: true' in the file")
+	}
+}
+
+func TestCSVIntegration_StatusReason(t *testing.T) {
+	h := newCSVHarness(t)
+	id := h.addTask("CSV status reason test")
+	cmd := &setStatusCmd{globals: h.globals, ID: "1", Status: "closed", Reason: "won't fix"}
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("setStatusCmd.Run: %v", err)
+	}
+	task := h.getTask(id)
+	if task.StatusReason != "won't fix" {
+		t.Fatalf("expected status_reason \"won't fix\", got %q", task.StatusReason)
+	}
+}
+
+func TestCSVIntegration_DeletePreservesFields(t *testing.T) {
+	h := newCSVHarness(t)
+	id := h.addTask("CSV delete test")
+	h.setStatus(id, "inprogress")
+	h.deleteTask(id)
+
+	// Task should not be visible via Get
+	h.assertTaskNotExists(id)
+
+	// Raw CSV should show deleted=true with original status preserved
+	content := h.tasksFileContent()
+	if !strings.Contains(content, "true") {
+		t.Fatal("deleted task should have 'true' in the deleted column")
+	}
+	if !strings.Contains(content, "inprogress") {
+		t.Fatal("deleted task should preserve original status in CSV")
 	}
 }

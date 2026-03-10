@@ -8,12 +8,13 @@ import (
 )
 
 type updateCmd struct {
-	globals  *globals
-	ID       string `opts:"mode=arg" help:"Task ID to update"`
-	Status   string `help:"Set task status"`
-	Priority string `help:"Set task priority"`
-	Title       string `help:"Set task title"`
-	Description string `help:"Set task description"`
+	globals      *globals
+	ID           string `opts:"mode=arg" help:"Task ID to update"`
+	Status       string `help:"Set task status"`
+	Priority     string `help:"Set task priority"`
+	Title        string `help:"Set task title"`
+	Description  string `help:"Set task description"`
+	StatusReason string `help:"Set status reason"`
 }
 
 func (c *updateCmd) Run() error {
@@ -42,6 +43,9 @@ func (c *updateCmd) Run() error {
 		}
 		if c.Description != "" {
 			t.Description = c.Description
+		}
+		if c.StatusReason != "" {
+			t.StatusReason = c.StatusReason
 		}
 		updated = *t
 	})

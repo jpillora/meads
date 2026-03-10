@@ -320,3 +320,70 @@ func TestCSVStore_NextIDAfterDeletion(t *testing.T) {
 		t.Fatalf("expected ID 3, got %d", id3)
 	}
 }
+
+func TestCSV_StatusReasonRoundTrip(t *testing.T) {
+	f := meads.File{
+		Tasks: []meads.Task{
+			{
+				ID: 1, Title: "Closed task", Status: "closed", StatusReason: "deployed to prod",
+				Meta: map[string]string{"status": "closed", "created": "2026-01-01T00:00:00Z"},
+			},
+		},
+	}
+	csv := meads.FormatCSV(f)
+	parsed := meads.ParseCSV(csv)
+	if len(parsed.Tasks) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(parsed.Tasks))
+	}
+	if parsed.Tasks[0].StatusReason != "deployed to prod" {
+		t.Errorf("StatusReason = %q, want %q", parsed.Tasks[0].StatusReason, "deployed to prod")
+	}
+}
+
+func TestCSV_DeletedRoundTrip(t *testing.T) {
+	f := meads.File{
+		Tasks: []meads.Task{
+			{
+				ID: 1, Title: "Preserved task", Status: "closed", Deleted: true,
+				Meta: map[string]string{"status": "closed", "created": "2026-01-01T00:00:00Z"},
+			},
+			{
+				ID: 2, Title: "Active task", Status: "open",
+				Meta: map[string]string{"status": "open", "created": "2026-01-01T00:00:00Z"},
+			},
+		},
+	}
+	csv := meads.FormatCSV(f)
+	parsed := meads.ParseCSV(csv)
+	if len(parsed.Tasks) != 2 {
+		t.Fatalf("expected 2 tasks, got %d", len(parsed.Tasks))
+	}
+	if !parsed.Tasks[0].Deleted {
+		t.Error("task 1 should have Deleted=true")
+	}
+	if parsed.Tasks[0].Status != "closed" {
+		t.Errorf("task 1 status = %q, want %q (preserved)", parsed.Tasks[0].Status, "closed")
+	}
+	if parsed.Tasks[0].Title != "Preserved task" {
+		t.Errorf("task 1 title = %q, want %q (preserved)", parsed.Tasks[0].Title, "Preserved task")
+	}
+	if parsed.Tasks[1].Deleted {
+		t.Error("task 2 should have Deleted=false")
+	}
+}
+
+func TestCSV_BackwardCompat_OldDeletedFormat(t *testing.T) {
+	// Old format used Status="deleted" without a "deleted" column.
+	// Test that ParseCSV sets Deleted=true for backward compatibility.
+	input := "id,title,status\n1,Old tombstone,deleted\n2,Active,open\n"
+	f := meads.ParseCSV(input)
+	if len(f.Tasks) != 2 {
+		t.Fatalf("expected 2 tasks, got %d", len(f.Tasks))
+	}
+	if !f.Tasks[0].Deleted {
+		t.Error("old-format deleted task should have Deleted=true")
+	}
+	if f.Tasks[1].Deleted {
+		t.Error("active task should have Deleted=false")
+	}
+}

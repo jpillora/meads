@@ -11,6 +11,7 @@ type setStatusCmd struct {
 	globals *globals
 	ID      string `opts:"mode=arg" help:"Task ID"`
 	Status  string `opts:"mode=arg" help:"New status (draft, open, inprogress, closed)"`
+	Reason  string `help:"Reason for status change"`
 }
 
 func (c *setStatusCmd) Run() error {
@@ -21,6 +22,9 @@ func (c *setStatusCmd) Run() error {
 	var updated meads.Task
 	err = c.globals.store().Update(id, func(t *meads.Task) {
 		t.SetStatus(c.Status)
+		if c.Reason != "" {
+			t.StatusReason = c.Reason
+		}
 		updated = *t
 	})
 	if err != nil {

@@ -131,7 +131,7 @@ func (s *Store) GetHistory(git Git) ([]Task, error) {
 	}
 	tasks := make([]Task, 0, len(byID))
 	for _, t := range byID {
-		if t.Status != "deleted" {
+		if !t.Deleted {
 			tasks = append(tasks, t)
 		}
 	}

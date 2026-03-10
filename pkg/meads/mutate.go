@@ -90,12 +90,7 @@ func (s *Store) Delete(id int) error {
 	found := false
 	for i := range f.Tasks {
 		if f.Tasks[i].ID == id {
-			f.Tasks[i] = Task{
-				ID:     id,
-				Title:  "deleted",
-				Status: "deleted",
-				Meta:   map[string]string{"status": "deleted"},
-			}
+			f.Tasks[i].Deleted = true
 			found = true
 			break
 		}
@@ -106,7 +101,7 @@ func (s *Store) Delete(id int) error {
 	}
 	// Clean dangling deps.
 	for i := range f.Tasks {
-		if f.Tasks[i].Status == "deleted" {
+		if f.Tasks[i].Deleted {
 			continue
 		}
 		if len(f.Tasks[i].DependsOn) > 0 {
@@ -153,12 +148,7 @@ func (s *Store) DeleteMany(ids []int) error {
 	for i := range f.Tasks {
 		if deleteSet[f.Tasks[i].ID] {
 			found++
-			f.Tasks[i] = Task{
-				ID:     f.Tasks[i].ID,
-				Title:  "deleted",
-				Status: "deleted",
-				Meta:   map[string]string{"status": "deleted"},
-			}
+			f.Tasks[i].Deleted = true
 		}
 	}
 	if found != len(ids) {
@@ -176,7 +166,7 @@ func (s *Store) DeleteMany(ids []int) error {
 	}
 	// Clean up dangling deps on non-deleted tasks.
 	for i := range f.Tasks {
-		if f.Tasks[i].Status == "deleted" {
+		if f.Tasks[i].Deleted {
 			continue
 		}
 		if len(f.Tasks[i].DependsOn) > 0 {
@@ -291,12 +281,12 @@ func (s *Store) AutoClean(prevContent string) (*AutoCleanResult, error) {
 	}
 	f := s.fmt.Parse(content)
 
-	// Build set of task IDs that were "deleted" in the previous commit.
+	// Build set of task IDs that were deleted in the previous commit.
 	prevDeleted := make(map[int]bool)
 	if prevContent != "" {
 		prev := s.fmt.Parse(prevContent)
 		for _, t := range prev.Tasks {
-			if t.Status == "deleted" {
+			if t.Deleted {
 				prevDeleted[t.ID] = true
 			}
 		}
@@ -308,7 +298,7 @@ func (s *Store) AutoClean(prevContent string) (*AutoCleanResult, error) {
 	if len(prevDeleted) > 0 {
 		filtered := make([]Task, 0, len(f.Tasks))
 		for _, t := range f.Tasks {
-			if t.Status == "deleted" && prevDeleted[t.ID] {
+			if t.Deleted && prevDeleted[t.ID] {
 				result.Removed = append(result.Removed, t.ID)
 				continue
 			}
@@ -319,12 +309,12 @@ func (s *Store) AutoClean(prevContent string) (*AutoCleanResult, error) {
 
 	// Phase 2: mark closed tasks as deleted.
 	for i := range f.Tasks {
-		if f.Tasks[i].Status == "closed" {
+		if f.Tasks[i].Status == "closed" && !f.Tasks[i].Deleted {
 			result.Marked = append(result.Marked, f.Tasks[i].ID)
 			// Clean dangling deps from other tasks.
 			delID := f.Tasks[i].ID
 			for j := range f.Tasks {
-				if j == i || f.Tasks[j].Status == "deleted" {
+				if j == i || f.Tasks[j].Deleted {
 					continue
 				}
 				if len(f.Tasks[j].DependsOn) > 0 {
@@ -339,12 +329,7 @@ func (s *Store) AutoClean(prevContent string) (*AutoCleanResult, error) {
 					}
 				}
 			}
-			f.Tasks[i] = Task{
-				ID:     delID,
-				Title:  "deleted",
-				Status: "deleted",
-				Meta:   map[string]string{"status": "deleted"},
-			}
+			f.Tasks[i].Deleted = true
 		}
 	}
 
@@ -380,7 +365,7 @@ func (s *Store) Update(id int, fn func(*Task)) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	for i := range f.Tasks {
 		if f.Tasks[i].ID == id {
-			if f.Tasks[i].Status == "deleted" {
+			if f.Tasks[i].Deleted {
 				s.releaseLock(content)
 				return fmt.Errorf("task %d not found", id)
 			}

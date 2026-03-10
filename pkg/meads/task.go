@@ -15,16 +15,18 @@ type File struct {
 
 // Task represents a single task parsed from a TASKS.md file.
 type Task struct {
-	ID          int               `json:"id"`
-	Title       string            `json:"title"`
-	Status      string            `json:"status,omitempty"`
-	Priority    string            `json:"priority,omitempty"`
-	Type        string            `json:"type,omitempty"`
-	DependsOn   []int             `json:"depends_on,omitempty"`
-	CloseReason string            `json:"close_reason,omitempty"`
-	Tags        []string          `json:"tags,omitempty"`
-	Meta        map[string]string `json:"meta,omitempty"`
-	Description string            `json:"description,omitempty"`
+	ID           int               `json:"id"`
+	Title        string            `json:"title"`
+	Status       string            `json:"status,omitempty"`
+	Priority     string            `json:"priority,omitempty"`
+	Type         string            `json:"type,omitempty"`
+	DependsOn    []int             `json:"depends_on,omitempty"`
+	CloseReason  string            `json:"close_reason,omitempty"`
+	Tags         []string          `json:"tags,omitempty"`
+	Deleted      bool              `json:"deleted,omitempty"`
+	StatusReason string            `json:"status_reason,omitempty"`
+	Meta         map[string]string `json:"meta,omitempty"`
+	Description  string            `json:"description,omitempty"`
 }
 
 // knownMetaKeys are metadata keys that have dedicated struct fields.

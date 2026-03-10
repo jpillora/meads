@@ -21,7 +21,7 @@ func (csvFormat) EmptyFile() string          { return csvHeaderRow() }
 var csvColumns = []string{
 	"id", "title", "status", "priority", "type",
 	"depends-on", "tags", "description", "close-reason",
-	"created", "updated", "meta",
+	"status-reason", "created", "updated", "deleted", "meta",
 }
 
 // ParseCSV parses CSV content into a File. Deleted rows are included.
@@ -35,6 +35,7 @@ func ParseCSV(content string) File {
 		return f
 	}
 	r := csv.NewReader(strings.NewReader(content))
+	r.FieldsPerRecord = -1 // allow variable-length rows for backward compatibility
 	records, err := r.ReadAll()
 	if err != nil || len(records) < 1 {
 		return f
@@ -59,13 +60,19 @@ func ParseCSV(content string) File {
 			continue
 		}
 		t := Task{
-			ID:          id,
-			Title:       get(row, "title"),
-			Status:      get(row, "status"),
-			Priority:    get(row, "priority"),
-			Type:        get(row, "type"),
-			CloseReason: get(row, "close-reason"),
-			Description: unescapeNewlines(get(row, "description")),
+			ID:           id,
+			Title:        get(row, "title"),
+			Status:       get(row, "status"),
+			Priority:     get(row, "priority"),
+			Type:         get(row, "type"),
+			CloseReason:  get(row, "close-reason"),
+			StatusReason: get(row, "status-reason"),
+			Deleted:      get(row, "deleted") == "true",
+			Description:  unescapeNewlines(get(row, "description")),
+		}
+		// Backward compatibility: old format used Status="deleted" for tombstones.
+		if t.Status == "deleted" {
+			t.Deleted = true
 		}
 		if depsStr := get(row, "depends-on"); depsStr != "" {
 			t.DependsOn = parseIntSlice(depsStr)
@@ -125,7 +132,7 @@ func FormatCSV(f File) string {
 		// Build meta JSON from non-known keys.
 		extraMeta := make(map[string]string)
 		for k, v := range t.Meta {
-			if !knownMetaKeys[k] && k != "created" && k != "updated" {
+			if !knownMetaKeys[k] && k != "created" && k != "updated" && k != "deleted" && k != "status-reason" {
 				extraMeta[k] = v
 			}
 		}
@@ -142,6 +149,10 @@ func FormatCSV(f File) string {
 		if t.Meta != nil {
 			updated = t.Meta["updated"]
 		}
+		deletedStr := ""
+		if t.Deleted {
+			deletedStr = "true"
+		}
 		row := []string{
 			strconv.Itoa(t.ID),
 			t.Title,
@@ -152,8 +163,10 @@ func FormatCSV(f File) string {
 			strings.Join(t.Tags, ","),
 			escapeNewlines(t.Description),
 			t.CloseReason,
+			t.StatusReason,
 			created,
 			updated,
+			deletedStr,
 			metaJSON,
 		}
 		w.Write(row)
