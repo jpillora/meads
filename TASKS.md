@@ -3,22 +3,12 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-03-10T13:37:06Z
+* updated: 2026-03-10T13:40:13Z
 * next-id: 13
 
 ## 6. auto-set next-id
 
 to allow hand writing of the TASKS.md file. any time the TASKS.md file is locked. it should confirm that `next-id` is set HIGHER than the highest-id. if not, it should automatically reset it to highest-id + 1.
-
-## 9. md doctor command
-
-* status: inprogress
-* priority: P2
-* type: feature
-* created: 2026-03-10T13:30:57Z
-* updated: 2026-03-10T13:37:06Z
-
-Detect and fix duplicate IDs after git merges. Renumber the newer duplicate to the next available ID.
 
 ## 10. JSON output for ready
 
@@ -37,4 +27,3 @@ Add --json flag to md ready for machine-parseable output.
 * created: 2026-03-10T13:30:57Z
 
 Prevent circular dependencies that deadlock the ready queue. Simple DFS in validateDeps.
-
