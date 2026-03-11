@@ -62,9 +62,16 @@ func runAdd(g *globals, args []string, title, status, priority, typ, dependsOn, 
 			parsedPriority = m[0] // full "P\d" match
 			input = strings.TrimSpace(priorityRe.ReplaceAllString(input, ""))
 		}
-		// (3) Extract title (everything before first period), remainder is description
+		// (3) Extract title (everything before first period or newline), remainder is description
 		var parsedTitle, parsedDescription string
-		if idx := strings.Index(input, "."); idx >= 0 {
+		dotIdx := strings.Index(input, ".")
+		nlIdx := strings.Index(input, "\n")
+		// Use whichever delimiter comes first (-1 means not found)
+		idx := dotIdx
+		if idx < 0 || (nlIdx >= 0 && nlIdx < idx) {
+			idx = nlIdx
+		}
+		if idx >= 0 {
 			parsedTitle = strings.TrimSpace(input[:idx])
 			parsedDescription = strings.TrimSpace(input[idx+1:])
 		} else {
