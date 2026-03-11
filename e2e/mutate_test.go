@@ -187,6 +187,36 @@ func TestDeleteMany_NotFound(t *testing.T) {
 	}
 }
 
+func TestAdd_NewlineInTitle(t *testing.T) {
+	s := newMDStore(t)
+	_, err := s.Add(meads.Task{Title: "Line one\nLine two", Status: "open"})
+	if err == nil || !strings.Contains(err.Error(), "newline") {
+		t.Fatalf("expected newline error, got %v", err)
+	}
+}
+
+func TestAddMany_NewlineInTitle(t *testing.T) {
+	s := newMDStore(t)
+	_, err := s.AddMany([]meads.Task{{Title: "Has\nnewline", Status: "open"}})
+	if err == nil || !strings.Contains(err.Error(), "newline") {
+		t.Fatalf("expected newline error, got %v", err)
+	}
+}
+
+func TestUpdate_NewlineInTitle(t *testing.T) {
+	s := newMDStore(t)
+	id, _ := s.Add(meads.Task{Title: "Good title", Status: "open"})
+	err := s.Update(id, func(t *meads.Task) { t.Title = "Bad\ntitle" })
+	if err == nil || !strings.Contains(err.Error(), "newline") {
+		t.Fatalf("expected newline error, got %v", err)
+	}
+	// Verify original title is preserved
+	tasks, _ := s.Get([]int{id})
+	if tasks[0].Title != "Good title" {
+		t.Fatalf("expected original title preserved, got %q", tasks[0].Title)
+	}
+}
+
 func TestDeleteMany_CleansDeps(t *testing.T) {
 	s := newMDStore(t)
 	id1, _ := s.Add(meads.Task{Title: "Parent", Status: "closed"})

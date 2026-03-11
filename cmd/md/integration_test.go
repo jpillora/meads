@@ -491,6 +491,78 @@ func TestIntegration_AutoDelete_StagedTASKSmd(t *testing.T) {
 	h.assertTaskExists(id)
 }
 
+func TestIntegration_NewlineAsTitleDelimiter(t *testing.T) {
+	t.Run("newline splits title and description", func(t *testing.T) {
+		h := newHarness(t)
+		cmd := &addCmd{globals: h.globals}
+		cmd.Args = []string{"Fix the login bug\nSession cookie expires too early"}
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("addCmd.Run: %v", err)
+		}
+		task := h.getTask(1)
+		if task.Title != "Fix the login bug" {
+			t.Fatalf("expected title %q, got %q", "Fix the login bug", task.Title)
+		}
+		if task.Description != "Session cookie expires too early" {
+			t.Fatalf("expected description %q, got %q", "Session cookie expires too early", task.Description)
+		}
+	})
+
+	t.Run("period before newline uses period", func(t *testing.T) {
+		h := newHarness(t)
+		cmd := &addCmd{globals: h.globals}
+		cmd.Args = []string{"Fix bug. Details here\nMore details"}
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("addCmd.Run: %v", err)
+		}
+		task := h.getTask(1)
+		if task.Title != "Fix bug" {
+			t.Fatalf("expected title %q, got %q", "Fix bug", task.Title)
+		}
+		if task.Description != "Details here\nMore details" {
+			t.Fatalf("expected description %q, got %q", "Details here\nMore details", task.Description)
+		}
+	})
+
+	t.Run("newline before period uses newline", func(t *testing.T) {
+		h := newHarness(t)
+		cmd := &addCmd{globals: h.globals}
+		cmd.Args = []string{"Fix bug\nDetails here. More details"}
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("addCmd.Run: %v", err)
+		}
+		task := h.getTask(1)
+		if task.Title != "Fix bug" {
+			t.Fatalf("expected title %q, got %q", "Fix bug", task.Title)
+		}
+		if task.Description != "Details here. More details" {
+			t.Fatalf("expected description %q, got %q", "Details here. More details", task.Description)
+		}
+	})
+
+	t.Run("type and priority with newline", func(t *testing.T) {
+		h := newHarness(t)
+		cmd := &addCmd{globals: h.globals}
+		cmd.Args = []string{"bug: Fix login P1\nSession cookie expires"}
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("addCmd.Run: %v", err)
+		}
+		task := h.getTask(1)
+		if task.Title != "Fix login" {
+			t.Fatalf("expected title %q, got %q", "Fix login", task.Title)
+		}
+		if task.Type != "bug" {
+			t.Fatalf("expected type %q, got %q", "bug", task.Type)
+		}
+		if task.Priority != "P1" {
+			t.Fatalf("expected priority %q, got %q", "P1", task.Priority)
+		}
+		if task.Description != "Session cookie expires" {
+			t.Fatalf("expected description %q, got %q", "Session cookie expires", task.Description)
+		}
+	})
+}
+
 func TestIntegration_PriorityNormalization(t *testing.T) {
 	t.Run("bare number via flag", func(t *testing.T) {
 		h := newHarness(t)
