@@ -55,7 +55,10 @@ func (s *Store) acquireLock() (string, string, error) {
 		}
 		if parts[1] == id {
 			// We won. Strip all lock lines and return clean content.
-			clean := stripLockLines(content)
+			// The lock line is appended as "\nlock:...\n"; after stripping,
+			// the leading "\n" remains as a trailing blank line. Normalize
+			// to a single trailing newline.
+			clean := strings.TrimRight(stripLockLines(content), "\n") + "\n"
 			return id, clean, nil
 		}
 		// Someone else won.
