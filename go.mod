@@ -8,6 +8,8 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.3.0
 )
 
+replace github.com/jpillora/opts => ../opts
+
 require (
 	github.com/cyphar/filepath-securejoin v0.3.6 // indirect
 	github.com/google/jsonschema-go v0.4.2 // indirect
