@@ -2,14 +2,25 @@ package meads
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
+
+func validateTitle(title string) error {
+	if strings.ContainsRune(title, '\n') {
+		return fmt.Errorf("task title must not contain newlines")
+	}
+	return nil
+}
 
 // Add creates a new task, assigning it the next available ID.
 // The provided task must have ID == 0.
 func (s *Store) Add(t Task) (int, error) {
 	if t.ID != 0 {
 		return 0, fmt.Errorf("task ID must not be set (got %d)", t.ID)
+	}
+	if err := validateTitle(t.Title); err != nil {
+		return 0, err
 	}
 	if err := s.ensureFile(); err != nil {
 		return 0, err
@@ -47,6 +58,9 @@ func (s *Store) AddMany(tasks []Task) ([]int, error) {
 	for i, t := range tasks {
 		if t.ID != 0 {
 			return nil, fmt.Errorf("task %d: ID must not be set (got %d)", i, t.ID)
+		}
+		if err := validateTitle(t.Title); err != nil {
+			return nil, fmt.Errorf("task %d: %w", i, err)
 		}
 	}
 	if err := s.ensureFile(); err != nil {
@@ -370,6 +384,10 @@ func (s *Store) Update(id int, fn func(*Task)) error {
 				return fmt.Errorf("task %d not found", id)
 			}
 			fn(&f.Tasks[i])
+			if err := validateTitle(f.Tasks[i].Title); err != nil {
+				s.releaseLock(content)
+				return err
+			}
 			f.Tasks[i].ensureMeta()
 			f.Tasks[i].Meta["updated"] = now
 			found = true
