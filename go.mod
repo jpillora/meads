@@ -4,11 +4,9 @@ go 1.25.6
 
 require (
 	github.com/go-git/go-billy/v5 v5.7.0
-	github.com/jpillora/opts v1.3.1
+	github.com/jpillora/opts v1.4.0
 	github.com/modelcontextprotocol/go-sdk v1.3.0
 )
-
-replace github.com/jpillora/opts => ../opts
 
 require (
 	github.com/cyphar/filepath-securejoin v0.3.6 // indirect
