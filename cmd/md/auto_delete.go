@@ -34,30 +34,31 @@ func (c *autoDeleteCmd) Run() error {
 }
 
 func (c *autoDeleteCmd) runFromHook() error {
-	// Safety check 1: Must be on default branch
+	// Safety check: Must be on default branch
 	if !c.isOnDefaultBranch() {
-		return nil // Silently exit if not on default branch
+		return nil
 	}
 
-	// Safety check 2: Tasks file must have no uncommitted changes
-	if !c.isTasksFileClean() {
-		return nil // Silently exit if tasks file has changes
+	// Skip if tasks file doesn't exist
+	if _, err := os.Stat(c.globals.TasksFile); os.IsNotExist(err) {
+		return nil
 	}
 
 	store := c.globals.store()
 	git := c.globals.git()
 
-	// Save backup for recovery — if anything fails after modifying
-	// the file, we restore it so the tasks file always matches git HEAD.
+	// Save backup for recovery — if git add fails after modifying
+	// the file, we restore it so the working tree is consistent.
 	backup, err := util.ReadFile(store.FS(), store.Path())
 	if err != nil {
 		return fmt.Errorf("reading %s: %w", store.Path(), err)
 	}
 
-	// Get previous commit's file content for two-phase cleanup.
-	// Phase 1 removes tasks that were already "deleted" in the previous commit.
-	// Phase 2 marks "closed" tasks as "deleted" (preserving the closed state in this commit).
-	prevContent, _ := git.Output("show", "HEAD~1:"+c.globals.TasksFile)
+	// Get HEAD content for two-phase cleanup.
+	// Phase 1 removes tasks that were already "deleted" in HEAD.
+	// Phase 2 marks "closed" tasks as "deleted" (included in the current commit).
+	gitPath := filepath.Base(c.globals.TasksFile)
+	prevContent, _ := git.Output("show", "HEAD:"+gitPath)
 
 	result, err := store.AutoClean(prevContent)
 	if err != nil {
@@ -75,18 +76,10 @@ func (c *autoDeleteCmd) runFromHook() error {
 		fmt.Fprintf(os.Stderr, "md: marked closed task %d as deleted\n", id)
 	}
 
-	// Stage the changes
+	// Stage the changes to be included in the current commit
 	if err := git.Run("add", c.globals.TasksFile); err != nil {
 		util.WriteFile(store.FS(), store.Path(), backup, 0644)
 		return fmt.Errorf("staging %s: %w", store.Path(), err)
-	}
-
-	// Create a NEW commit (not amend) so the closed state is preserved in history.
-	if err := git.Run("commit", "-m", "md: auto-clean tasks"); err != nil {
-		// Restore file and unstage changes
-		util.WriteFile(store.FS(), store.Path(), backup, 0644)
-		git.Run("reset", "HEAD", "--", c.globals.TasksFile)
-		return fmt.Errorf("committing: %w", err)
 	}
 
 	return nil
@@ -119,27 +112,14 @@ func (c *autoDeleteCmd) isOnDefaultBranch() bool {
 	return currentBranch == defaultBranch
 }
 
-func (c *autoDeleteCmd) isTasksFileClean() bool {
-	git := c.globals.git()
-
-	// Check for unstaged changes
-	if err := git.Run("diff", "--quiet", "HEAD", "--", c.globals.TasksFile); err != nil {
-		return false // Has unstaged changes
-	}
-
-	// Check for staged changes
-	if err := git.Run("diff", "--quiet", "--cached", "--", c.globals.TasksFile); err != nil {
-		return false // Has staged changes
-	}
-
-	return true
-}
-
 func (c *autoDeleteCmd) enable() error {
 	hookPath, err := c.getHookPath()
 	if err != nil {
 		return err
 	}
+
+	// Clean up old post-commit hook if it has our marker
+	c.cleanupOldPostCommitHook()
 
 	hookContent := c.generateHook()
 
@@ -232,6 +212,34 @@ func (c *autoDeleteCmd) checkStatus() error {
 	return nil
 }
 
+func (c *autoDeleteCmd) cleanupOldPostCommitHook() {
+	out, err := c.globals.gitCommand("rev-parse", "--git-dir").Output()
+	if err != nil {
+		return
+	}
+	gitDir := strings.TrimSpace(string(out))
+	oldHookPath := filepath.Join(gitDir, "hooks", "post-commit")
+
+	content, err := os.ReadFile(oldHookPath)
+	if err != nil {
+		return
+	}
+	if !strings.Contains(string(content), hookMarker) {
+		return
+	}
+
+	// Remove our hook content from the post-commit hook
+	ourHook := c.generateHook()
+	newContent := strings.Replace(string(content), ourHook, "", 1)
+	newContent = strings.TrimRight(newContent, "\n")
+
+	if len(newContent) == 0 {
+		os.Remove(oldHookPath)
+	} else {
+		os.WriteFile(oldHookPath, []byte(newContent+"\n"), 0755)
+	}
+}
+
 func (c *autoDeleteCmd) getHookPath() (string, error) {
 	// Find git root — uses gitCommand directly since this manages .git/hooks/
 	out, err := c.globals.gitCommand("rev-parse", "--git-dir").Output()
@@ -239,7 +247,7 @@ func (c *autoDeleteCmd) getHookPath() (string, error) {
 		return "", fmt.Errorf("not in a git repository")
 	}
 	gitDir := strings.TrimSpace(string(out))
-	return filepath.Join(gitDir, "hooks", "post-commit"), nil
+	return filepath.Join(gitDir, "hooks", "pre-commit"), nil
 }
 
 func (c *autoDeleteCmd) generateHook() string {

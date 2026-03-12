@@ -237,7 +237,8 @@ func (h *testHarness) addDep(child, parent int) {
 
 // --- auto-delete helper ---
 
-// runAutoDelete simulates the post-commit hook by running autoDeleteCmd with GITHOOK=1.
+// runAutoDelete simulates the pre-commit hook by running autoDeleteCmd with GITHOOK=1.
+// It modifies and stages TASKS.md but does not commit.
 func (h *testHarness) runAutoDelete() error {
 	h.t.Helper()
 	h.t.Setenv("GITHOOK", "1")
@@ -245,23 +246,6 @@ func (h *testHarness) runAutoDelete() error {
 	return cmd.Run()
 }
 
-// installPreCommitHook writes a pre-commit hook script to the test repo.
-func (h *testHarness) installPreCommitHook(script string) {
-	h.t.Helper()
-	hookDir := filepath.Join(h.dir, ".git", "hooks")
-	os.MkdirAll(hookDir, 0755)
-	hookPath := filepath.Join(hookDir, "pre-commit")
-	if err := os.WriteFile(hookPath, []byte(script), 0755); err != nil {
-		h.t.Fatal(err)
-	}
-}
-
-// removePreCommitHook removes the pre-commit hook from the test repo.
-func (h *testHarness) removePreCommitHook() {
-	h.t.Helper()
-	hookPath := filepath.Join(h.dir, ".git", "hooks", "pre-commit")
-	os.Remove(hookPath)
-}
 
 // createIndexLock creates a .git/index.lock to block git add/commit.
 func (h *testHarness) createIndexLock() {
