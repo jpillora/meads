@@ -15,7 +15,7 @@ type addCmd struct {
 	Title       string   `help:"Set task title"`
 	Status      string   `help:"Set task status (draft, open, inprogress, closed)"`
 	Priority    string   `help:"Set task priority (P0-P9 or 0-9)"`
-	Type        string   `help:"Set task type (bug, task, feature)"`
+	Type        string   `help:"Set task type (bug, task, feature, idea)"`
 	DependsOn   string   `opts:"name=depends-on" help:"Set dependency task ID"`
 	Description string   `help:"Set task description"`
 	Draft       bool     `help:"Create task with draft status"`
@@ -27,14 +27,14 @@ type createCmd struct {
 	Title       string   `help:"Set task title"`
 	Status      string   `help:"Set task status (draft, open, inprogress, closed)"`
 	Priority    string   `help:"Set task priority (P0-P9 or 0-9)"`
-	Type        string   `help:"Set task type (bug, task, feature)"`
+	Type        string   `help:"Set task type (bug, task, feature, idea)"`
 	DependsOn   string   `opts:"name=depends-on" help:"Set dependency task ID"`
 	Description string   `help:"Set task description"`
 	Draft       bool     `help:"Create task with draft status"`
 }
 
 var (
-	typeRe     = regexp.MustCompile(`^(bug|task|feature):`)
+	typeRe     = regexp.MustCompile(`^(bug|task|feature|idea):`)
 	priorityRe = regexp.MustCompile(`\bP(\d)\b`)
 )
 

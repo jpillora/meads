@@ -80,7 +80,7 @@ func beadToTask(b beadIssue) Task {
 	t.SetPriority("P" + strconv.Itoa(b.Priority))
 	// Type mapping
 	switch b.IssueType {
-	case "task", "feature", "bug":
+	case "task", "feature", "bug", "idea":
 		t.SetType(b.IssueType)
 	default:
 		if b.IssueType != "" {

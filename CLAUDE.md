@@ -22,7 +22,7 @@
 ### Creating Tasks
 - `md add "Fix the login bug"` - Add a simple task
 - `md add "bug: Fix login P1. Session cookie expires"` - Rich input parsing
-  - Type prefix: `bug:`, `task:`, `feature:` (optional)
+  - Type prefix: `bug:`, `task:`, `feature:`, `idea:` (optional)
   - Priority: `P0`-`P9` (0=critical, 4=backlog, default=P2)
   - Title: everything before first `.`
   - Description: everything after the `.`

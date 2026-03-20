@@ -186,7 +186,7 @@ type addTaskInput struct {
 	Title       string `json:"title" jsonschema:"task title,required"`
 	Status      string `json:"status,omitempty" jsonschema:"task status (draft, open, inprogress, closed)"`
 	Priority    string `json:"priority,omitempty" jsonschema:"task priority (P0-P9)"`
-	Type        string `json:"type,omitempty" jsonschema:"task type (bug, task, feature)"`
+	Type        string `json:"type,omitempty" jsonschema:"task type (bug, task, feature, idea)"`
 	Description string `json:"description,omitempty" jsonschema:"task description"`
 }
 

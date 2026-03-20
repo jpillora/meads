@@ -13,7 +13,7 @@ type listCmd struct {
 	History  bool   `opts:"short=-" help:"List all tasks from git history (including deleted)"`
 	Status   string `help:"Filter by status (e.g. open, closed, inprogress)"`
 	Priority string `help:"Filter by priority (e.g. P0, P1, P2)"`
-	Type     string `help:"Filter by type (e.g. task, bug, feature)"`
+	Type     string `help:"Filter by type (e.g. task, bug, feature, idea)"`
 	Tag      string `help:"Filter by tag"`
 }
 
