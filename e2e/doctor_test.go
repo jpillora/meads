@@ -136,6 +136,67 @@ func TestDoctor_MultipleDuplicates(t *testing.T) {
 	}
 }
 
+func TestDoctor_DependsOnFixup(t *testing.T) {
+	fs := memfs.New()
+	s := meads.NewStore(fs, "TASKS.csv")
+	header := meads.InitCSV()
+	// Simulate a merge where two branches both created tasks 1 and 2,
+	// with task 2 depending on task 1 in each branch.
+	raw := header +
+		"1,Branch A task,open,P2,task,,,,,,,," + "{}\n" +
+		"2,Branch A dep,open,P2,task,1,,,,,,," + "{}\n" +
+		"1,Branch B task,open,P2,task,,,,,,,," + "{}\n" +
+		"2,Branch B dep,open,P2,task,1,,,,,,," + "{}\n"
+	util.WriteFile(fs, "TASKS.csv", []byte(raw), 0644)
+
+	fixes, err := s.Doctor()
+	if err != nil {
+		t.Fatalf("Doctor: %v", err)
+	}
+	if len(fixes) != 2 {
+		t.Fatalf("expected 2 fixes, got %d", len(fixes))
+	}
+
+	tasks, err := s.Get(nil)
+	if err != nil {
+		t.Fatalf("Get after doctor: %v", err)
+	}
+	if len(tasks) != 4 {
+		t.Fatalf("expected 4 tasks after fix, got %d", len(tasks))
+	}
+
+	// Build a map of title -> task for verification.
+	byTitle := map[string]meads.Task{}
+	for _, task := range tasks {
+		byTitle[task.Title] = task
+	}
+	// Branch A tasks keep their original IDs.
+	aTask := byTitle["Branch A task"]
+	aDep := byTitle["Branch A dep"]
+	if aTask.ID != 1 {
+		t.Errorf("Branch A task ID = %d, want 1", aTask.ID)
+	}
+	if aDep.ID != 2 {
+		t.Errorf("Branch A dep ID = %d, want 2", aDep.ID)
+	}
+	if len(aDep.DependsOn) != 1 || aDep.DependsOn[0] != 1 {
+		t.Errorf("Branch A dep DependsOn = %v, want [1]", aDep.DependsOn)
+	}
+	// Branch B tasks were renumbered, and depends-on was updated.
+	bTask := byTitle["Branch B task"]
+	bDep := byTitle["Branch B dep"]
+	if bTask.ID == 1 {
+		t.Errorf("Branch B task should have been renumbered from 1")
+	}
+	if bDep.ID == 2 {
+		t.Errorf("Branch B dep should have been renumbered from 2")
+	}
+	// Branch B dep should now depend on Branch B task's new ID.
+	if len(bDep.DependsOn) != 1 || bDep.DependsOn[0] != bTask.ID {
+		t.Errorf("Branch B dep DependsOn = %v, want [%d]", bDep.DependsOn, bTask.ID)
+	}
+}
+
 func TestDoctor_EmptyFile(t *testing.T) {
 	fs := memfs.New()
 	s := meads.NewStore(fs, "TASKS.csv")

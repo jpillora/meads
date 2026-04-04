@@ -223,3 +223,33 @@ func TestNormalizePriority(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateStatus(t *testing.T) {
+	// Valid statuses should pass.
+	for _, s := range meads.ValidStatuses {
+		if err := meads.ValidateStatus(s); err != nil {
+			t.Errorf("ValidateStatus(%q) unexpected error: %v", s, err)
+		}
+	}
+	// Invalid statuses should fail.
+	for _, s := range []string{"banana", "OPEN", "Open", "in-progress", ""} {
+		if err := meads.ValidateStatus(s); err == nil {
+			t.Errorf("ValidateStatus(%q) expected error, got nil", s)
+		}
+	}
+}
+
+func TestValidateType(t *testing.T) {
+	// Valid types should pass.
+	for _, s := range meads.ValidTypes {
+		if err := meads.ValidateType(s); err != nil {
+			t.Errorf("ValidateType(%q) unexpected error: %v", s, err)
+		}
+	}
+	// Invalid types should fail.
+	for _, s := range []string{"banana", "BUG", "Bug", "epic", ""} {
+		if err := meads.ValidateType(s); err == nil {
+			t.Errorf("ValidateType(%q) expected error, got nil", s)
+		}
+	}
+}

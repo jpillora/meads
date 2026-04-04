@@ -37,6 +37,11 @@ func (s *Store) Add(t Task) (int, error) {
 	t.ensureMeta()
 	t.Meta["created"] = now
 	f.Tasks = append(f.Tasks, t)
+	// Validate DependsOn references.
+	if err := validateDeps(&f); err != nil {
+		s.releaseLock(content)
+		return 0, err
+	}
 	pruneTombstones(&f)
 	// Update project meta.
 	if s.fmt.HasPreamble() {
@@ -82,6 +87,11 @@ func (s *Store) AddMany(tasks []Task) ([]int, error) {
 		}
 		f.Tasks = append(f.Tasks, tasks[i])
 		ids[i] = tasks[i].ID
+	}
+	// Validate DependsOn references.
+	if err := validateDeps(&f); err != nil {
+		s.releaseLock(content)
+		return nil, err
 	}
 	pruneTombstones(&f)
 	if s.fmt.HasPreamble() {
@@ -243,6 +253,22 @@ func (s *Store) Doctor() ([]DoctorFix, error) {
 		fixes = append(fixes, DoctorFix{OldID: id, NewID: newID})
 		remap[id] = newID
 		f.Tasks[i].ID = newID
+		// Update DependsOn references using the remap built so far.
+		// After a merge, tasks from the same branch appear contiguously,
+		// so the remap state at this point reflects the correct mappings
+		// for sibling tasks from the same branch.
+		if len(f.Tasks[i].DependsOn) > 0 {
+			changed := false
+			for j, dep := range f.Tasks[i].DependsOn {
+				if newDep, ok := remap[dep]; ok {
+					f.Tasks[i].DependsOn[j] = newDep
+					changed = true
+				}
+			}
+			if changed {
+				f.Tasks[i].SetDependsOn(f.Tasks[i].DependsOn)
+			}
+		}
 		f.Tasks[i].ensureMeta()
 		seen[newID] = true
 	}
@@ -251,21 +277,6 @@ func (s *Store) Doctor() ([]DoctorFix, error) {
 		s.releaseLock(content)
 		return nil, nil
 	}
-	// Update DependsOn references that point to renumbered IDs.
-	// Note: if multiple tasks shared the same old ID, remap holds the last
-	// new ID assigned. We need a multi-map: one old ID may have been
-	// renumbered multiple times. However, DependsOn references should point
-	// to a valid task. We only update references if the OLD id no longer
-	// exists as a real task (the first occurrence kept the old ID, so
-	// references to that old ID are still valid). We skip DependsOn fixup
-	// for old IDs that still have a surviving task with that ID.
-	// Actually, since we keep the first occurrence, the old ID still exists
-	// for the first task. So DependsOn references to the old ID remain valid
-	// (they point to the first task). No DependsOn fixup needed for the old
-	// ID. But if a duplicate that was renumbered had other tasks depending
-	// on it specifically (rare after a merge), there's no way to know which
-	// duplicate the reference intended. We leave those as-is since the
-	// original task with that ID still exists.
 	now := time.Now().UTC().Format(time.RFC3339)
 	if s.fmt.HasPreamble() {
 		ensureProjectMeta(&f, now)

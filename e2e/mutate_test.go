@@ -187,6 +187,16 @@ func TestDeleteMany_NotFound(t *testing.T) {
 	}
 }
 
+func TestAdd_InvalidDependsOn(t *testing.T) {
+	s := newMDStore(t)
+	task := meads.Task{Title: "Orphan task", Status: "open"}
+	task.SetDependsOn([]int{999})
+	_, err := s.Add(task)
+	if err == nil || !strings.Contains(err.Error(), "non-existent") {
+		t.Fatalf("expected depends-on validation error, got %v", err)
+	}
+}
+
 func TestAdd_NewlineInTitle(t *testing.T) {
 	s := newMDStore(t)
 	_, err := s.Add(meads.Task{Title: "Line one\nLine two", Status: "open"})

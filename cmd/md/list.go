@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/jpillora/meads/pkg/meads"
 )
@@ -29,6 +30,10 @@ func (c *listCmd) Run() error {
 		return err
 	}
 	tasks = c.filterTasks(tasks)
+	if len(tasks) == 0 && !c.JSON && !c.Md {
+		fmt.Fprintln(os.Stderr, "no tasks found (run 'md add' to create one)")
+		return nil
+	}
 	if c.Md {
 		for _, t := range tasks {
 			fmt.Print(meads.FormatTask(t))

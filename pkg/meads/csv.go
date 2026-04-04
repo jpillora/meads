@@ -79,7 +79,9 @@ func ParseCSV(content string) File {
 		// Parse meta JSON column.
 		meta := make(map[string]string)
 		if metaStr := get(row, "meta"); metaStr != "" && metaStr != "{}" {
-			json.Unmarshal([]byte(metaStr), &meta)
+			if err := json.Unmarshal([]byte(metaStr), &meta); err != nil {
+				meta = make(map[string]string)
+			}
 		}
 		// Sync known fields into meta for consistency.
 		if t.Status != "" {

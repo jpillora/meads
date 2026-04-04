@@ -19,6 +19,9 @@ func (c *setStatusCmd) Run() error {
 	if err != nil {
 		return fmt.Errorf("invalid task ID: %s", c.ID)
 	}
+	if err := meads.ValidateStatus(c.Status); err != nil {
+		return err
+	}
 	var updated meads.Task
 	err = c.globals.store().Update(id, func(t *meads.Task) {
 		t.SetStatus(c.Status)

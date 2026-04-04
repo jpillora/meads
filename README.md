@@ -1,20 +1,22 @@
 # meads
 
-> [beads](https://github.com/steveyegge/beads) but much simpler
+Task tracking in a single file. No database, no server, no dependencies — just `TASKS.md` and git. Inspired by [beads](https://github.com/steveyegge/beads), but **much** simpler.
 
-Git-native task tracking in a single file. No database, no server, no dependencies — just `TASKS.md` (or `TASKS.csv`) and git.
-
-[![GoDev](https://img.shields.io/static/v1?label=godoc&message=reference&color=00add8)](https://pkg.go.dev/github.com/jpillora/meads)
+[![GoDev](https://img.shields.io/static/v1?label=godoc&message=reference&color=00add8)](https://pkg.go.dev/github.com/jpillora/meads/pkg/meads)
 [![CI](https://github.com/jpillora/meads/workflows/CI/badge.svg)](https://github.com/jpillora/meads/actions?workflow=CI)
 
 ### Features
 
-- All state lives in a single file — `TASKS.md` (Markdown) or `TASKS.csv` (CSV) — commit it to git and get full history for free
-- Two storage formats: Markdown for human-readable diffs, CSV for tooling and spreadsheets
-- Rich input parsing: type prefixes (`bug:`, `feature:`), priority (`P0`-`P9`), title and description in one string
+- All state lives in git — full audit trail, easy to revert, works with branches
+- No server or database to maintain — just a single Markdown (or CSV) file
+- Works offline, works in any terminal, works with diffs
+- AI-friendly — agents can read and write tasks through the CLI or MCP server
+- **Markdown** format (`TASKS.md`) for human-readable diffs
+- **CSV** format (`TASKS.csv`) for spreadsheets and tooling, and clean git merges
+- Simple field extraction from input. Title is first sentense. Description is the rest. Type prefixes (`bug:`, `task:`, `feature:`, `idea:`), Priority (`P0`-`P5`).
 - Task dependencies with automatic blocking detection
-- Concurrent-write safe via optimistic locking
-- AI-friendly — `md prime` prints LLM context, `md mcp` runs an MCP server over stdio
+- Concurrent-write safe via optimistic locking — multiple processes or AI agents can write simultaneously
+- `md prime` prints LLM context, `md mcp` runs an MCP server over stdio
 
 ### Install
 
@@ -41,11 +43,11 @@ md add "Write tests for login fix"
 # added task 2
 
 md ready
-# 1 Fix the login bug
-# 2 Write tests for login fix
+# 1. Fix the login bug
+# 2. Write tests for login fix
 
 md set-status 1 closed
-# updated task 1
+# task 1 status set to closed
 ```
 
 The resulting `TASKS.md`:
@@ -56,7 +58,6 @@ The resulting `TASKS.md`:
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2025-01-15T09:00:00Z
-* next-id: 3
 
 ## 1. Fix the login bug
 
@@ -77,6 +78,7 @@ a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 md add "title"                        Add a simple task
 md add "bug: Fix login P1. Details"   Rich input (type, priority, body)
 md add --depends-on=1 "Write tests"   Add with dependency
+md create "title"                     Alias for add
 md get <id>                           View a task
 md list                               List all tasks
 md ready                              Show unblocked open tasks (by priority)
@@ -84,6 +86,9 @@ md update <id> --priority=P1          Update task fields
 md set-status <id> <status>           Change status (draft|open|inprogress|closed)
 md del <id>                           Delete a task
 md add-dep <child> <parent>           Add a dependency
+md init                               Initialize a new tasks file
+md convert TASKS.md                   Convert between Markdown and CSV formats
+md doctor                             Detect and fix duplicate task IDs
 md prime                              Print LLM context for using md
 md mcp                                Start MCP server over stdio
 ```
@@ -116,12 +121,24 @@ md set-status 3 inprogress   # claim it
 md set-status 3 closed       # done
 ```
 
+## Merging TASKS.md
+
+When multiple branches create tasks independently (common with AI agents working in parallel), they each assign the next available ID locally. After merging, this can result in duplicate task IDs in the same file.
+
+To fix this, run:
+
+```bash
+md doctor
+```
+
+`md doctor` scans for duplicate IDs and renumbers them. The first occurrence keeps its original ID; subsequent duplicates get new IDs. Any `depends-on` references within renumbered tasks are also updated to point to the correct new IDs.
+
 ### Notes
 
 - **Format** — Two storage backends, auto-detected by file extension:
   - `TASKS.md` — Markdown headings (`## 1. Title`) with `* key: value` metadata. Human-readable diffs.
   - `TASKS.csv` — Standard CSV with soft-delete and computed next-id. Easy to import into spreadsheets and other tools.
-- **Metadata** — Built-in keys are `status`, `priority`, `type`, and `depends-on`.
+- **Metadata** — Built-in keys are `status`, `priority`, `type`, `depends-on`, `tags`, `close-reason`, `created`, and `updated`.
 - **Concurrency** — Concurrent writes are safe via optimistic file locking, so multiple processes (or AI agents) can write to the task file simultaneously without corruption.
 - **AI-friendly** — Both formats are designed to be readable and writable by LLMs. Use `md prime` to print context for an AI agent, or `md mcp` to run an MCP server over stdio.
 - **Minimal** — Single static binary, no config files.

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 
@@ -97,11 +98,15 @@ func main() {
 	c.AutoDelete.globals = g
 	c.BeadsNuke.globals = g
 
-	opts.New(&c).
+	p := opts.New(&c).
 		Name("md").
 		Version(version).
 		Summary("Git-native task tracking in a single Markdown file").
 		Repo("https://github.com/jpillora/meads").
-		Parse().
-		RunFatal()
+		Parse()
+	if !p.IsRunnable() {
+		fmt.Println(p.Help())
+		return
+	}
+	p.RunFatal()
 }

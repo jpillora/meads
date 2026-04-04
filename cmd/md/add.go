@@ -22,15 +22,7 @@ type addCmd struct {
 }
 
 type createCmd struct {
-	globals     *globals
-	Args        []string `opts:"mode=arg,min=0" help:"Input text (e.g. 'bug: Fix login P3')"`
-	Title       string   `help:"Set task title"`
-	Status      string   `help:"Set task status (draft, open, inprogress, closed)"`
-	Priority    string   `help:"Set task priority (P0-P9 or 0-9)"`
-	Type        string   `help:"Set task type (bug, task, feature, idea)"`
-	DependsOn   string   `opts:"name=depends-on" help:"Set dependency task ID"`
-	Description string   `help:"Set task description"`
-	Draft       bool     `help:"Create task with draft status"`
+	addCmd
 }
 
 var (
@@ -39,10 +31,6 @@ var (
 )
 
 func (c *addCmd) Run() error {
-	return runAdd(c.globals, c.Args, c.Title, c.Status, c.Priority, c.Type, c.DependsOn, c.Description, c.Draft)
-}
-
-func (c *createCmd) Run() error {
 	return runAdd(c.globals, c.Args, c.Title, c.Status, c.Priority, c.Type, c.DependsOn, c.Description, c.Draft)
 }
 
@@ -116,6 +104,14 @@ func runAdd(g *globals, args []string, title, status, priority, typ, dependsOn, 
 	}
 	if status == "" {
 		status = "open"
+	}
+	if err := meads.ValidateStatus(status); err != nil {
+		return err
+	}
+	if typ != "" {
+		if err := meads.ValidateType(typ); err != nil {
+			return err
+		}
 	}
 	t := meads.Task{}
 	t.Title = title

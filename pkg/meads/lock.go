@@ -35,7 +35,7 @@ func (s *Store) acquireLock() (string, string, error) {
 		return "", "", fmt.Errorf("reading %s after lock: %w", s.file, err)
 	}
 	content := string(data)
-	// Find the first non-expired lock: line.
+	// Find the first non-expired lock line.
 	for _, line := range strings.Split(content, "\n") {
 		if !strings.HasPrefix(line, "lock:") {
 			continue

@@ -22,6 +22,11 @@ func (c *updateCmd) Run() error {
 	if err != nil {
 		return fmt.Errorf("invalid task ID: %s", c.ID)
 	}
+	if c.Status != "" {
+		if err := meads.ValidateStatus(c.Status); err != nil {
+			return err
+		}
+	}
 	priority := c.Priority
 	if priority != "" {
 		var perr error

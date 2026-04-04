@@ -90,6 +90,32 @@ func NormalizePriority(s string) (string, error) {
 	return "P" + num, nil
 }
 
+// ValidStatuses lists the recognized task statuses.
+var ValidStatuses = []string{"draft", "open", "inprogress", "closed"}
+
+// ValidTypes lists the recognized task types.
+var ValidTypes = []string{"bug", "task", "feature", "idea"}
+
+// ValidateStatus returns an error if s is not a recognized status.
+func ValidateStatus(s string) error {
+	for _, v := range ValidStatuses {
+		if s == v {
+			return nil
+		}
+	}
+	return fmt.Errorf("invalid status %q: must be one of %s", s, strings.Join(ValidStatuses, ", "))
+}
+
+// ValidateType returns an error if s is not a recognized type.
+func ValidateType(s string) error {
+	for _, v := range ValidTypes {
+		if s == v {
+			return nil
+		}
+	}
+	return fmt.Errorf("invalid type %q: must be one of %s", s, strings.Join(ValidTypes, ", "))
+}
+
 // SetPriority updates the task priority in both the field and Meta map.
 // It normalizes the value to canonical "P#" form if valid.
 func (t *Task) SetPriority(p string) {

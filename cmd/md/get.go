@@ -50,7 +50,11 @@ func printTasks(tasks []meads.Task, asJSON bool) error {
 		return enc.Encode(tasks)
 	}
 	for _, t := range tasks {
-		fmt.Printf("%d. %s\n", t.ID, t.Title)
+		p := t.Priority
+		if p == "" {
+			p = "P2"
+		}
+		fmt.Printf("%d. [%s] %s\n", t.ID, p, t.Title)
 	}
 	return nil
 }
