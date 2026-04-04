@@ -25,7 +25,11 @@ Task tracking in a single file. No database, no server, no dependencies — just
 [![Releases](https://img.shields.io/github/release/jpillora/meads.svg)](https://github.com/jpillora/meads/releases)
 [![Releases](https://img.shields.io/github/downloads/jpillora/meads/total.svg)](https://github.com/jpillora/meads/releases)
 
-Find [the latest pre-compiled binaries here](https://github.com/jpillora/meads/releases/latest) or download and install it now with `curl https://i.jpillora.com/meads! | bash`
+Find [the latest pre-compiled binaries here](https://github.com/jpillora/meads/releases/latest) or download and install it now with
+
+```
+curl "https://i.jpillora.com/meads!?as=md" | bash
+```
 
 **Source**
 
