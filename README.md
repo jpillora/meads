@@ -95,7 +95,29 @@ md convert TASKS.md                   Convert between Markdown and CSV formats
 md doctor                             Detect and fix duplicate task IDs
 md prime                              Print LLM context for using md
 md mcp                                Start MCP server over stdio
+md webui                              Launch web UI for this TASKS file
 ```
+
+### Web UI + VS Code extension
+
+`md webui` hosts a localhost HTTP server with a web UI for viewing and
+editing one `TASKS.md` (or `.csv`) file. It prints a single JSON line to
+stdout on startup with the URL and access token:
+
+```bash
+md webui
+# MEADS_WEBUI {"url":"http://127.0.0.1:54231","token":"…","file":"TASKS.md","format":"md"}
+```
+
+Pass `--open` to launch the browser automatically, or `--port 3000` for a
+fixed port. All routes require the bearer token; change events are
+streamed over Server-Sent Events at `/api/events`.
+
+A VS Code extension in [`vscode/`](vscode/) registers itself as the default
+renderer for `TASKS.md` / `TASKS.csv` and embeds the web UI. For v1 it
+ships as a `.vsix` attached to each GitHub release — download from
+[Releases](https://github.com/jpillora/meads/releases) and install via
+*Extensions: Install from VSIX…*.
 
 ### Examples
 

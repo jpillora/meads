@@ -1,0 +1,154 @@
+/* Use VS Code theme variables when available; fall back to sensible defaults. */
+:root {
+  --fg: var(--vscode-foreground, #1f2328);
+  --bg: var(--vscode-editor-background, #ffffff);
+  --muted: var(--vscode-descriptionForeground, #6a737d);
+  --border: var(--vscode-panel-border, #d0d7de);
+  --accent: var(--vscode-button-background, #0969da);
+  --accent-fg: var(--vscode-button-foreground, #ffffff);
+  --card: var(--vscode-editorWidget-background, #f6f8fa);
+  --danger: var(--vscode-errorForeground, #cf222e);
+  --chip-bg: var(--vscode-badge-background, #ddf4ff);
+  --chip-fg: var(--vscode-badge-foreground, #0969da);
+  --input-bg: var(--vscode-input-background, #ffffff);
+  --input-fg: var(--vscode-input-foreground, #1f2328);
+  --input-border: var(--vscode-input-border, #d0d7de);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  color: var(--fg);
+  background: var(--bg);
+  font: 13px/1.5 var(--vscode-font-family, system-ui, -apple-system, sans-serif);
+}
+
+.bar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+.bar .title { display: flex; align-items: baseline; gap: 0.5rem; min-width: 0; }
+.bar .title strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bar .actions { display: flex; gap: 0.5rem; align-items: center; }
+
+.muted { color: var(--muted); font-size: 0.9em; }
+
+input, select, textarea, button {
+  font: inherit;
+  color: var(--input-fg);
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+  padding: 4px 8px;
+}
+button { cursor: pointer; }
+button.primary {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: transparent;
+}
+button.danger {
+  color: var(--danger);
+  border-color: transparent;
+  background: transparent;
+}
+button.danger:hover { background: color-mix(in srgb, var(--danger) 15%, transparent); }
+button:hover { filter: brightness(1.05); }
+
+main { padding: 0.75rem 1rem 2rem; display: flex; flex-direction: column; gap: 0.5rem; max-width: 1100px; margin: 0 auto; }
+
+.card {
+  border: 1px solid var(--border);
+  background: var(--card);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+}
+.card header { display: flex; gap: 0.5rem; align-items: baseline; flex-wrap: wrap; }
+.card .id { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 2.5ch; }
+.card .title { flex: 1; font-weight: 600; overflow-wrap: anywhere; }
+.card .description { margin: 0.35rem 0 0.25rem; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fg); }
+.card .description:empty { display: none; }
+.card footer { display: flex; gap: 0.25rem; margin-top: 0.25rem; }
+.card footer button {
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
+  padding: 2px 6px;
+  font-size: 0.9em;
+}
+.card footer button:hover { color: var(--fg); background: color-mix(in srgb, var(--fg) 6%, transparent); }
+
+.card[data-status="closed"] .title { text-decoration: line-through; opacity: 0.65; }
+.card[data-status="draft"] { opacity: 0.85; border-style: dashed; }
+.card[data-status="inprogress"] { border-left: 3px solid var(--accent); }
+
+.chips { display: inline-flex; gap: 0.25rem; flex-wrap: wrap; }
+.chip {
+  display: inline-block;
+  font-size: 0.8em;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--chip-bg);
+  color: var(--chip-fg);
+  line-height: 1.6;
+}
+.chip.type-bug { background: color-mix(in srgb, var(--danger) 18%, transparent); color: var(--danger); }
+.chip.status-inprogress { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); }
+.chip.p0, .chip.p1 { background: color-mix(in srgb, var(--danger) 18%, transparent); color: var(--danger); }
+
+.deps { display: inline-flex; gap: 0.25rem; flex-wrap: wrap; }
+.dep-link {
+  font-size: 0.8em;
+  color: var(--accent);
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+.dep-link:hover { text-decoration: underline; }
+
+dialog {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--fg);
+  border-radius: 8px;
+  padding: 1rem;
+  min-width: 420px;
+  max-width: 92vw;
+}
+dialog::backdrop { background: rgba(0,0,0,0.3); }
+dialog h2 { margin: 0 0 0.5rem; font-size: 1.05em; }
+dialog label { display: grid; gap: 0.15rem; margin-bottom: 0.5rem; }
+dialog .row { display: flex; gap: 0.5rem; }
+dialog .row label { flex: 1; }
+dialog textarea { font-family: var(--vscode-editor-font-family, ui-monospace, monospace); resize: vertical; }
+dialog .footer { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.5rem; }
+
+.empty {
+  text-align: center;
+  padding: 4rem 1rem;
+  color: var(--muted);
+}
+
+.toast {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  max-width: 420px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+.toast.err { border-color: var(--danger); color: var(--danger); }

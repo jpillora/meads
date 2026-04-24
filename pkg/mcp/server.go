@@ -20,7 +20,7 @@ func NewServer(store *meads.Store, version string) *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "list_tasks",
 		Description: "List all tasks",
-	}, func(_ context.Context, _ *mcp.CallToolRequest, _ listTasksInput) (*mcp.CallToolResult, any, error) {
+	}, func(_ context.Context, _ *mcp.CallToolRequest, _ meads.ListTasksInput) (*mcp.CallToolResult, any, error) {
 		tasks, err := store.Get(nil)
 		if err != nil {
 			return nil, nil, err
@@ -32,7 +32,7 @@ func NewServer(store *meads.Store, version string) *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_task",
 		Description: "Get a specific task by ID",
-	}, func(_ context.Context, _ *mcp.CallToolRequest, input getTaskInput) (*mcp.CallToolResult, any, error) {
+	}, func(_ context.Context, _ *mcp.CallToolRequest, input meads.GetTaskInput) (*mcp.CallToolResult, any, error) {
 		tasks, err := store.Get([]int{input.ID})
 		if err != nil {
 			return nil, nil, err
@@ -44,7 +44,7 @@ func NewServer(store *meads.Store, version string) *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "ready_tasks",
 		Description: "List open tasks not blocked by dependencies, sorted by priority",
-	}, func(_ context.Context, _ *mcp.CallToolRequest, _ readyTasksInput) (*mcp.CallToolResult, any, error) {
+	}, func(_ context.Context, _ *mcp.CallToolRequest, _ meads.ReadyTasksInput) (*mcp.CallToolResult, any, error) {
 		tasks, err := store.Ready()
 		if err != nil {
 			return nil, nil, err
@@ -56,7 +56,7 @@ func NewServer(store *meads.Store, version string) *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "add_task",
 		Description: "Add a new task",
-	}, func(_ context.Context, _ *mcp.CallToolRequest, input addTaskInput) (*mcp.CallToolResult, any, error) {
+	}, func(_ context.Context, _ *mcp.CallToolRequest, input meads.AddTaskInput) (*mcp.CallToolResult, any, error) {
 		if input.Title == "" {
 			return nil, nil, fmt.Errorf("title is required")
 		}
@@ -89,14 +89,14 @@ func NewServer(store *meads.Store, version string) *mcp.Server {
 		if err != nil {
 			return nil, nil, err
 		}
-		return nil, addTaskOutput{ID: id}, nil
+		return nil, meads.AddTaskOutput{ID: id}, nil
 	})
 
 	// update_task - Update an existing task
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "update_task",
 		Description: "Update an existing task by ID",
-	}, func(_ context.Context, _ *mcp.CallToolRequest, input updateTaskInput) (*mcp.CallToolResult, any, error) {
+	}, func(_ context.Context, _ *mcp.CallToolRequest, input meads.UpdateTaskInput) (*mcp.CallToolResult, any, error) {
 		if input.Status != "" {
 			if err := meads.ValidateStatus(input.Status); err != nil {
 				return nil, nil, err
@@ -137,7 +137,7 @@ func NewServer(store *meads.Store, version string) *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "delete_task",
 		Description: "Delete a task by ID",
-	}, func(_ context.Context, _ *mcp.CallToolRequest, input deleteTaskInput) (*mcp.CallToolResult, any, error) {
+	}, func(_ context.Context, _ *mcp.CallToolRequest, input meads.DeleteTaskInput) (*mcp.CallToolResult, any, error) {
 		if err := store.Delete(input.ID); err != nil {
 			return nil, nil, err
 		}
@@ -148,7 +148,7 @@ func NewServer(store *meads.Store, version string) *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "add_dependency",
 		Description: "Make a child task depend on a parent task",
-	}, func(_ context.Context, _ *mcp.CallToolRequest, input addDependencyInput) (*mcp.CallToolResult, any, error) {
+	}, func(_ context.Context, _ *mcp.CallToolRequest, input meads.AddDependencyInput) (*mcp.CallToolResult, any, error) {
 		err := store.Update(input.ChildID, func(t *meads.Task) {
 			t.AddDep(input.ParentID)
 		})
@@ -181,46 +181,6 @@ func briefTasks(tasks []meads.Task) []BriefTask {
 		_ = json.Unmarshal(raw, &out[i])
 	}
 	return out
-}
-
-// Input/output types for tools
-
-type listTasksInput struct{}
-
-type getTaskInput struct {
-	ID int `json:"id" jsonschema:"task ID to retrieve,required"`
-}
-
-type readyTasksInput struct{}
-
-type addTaskInput struct {
-	Title       string `json:"title" jsonschema:"task title,required"`
-	Status      string `json:"status,omitempty" jsonschema:"task status (draft, open, inprogress, closed)"`
-	Priority    string `json:"priority,omitempty" jsonschema:"task priority (P0-P9)"`
-	Type        string `json:"type,omitempty" jsonschema:"task type (bug, task, feature, idea)"`
-	Description string `json:"description,omitempty" jsonschema:"task description"`
-}
-
-type addTaskOutput struct {
-	ID int `json:"id"`
-}
-
-type updateTaskInput struct {
-	ID           int    `json:"id" jsonschema:"task ID to update,required"`
-	Status       string `json:"status,omitempty" jsonschema:"new status (draft, open, inprogress, closed)"`
-	Priority     string `json:"priority,omitempty" jsonschema:"new priority (P0-P9)"`
-	Title        string `json:"title,omitempty" jsonschema:"new title"`
-	Description  string `json:"description,omitempty" jsonschema:"new description"`
-	StatusReason string `json:"status_reason,omitempty" jsonschema:"reason for status change"`
-}
-
-type deleteTaskInput struct {
-	ID int `json:"id" jsonschema:"task ID to delete,required"`
-}
-
-type addDependencyInput struct {
-	ChildID  int `json:"child_id" jsonschema:"ID of the child (dependent) task,required"`
-	ParentID int `json:"parent_id" jsonschema:"ID of the parent (dependency) task,required"`
 }
 
 func textResult(msg string) *mcp.CallToolResult {

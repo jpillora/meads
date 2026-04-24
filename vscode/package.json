@@ -1,0 +1,79 @@
+{
+  "name": "meads",
+  "displayName": "Meads Tasks",
+  "description": "Git-native task tracker. Custom editor for TASKS.md / TASKS.csv.",
+  "version": "0.0.0",
+  "publisher": "jpillora",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jpillora/meads.git",
+    "directory": "vscode"
+  },
+  "engines": {
+    "vscode": "^1.84.0"
+  },
+  "main": "./dist/extension.js",
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCustomEditor:meads.taskEditor"
+  ],
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "meads.taskEditor",
+        "displayName": "Meads Tasks",
+        "selector": [
+          {
+            "filenamePattern": "**/TASKS.md"
+          },
+          {
+            "filenamePattern": "**/TASKS.csv"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "commands": [
+      {
+        "command": "meads.openWithDefault",
+        "title": "Meads: Open with default editor (raw)",
+        "category": "Meads"
+      }
+    ],
+    "configuration": {
+      "title": "Meads",
+      "properties": {
+        "meads.mdPath": {
+          "type": "string",
+          "default": "",
+          "description": "Override path to the `md` binary. Leave empty to auto-detect."
+        },
+        "meads.minMdVersion": {
+          "type": "string",
+          "default": "0.0.0",
+          "description": "Warn when the detected `md` binary is older than this version."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "package": "vsce package --no-dependencies --out meads-$npm_package_version.vsix",
+    "sync-version": "node scripts/sync-version.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.84.0",
+    "@types/ws": "^8.5.10",
+    "@vscode/vsce": "^3.1.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.4.0"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

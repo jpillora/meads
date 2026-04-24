@@ -54,4 +54,39 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           args: release --config .github/goreleaser.yml
-
+  # ================
+  # RELEASE VS CODE EXTENSION (.vsix on push "v*" tag)
+  # ================
+  release_vscode:
+    name: Release VS Code Extension
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: vscode
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: vscode/package-lock.json
+      - name: Install deps
+        run: npm ci
+      - name: Sync version from tag
+        run: node scripts/sync-version.mjs
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+      - name: Build bundle
+        run: npm run build
+      - name: Package .vsix
+        run: npx vsce package --no-dependencies --out "meads-${{ github.ref_name }}.vsix"
+      - name: Upload .vsix to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: vscode/meads-${{ github.ref_name }}.vsix
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
