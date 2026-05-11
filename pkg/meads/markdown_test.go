@@ -1,6 +1,9 @@
 package meads
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // Whitebox tests for unexported markdown helpers.
 
@@ -62,6 +65,90 @@ func TestSplitHeading_Invalid(t *testing.T) {
 	id, _ := splitHeading("abc Do something")
 	if id != -1 {
 		t.Errorf("splitHeading(\"abc Do something\") = %d, want -1", id)
+	}
+}
+
+// TestParseFile_DashMarkers covers the real-world case where a TASKS.md was
+// authored with "-" list markers for metadata instead of "*". The parser must
+// extract structured fields (status/priority/type/depends-on) and must NOT
+// leak the metadata block into the description.
+//
+// Also asserts the auto-migration property: re-formatting the file rewrites
+// dash markers as "*", so the file normalizes on the next write.
+func TestParseFile_DashMarkers(t *testing.T) {
+	const input = `# TASKS
+
+- created: 2026-02-14T15:58:00Z
+- updated: 2026-02-14T16:01:02Z
+
+## 1. Scaffold project
+
+- status: closed
+- priority: P1
+- type: feature
+- created: 2026-02-14T15:58:00Z
+- updated: 2026-02-14T16:01:02Z
+
+Initialize with Vite, Vue 3, TypeScript.
+
+## 2. Child task
+
+- status: closed
+- priority: P2
+- type: task
+- depends-on: 1
+- created: 2026-02-14T15:58:07Z
+
+Body text for the child task.
+`
+
+	f := ParseFile(input)
+	if len(f.Tasks) != 2 {
+		t.Fatalf("expected 2 tasks, got %d", len(f.Tasks))
+	}
+
+	// Preamble metadata also uses dash markers — make sure it parses.
+	if f.Meta["created"] != "2026-02-14T15:58:00Z" {
+		t.Errorf("preamble created = %q, want %q", f.Meta["created"], "2026-02-14T15:58:00Z")
+	}
+
+	t1 := f.Tasks[0]
+	if t1.Status != "closed" || t1.Priority != "P1" || t1.Type != "feature" {
+		t.Errorf("task 1 fields: status=%q priority=%q type=%q", t1.Status, t1.Priority, t1.Type)
+	}
+	if want := "Initialize with Vite, Vue 3, TypeScript."; t1.Description != want {
+		t.Errorf("task 1 description = %q, want %q", t1.Description, want)
+	}
+	// The metadata block must not leak into the description.
+	if strings.Contains(t1.Description, "status:") || strings.Contains(t1.Description, "priority:") {
+		t.Errorf("task 1 description leaked metadata: %q", t1.Description)
+	}
+
+	t2 := f.Tasks[1]
+	if len(t2.DependsOn) != 1 || t2.DependsOn[0] != 1 {
+		t.Errorf("task 2 depends-on = %v, want [1]", t2.DependsOn)
+	}
+
+	// Auto-migration: re-formatting must rewrite "-" markers as "*".
+	formatted := FormatFile(f)
+	if strings.Contains(formatted, "\n- status:") || strings.Contains(formatted, "\n- priority:") {
+		t.Errorf("FormatFile retained dash markers; expected normalization to '*':\n%s", formatted)
+	}
+	if !strings.Contains(formatted, "\n* status: closed") {
+		t.Errorf("FormatFile missing expected '* status: closed' line:\n%s", formatted)
+	}
+
+	// Re-parsing the formatted output must yield the same structured fields
+	// (proves the migration is lossless).
+	f2 := ParseFile(formatted)
+	if len(f2.Tasks) != 2 {
+		t.Fatalf("re-parse: expected 2 tasks, got %d", len(f2.Tasks))
+	}
+	if f2.Tasks[0].Status != "closed" || f2.Tasks[0].Priority != "P1" || f2.Tasks[0].Type != "feature" {
+		t.Errorf("re-parse task 1 lost fields: %+v", f2.Tasks[0])
+	}
+	if len(f2.Tasks[1].DependsOn) != 1 || f2.Tasks[1].DependsOn[0] != 1 {
+		t.Errorf("re-parse task 2 depends-on = %v, want [1]", f2.Tasks[1].DependsOn)
 	}
 }
 
