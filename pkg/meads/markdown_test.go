@@ -18,6 +18,13 @@ func TestParseMetaLine(t *testing.T) {
 		{"not a meta line", "", "", false},
 		{"* no-colon-space", "", "", false},
 		{"  * status: open", "status", "open", true},
+		// CommonMark also allows "-" and "+" as unordered list markers.
+		{"- status: open", "status", "open", true},
+		{"- depends-on: 3", "depends-on", "3", true},
+		{"  - status: open", "status", "open", true},
+		{"+ status: open", "status", "open", true},
+		{"-status: open", "", "", false}, // no space after marker
+		{"-", "", "", false},
 	}
 	for _, tt := range tests {
 		key, val, ok := parseMetaLine(tt.line)

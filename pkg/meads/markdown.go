@@ -171,14 +171,22 @@ func splitHeading(s string) (id int, title string) {
 	return n, title
 }
 
-// parseMetaLine parses "* key: value" and returns key, value, true. Returns false if not a meta line.
-// Also accepts "* key:" with no value (empty string).
+// parseMetaLine parses a CommonMark list-marker line like "* key: value", "- key: value",
+// or "+ key: value" and returns key, value, true. Returns false if not a meta line.
+// Also accepts the marker form with no value (empty string).
 func parseMetaLine(line string) (string, string, bool) {
 	trimmed := strings.TrimSpace(line)
-	if !strings.HasPrefix(trimmed, "* ") {
+	var kv string
+	switch {
+	case strings.HasPrefix(trimmed, "* "):
+		kv = trimmed[2:]
+	case strings.HasPrefix(trimmed, "- "):
+		kv = trimmed[2:]
+	case strings.HasPrefix(trimmed, "+ "):
+		kv = trimmed[2:]
+	default:
 		return "", "", false
 	}
-	kv := strings.TrimPrefix(trimmed, "* ")
 	i := strings.Index(kv, ": ")
 	if i >= 0 {
 		return kv[:i], kv[i+2:], true
