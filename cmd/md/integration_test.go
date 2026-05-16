@@ -480,6 +480,22 @@ func TestIntegration_NewlineAsTitleDelimiter(t *testing.T) {
 			t.Fatalf("expected description %q, got %q", "Session cookie expires", task.Description)
 		}
 	})
+
+	t.Run("period inside URL does not split", func(t *testing.T) {
+		h := newHarness(t)
+		cmd := &addCmd{globals: h.globals}
+		cmd.Args = []string{"Investigate http://foo.com latency. See the dashboard"}
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("addCmd.Run: %v", err)
+		}
+		task := h.getTask(1)
+		if task.Title != "Investigate http://foo.com latency" {
+			t.Fatalf("expected title %q, got %q", "Investigate http://foo.com latency", task.Title)
+		}
+		if task.Description != "See the dashboard" {
+			t.Fatalf("expected description %q, got %q", "See the dashboard", task.Description)
+		}
+	})
 }
 
 func TestIntegration_PriorityNormalization(t *testing.T) {

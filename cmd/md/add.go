@@ -11,7 +11,7 @@ import (
 
 type addCmd struct {
 	globals     *globals
-	Args        []string `opts:"mode=arg,min=0" help:"Note: task descriptions are JSON-encoded markdown ('\\n' decodes to a real newline).\n\nTwo modes for setting task fields:\n\n(1) Free-form string. Pass a single argument and meads extracts:\n      type prefix:   bug: / task: / feature: / idea:   (optional)\n      priority:      P0-P9 anywhere in the string      (default P2)\n      title:         text before the first '.' or newline\n      description:   text after the first '.' or newline\n    Examples:\n      md add 'Fix the login bug'\n      md add 'bug: Fix login P1. Session cookie expires after 5min'\n      md add 'Fix login.\\nSession cookie expires.\\n\\nSteps to repro...'\n\n(2) Explicit flags. Set each field via --title, --type, --priority, etc.\n    Example:\n      md add --type=bug --priority=P1 --title='Fix login' \\\n             --description='## Steps\\n1. Repro\\n2. Patch'"`
+	Args        []string `opts:"mode=arg,min=0" help:"Note: task descriptions are JSON-encoded markdown ('\\n' decodes to a real newline).\n\nTwo modes for setting task fields:\n\n(1) Free-form string. Pass a single argument and meads extracts:\n      type prefix:   bug: / task: / feature: / idea:   (optional)\n      priority:      P0-P9 anywhere in the string      (default P2)\n      title:         text before the first '. ' (period+space) or newline\n      description:   text after that split point\n    Examples:\n      md add 'Fix the login bug'\n      md add 'bug: Fix login P1. Session cookie expires after 5min'\n      md add 'Fix login.\\nSession cookie expires.\\n\\nSteps to repro...'\n\n(2) Explicit flags. Set each field via --title, --type, --priority, etc.\n    Example:\n      md add --type=bug --priority=P1 --title='Fix login' \\\n             --description='## Steps\\n1. Repro\\n2. Patch'"`
 	Title       string   `help:"Set task title"`
 	Status      string   `help:"Set task status (draft, open, inprogress, closed)"`
 	Priority    string   `help:"Set task priority (P0-P9 or 0-9)"`
@@ -28,6 +28,9 @@ type createCmd struct {
 var (
 	typeRe     = regexp.MustCompile(`^(bug|task|feature|idea):`)
 	priorityRe = regexp.MustCompile(`\bP(\d)\b`)
+	// title/description split: period+whitespace (sentence boundary) or bare newline.
+	// Bare "." doesn't split, so URLs like http://foo.com stay intact.
+	splitRe = regexp.MustCompile(`\.\s|\n`)
 )
 
 func (c *addCmd) Run() error {
@@ -56,18 +59,11 @@ func runAdd(g *globals, args []string, title, status, priority, typ, dependsOn, 
 			parsedPriority = m[0] // full "P\d" match
 			input = strings.TrimSpace(priorityRe.ReplaceAllString(input, ""))
 		}
-		// (3) Extract title (everything before first period or newline), remainder is description
+		// (3) Split title/description at the first ". " (period+space) or newline.
 		var parsedTitle, parsedDescription string
-		dotIdx := strings.Index(input, ".")
-		nlIdx := strings.Index(input, "\n")
-		// Use whichever delimiter comes first (-1 means not found)
-		idx := dotIdx
-		if idx < 0 || (nlIdx >= 0 && nlIdx < idx) {
-			idx = nlIdx
-		}
-		if idx >= 0 {
-			parsedTitle = strings.TrimSpace(input[:idx])
-			parsedDescription = strings.TrimSpace(input[idx+1:])
+		if loc := splitRe.FindStringIndex(input); loc != nil {
+			parsedTitle = strings.TrimSpace(input[:loc[0]])
+			parsedDescription = strings.TrimSpace(input[loc[1]:])
 		} else {
 			parsedTitle = strings.TrimSpace(input)
 		}
