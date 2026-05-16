@@ -496,6 +496,21 @@ func TestIntegration_NewlineAsTitleDelimiter(t *testing.T) {
 			t.Fatalf("expected description %q, got %q", "See the dashboard", task.Description)
 		}
 	})
+
+	t.Run("JSON unicode escapes decode in description flag", func(t *testing.T) {
+		h := newHarness(t)
+		cmd := &addCmd{globals: h.globals}
+		cmd.Title = "Unicode"
+		cmd.Description = `— line1\nline2\tafter tab`
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("addCmd.Run: %v", err)
+		}
+		task := h.getTask(1)
+		want := "— line1\nline2\tafter tab"
+		if task.Description != want {
+			t.Fatalf("expected description %q, got %q", want, task.Description)
+		}
+	})
 }
 
 func TestIntegration_PriorityNormalization(t *testing.T) {

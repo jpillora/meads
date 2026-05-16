@@ -11,7 +11,7 @@ import (
 
 type addCmd struct {
 	globals     *globals
-	Args        []string `opts:"mode=arg,min=0" help:"Note: task descriptions are JSON-encoded markdown ('\\n' decodes to a real newline).\n\nTwo modes for setting task fields:\n\n(1) Free-form string. Pass a single argument and meads extracts:\n      type prefix:   bug: / task: / feature: / idea:   (optional)\n      priority:      P0-P9 anywhere in the string      (default P2)\n      title:         text before the first '. ' (period+space) or newline\n      description:   text after that split point\n    Examples:\n      md add 'Fix the login bug'\n      md add 'bug: Fix login P1. Session cookie expires after 5min'\n      md add 'Fix login.\\nSession cookie expires.\\n\\nSteps to repro...'\n\n(2) Explicit flags. Set each field via --title, --type, --priority, etc.\n    Example:\n      md add --type=bug --priority=P1 --title='Fix login' \\\n             --description='## Steps\\n1. Repro\\n2. Patch'"`
+	Args        []string `opts:"mode=arg,min=0" help:"Note: task descriptions are JSON-encoded markdown — '\\n', '\\t', '\\uXXXX', etc. all decode.\n\nTwo modes for setting task fields:\n\n(1) Free-form string. Pass a single argument and meads extracts:\n      type prefix:   bug: / task: / feature: / idea:   (optional)\n      priority:      P0-P9 anywhere in the string      (default P2)\n      title:         text before the first '. ' (period+space) or newline\n      description:   text after that split point\n    Examples:\n      md add 'Fix the login bug'\n      md add 'bug: Fix login P1. Session cookie expires after 5min'\n      md add 'Fix login.\\nSession cookie expires.\\n\\nSteps to repro...'\n\n(2) Explicit flags. Set each field via --title, --type, --priority, etc.\n    Example:\n      md add --type=bug --priority=P1 --title='Fix login' \\\n             --description='## Steps\\n1. Repro\\n2. Patch'"`
 	Title       string   `help:"Set task title"`
 	Status      string   `help:"Set task status (draft, open, inprogress, closed)"`
 	Priority    string   `help:"Set task priority (P0-P9 or 0-9)"`
@@ -37,16 +37,41 @@ func (c *addCmd) Run() error {
 	return runAdd(c.globals, c.Args, c.Title, c.Status, c.Priority, c.Type, c.DependsOn, c.Description, c.Draft)
 }
 
-func runAdd(g *globals, args []string, title, status, priority, typ, dependsOn, description string, draft bool) error {
-	// Task descriptions are JSON-encoded markdown — decode \n in both
-	// the --description flag and the free-form positional arg.
-	if description != "" {
-		description = strings.ReplaceAll(description, `\n`, "\n")
+// decodeJSONEscapes processes JSON-style escape sequences (\n, \t, \\, \", \uXXXX,
+// etc.) so multi-line markdown fits in a single shell argument. Unrecognised
+// escapes and unescaped bytes pass through unchanged.
+func decodeJSONEscapes(s string) string {
+	if !strings.ContainsRune(s, '\\') {
+		return s
 	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for len(s) > 0 {
+		if s[0] != '\\' {
+			b.WriteByte(s[0])
+			s = s[1:]
+			continue
+		}
+		r, _, rest, err := strconv.UnquoteChar(s, 0)
+		if err != nil {
+			b.WriteByte(s[0])
+			s = s[1:]
+			continue
+		}
+		b.WriteRune(r)
+		s = rest
+	}
+	return b.String()
+}
+
+func runAdd(g *globals, args []string, title, status, priority, typ, dependsOn, description string, draft bool) error {
+	// Task descriptions are JSON-encoded markdown — decode \n, \uXXXX, etc.
+	// in both the --description flag and the free-form positional arg.
+	description = decodeJSONEscapes(description)
 	// Parse args if provided
 	if len(args) > 0 {
 		input := strings.Join(args, " ")
-		input = strings.ReplaceAll(input, `\n`, "\n")
+		input = decodeJSONEscapes(input)
 		// (1) Extract type prefix
 		var parsedType string
 		if m := typeRe.FindStringSubmatch(input); m != nil {
