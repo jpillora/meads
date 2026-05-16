@@ -11,13 +11,13 @@ import (
 
 type addCmd struct {
 	globals     *globals
-	Args        []string `opts:"mode=arg,min=0" help:"Input text (e.g. 'bug: Fix login P3')"`
+	Args        []string `opts:"mode=arg,min=0" help:"Task input — TWO MODES supported:\n\n(1) Free-form string. Pass a single argument and meads extracts task fields:\n      type prefix:   bug: / task: / feature: / idea:   (optional)\n      priority:      P0-P9 anywhere in the string      (default P2)\n      title:         text before the first '.' or newline\n      description:   text after the first '.' or newline\n    Examples:\n      md add 'Fix the login bug'\n      md add 'bug: Fix login P1. Session cookie expires after 5min'\n\n(2) Explicit flags. Set each field via --title, --type, --priority, etc.\n    --description is a JSON-style markdown string: '\\n' is decoded to a\n    real newline so a multi-line markdown body fits in a single argument.\n    Example:\n      md add --type=bug --priority=P1 --title='Fix login' \\\n             --description='## Steps\\n1. Repro\\n2. Patch'"`
 	Title       string   `help:"Set task title"`
 	Status      string   `help:"Set task status (draft, open, inprogress, closed)"`
 	Priority    string   `help:"Set task priority (P0-P9 or 0-9)"`
 	Type        string   `help:"Set task type (bug, task, feature, idea)"`
 	DependsOn   string   `opts:"name=depends-on" help:"Set dependency task ID"`
-	Description string   `help:"Set task description"`
+	Description string   `help:"Set task description (JSON-style markdown; '\\n' decodes to newline)"`
 	Draft       bool     `help:"Create task with draft status"`
 }
 
@@ -35,6 +35,10 @@ func (c *addCmd) Run() error {
 }
 
 func runAdd(g *globals, args []string, title, status, priority, typ, dependsOn, description string, draft bool) error {
+	// --description accepts JSON-style \n escapes for multi-line markdown
+	if description != "" {
+		description = strings.ReplaceAll(description, `\n`, "\n")
+	}
 	// Parse args if provided
 	if len(args) > 0 {
 		input := strings.Join(args, " ")
