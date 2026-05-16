@@ -18,7 +18,7 @@ type addCmd struct {
 	Type        string   `help:"Set task type (bug, task, feature, idea)"`
 	DependsOn   string   `opts:"name=depends-on" help:"Set dependency task ID"`
 	Description string   `help:"Set task description (JSON-encoded markdown)"`
-	Draft       bool     `help:"Create task with draft status"`
+	Draft       bool     `help:"Create task with draft status (defaults to open)"`
 }
 
 type createCmd struct {
