@@ -9,12 +9,19 @@ import (
 	"github.com/go-git/go-billy/v5/util"
 )
 
-// nextID computes the next task ID from the maximum existing task ID.
+// nextID computes the next task ID from the maximum existing task ID and the
+// optional "max-id" project-meta high-water mark (set when the most recently
+// deleted task had a higher ID than any surviving active task).
 func nextID(f *File) int {
 	next := 1
 	for _, t := range f.Tasks {
 		if t.ID >= next {
 			next = t.ID + 1
+		}
+	}
+	if v, ok := f.Meta["max-id"]; ok {
+		if n, err := strconv.Atoi(v); err == nil && n >= next {
+			next = n + 1
 		}
 	}
 	return next
@@ -97,9 +104,17 @@ func validateDeps(f *File) error {
 	return nil
 }
 
-// pruneTombstones keeps at most one tombstone: the highest-ID deleted task,
-// and only when no active task has a higher ID. This prevents ID reuse.
-func pruneTombstones(f *File) {
+// pruneTombstones removes tombstone rows and persists the high-water mark
+// needed to prevent ID reuse.
+//
+// When hasPreamble is true (e.g. markdown), tombstone rows are always dropped
+// and f.Meta["max-id"] records the highest deleted ID — but only when it
+// exceeds the highest active ID. Otherwise the meta key is cleared.
+//
+// When hasPreamble is false (e.g. CSV, which can't carry project meta), a
+// single tombstone row for the highest deleted task is retained when it
+// exceeds the highest active ID.
+func pruneTombstones(f *File, hasPreamble bool) {
 	maxActive := 0
 	maxDeleted := 0
 	for _, t := range f.Tasks {
@@ -113,10 +128,27 @@ func pruneTombstones(f *File) {
 			}
 		}
 	}
+	if hasPreamble {
+		filtered := make([]Task, 0, len(f.Tasks))
+		for _, t := range f.Tasks {
+			if !t.Deleted {
+				filtered = append(filtered, t)
+			}
+		}
+		f.Tasks = filtered
+		if maxDeleted > maxActive {
+			if f.Meta == nil {
+				f.Meta = make(map[string]string)
+			}
+			f.Meta["max-id"] = strconv.Itoa(maxDeleted)
+		} else {
+			delete(f.Meta, "max-id")
+		}
+		return
+	}
 	filtered := make([]Task, 0, len(f.Tasks))
 	for _, t := range f.Tasks {
 		if t.Deleted {
-			// Keep only if it's the highest-ID deleted AND no active task is higher.
 			if t.ID == maxDeleted && maxDeleted > maxActive {
 				filtered = append(filtered, t)
 			}

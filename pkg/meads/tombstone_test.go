@@ -26,6 +26,26 @@ func TestNextID_WithTasks(t *testing.T) {
 	}
 }
 
+func TestNextID_HonorsMetaMaxID(t *testing.T) {
+	f := &File{
+		Meta:  map[string]string{"max-id": "10"},
+		Tasks: []Task{{ID: 3, Status: "open"}},
+	}
+	if got := nextID(f); got != 11 {
+		t.Errorf("nextID with max-id=10 = %d, want 11", got)
+	}
+}
+
+func TestNextID_IgnoresMetaMaxIDWhenActiveHigher(t *testing.T) {
+	f := &File{
+		Meta:  map[string]string{"max-id": "5"},
+		Tasks: []Task{{ID: 9, Status: "open"}},
+	}
+	if got := nextID(f); got != 10 {
+		t.Errorf("nextID with active=9, max-id=5 = %d, want 10", got)
+	}
+}
+
 func TestValidateDeps_Valid(t *testing.T) {
 	f := &File{Tasks: []Task{
 		{ID: 1, Status: "open"},

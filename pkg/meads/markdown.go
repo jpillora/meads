@@ -200,7 +200,7 @@ func parseMetaLine(line string) (string, string, bool) {
 // --- Formatting ---
 
 var (
-	projectMetaOrder = []string{"created", "updated"}
+	projectMetaOrder = []string{"created", "updated", "max-id"}
 	taskMetaOrder    = []string{"status", "priority", "type", "depends-on", "close-reason", "status-reason", "tags", "created", "updated", "deleted"}
 )
 

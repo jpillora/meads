@@ -54,13 +54,7 @@ func (c *autoDeleteCmd) runFromHook() error {
 		return fmt.Errorf("reading %s: %w", store.Path(), err)
 	}
 
-	// Get HEAD content for two-phase cleanup.
-	// Phase 1 removes tasks that were already "deleted" in HEAD.
-	// Phase 2 marks "closed" tasks as "deleted" (included in the current commit).
-	gitPath := filepath.Base(c.globals.TasksFile)
-	prevContent, _ := git.Output("show", "HEAD:"+gitPath)
-
-	result, err := store.AutoClean(prevContent)
+	result, err := store.AutoClean()
 	if err != nil {
 		util.WriteFile(store.FS(), store.Path(), backup, 0644)
 		return fmt.Errorf("auto-clean: %w", err)
@@ -70,10 +64,7 @@ func (c *autoDeleteCmd) runFromHook() error {
 	}
 
 	for _, id := range result.Removed {
-		fmt.Fprintf(os.Stderr, "md: removed deleted task %d\n", id)
-	}
-	for _, id := range result.Marked {
-		fmt.Fprintf(os.Stderr, "md: marked closed task %d as deleted\n", id)
+		fmt.Fprintf(os.Stderr, "md: removed closed task %d\n", id)
 	}
 
 	// Stage the changes to be included in the current commit

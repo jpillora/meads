@@ -13,31 +13,25 @@ import (
 func TestIntegration_FullLifecycle(t *testing.T) {
 	h := newHarness(t)
 
-	// Add a task
 	id := h.addTask("Implement feature X")
 	h.assertTaskCount(1)
 	h.assertTaskStatus(id, "open")
 
-	// Close the task
 	h.closeTask(id)
 	h.assertTaskStatus(id, "closed")
 
-	// Commit with pre-commit auto-clean: marks closed task as deleted
-	// and includes it in the same commit.
+	// Pre-commit auto-clean removes the closed task in the same commit.
 	if err := h.runAutoDelete(); err != nil {
-		t.Fatalf("runAutoDelete (phase 1): %v", err)
+		t.Fatalf("runAutoDelete: %v", err)
 	}
 	h.assertTaskCount(0)
 	h.assertTaskNotExists(id)
 	h.commit("close task")
 
-	// Next commit triggers phase 2: removes the deleted tombstone.
+	// Subsequent auto-delete is a no-op.
 	if err := h.runAutoDelete(); err != nil {
-		t.Fatalf("runAutoDelete (phase 2): %v", err)
+		t.Fatalf("runAutoDelete (no-op): %v", err)
 	}
-	h.commit("follow-up")
-
-	// Task is now physically gone.
 	h.assertTaskCount(0)
 	h.assertTaskNotExists(id)
 }
@@ -296,40 +290,53 @@ func TestIntegration_AutoDelete_RestoresOnGitAddFailure(t *testing.T) {
 	h.assertTaskExists(id2)
 }
 
-func TestIntegration_AutoDelete_TwoPhaseLifecycle(t *testing.T) {
+func TestIntegration_AutoDelete_RecordsMaxIDWhenLatestClosed(t *testing.T) {
 	h := newHarness(t)
 
 	id1 := h.addTask("Open task")
-	id2 := h.addTask("Closed task")
+	id2 := h.addTask("Closed task (latest)")
 	h.closeTask(id2)
 
-	// Phase 1 (pre-commit): marks closed task as deleted
+	// Pre-commit auto-clean removes the closed task. Because it was the
+	// highest ID, the high-water mark is persisted in project meta.
 	if err := h.runAutoDelete(); err != nil {
-		t.Fatalf("first runAutoDelete: %v", err)
+		t.Fatalf("runAutoDelete: %v", err)
 	}
 	h.assertTaskCount(1)
 	h.assertTaskExists(id1)
 	h.assertTaskNotExists(id2)
 
-	// User's commit includes the deletion
+	content := h.tasksFileContent()
+	if !strings.Contains(content, "max-id: 2") {
+		t.Fatalf("expected max-id meta marker, got:\n%s", content)
+	}
+
 	h.commit("close task")
 
-	// Phase 2 (next pre-commit): removes the committed tombstone
+	// Adding a new task must continue from the recorded max-id, not reuse 2.
+	id3 := h.addTask("Brand new task")
+	if id3 != 3 {
+		t.Fatalf("expected id 3 (continuing from max-id), got %d", id3)
+	}
+}
+
+func TestIntegration_AutoDelete_NoMaxIDWhenNonLatestClosed(t *testing.T) {
+	h := newHarness(t)
+
+	id1 := h.addTask("Closed task (not latest)")
+	id2 := h.addTask("Open task")
+	h.closeTask(id1)
+
 	if err := h.runAutoDelete(); err != nil {
-		t.Fatalf("second runAutoDelete: %v", err)
+		t.Fatalf("runAutoDelete: %v", err)
 	}
 	h.assertTaskCount(1)
-	h.commit("follow-up")
+	h.assertTaskExists(id2)
+	h.assertTaskNotExists(id1)
 
-	contentAfterSecond := h.tasksFileContent()
-
-	// Third run: no-op (nothing to clean)
-	if err := h.runAutoDelete(); err != nil {
-		t.Fatalf("third runAutoDelete: %v", err)
-	}
-	contentAfterThird := h.tasksFileContent()
-	if contentAfterThird != contentAfterSecond {
-		t.Fatal("third auto-delete should be a no-op but modified the file")
+	content := h.tasksFileContent()
+	if strings.Contains(content, "max-id:") {
+		t.Fatalf("max-id should not be set when surviving active id is higher, got:\n%s", content)
 	}
 }
 
@@ -366,16 +373,16 @@ func TestIntegration_AutoDelete_IncludedInUserCommit(t *testing.T) {
 		t.Fatalf("expected user's commit message, got %q", msg)
 	}
 
-	// Verify the commit has the task marked deleted with title preserved
+	// Verify the commit has the closed task removed and the open task kept.
 	showOutput := h.git("show", "HEAD:TASKS.md")
-	if !strings.Contains(showOutput, "Closed task") {
-		t.Fatal("commit should preserve the deleted task's title")
-	}
-	if !strings.Contains(showOutput, "deleted: true") {
-		t.Fatal("commit should contain 'deleted: true'")
+	if strings.Contains(showOutput, "Closed task") {
+		t.Fatal("closed task should have been removed from the file")
 	}
 	if !strings.Contains(showOutput, "Open task") {
 		t.Fatal("commit is missing the open task")
+	}
+	if !strings.Contains(showOutput, "max-id: 2") {
+		t.Fatal("commit should record max-id for the closed (highest) task")
 	}
 }
 
@@ -972,23 +979,23 @@ func TestIntegration_Update_StatusReason(t *testing.T) {
 	}
 }
 
-func TestIntegration_DeletePreservesFields(t *testing.T) {
+func TestIntegration_DeleteRecordsMaxIDForHighestID(t *testing.T) {
 	h := newHarness(t)
 	id := h.addTask("Important task")
 	h.updatePriority(id, "P0")
 	h.setStatus(id, "inprogress")
 	h.deleteTask(id)
 
-	// Task should not be visible via Get
 	h.assertTaskNotExists(id)
 
-	// But the raw file should preserve the original fields
+	// Markdown drops the row entirely but records the high-water mark
+	// in project meta so the next add doesn't reuse the ID.
 	content := h.tasksFileContent()
-	if !strings.Contains(content, "Important task") {
-		t.Fatal("deleted task should preserve its title in the file")
+	if strings.Contains(content, "Important task") {
+		t.Fatal("deleted task row should be removed from markdown file")
 	}
-	if !strings.Contains(content, "deleted: true") {
-		t.Fatal("deleted task should have 'deleted: true' in the file")
+	if !strings.Contains(content, "max-id: 1") {
+		t.Fatalf("expected max-id meta for highest-deleted id, got:\n%s", content)
 	}
 }
 

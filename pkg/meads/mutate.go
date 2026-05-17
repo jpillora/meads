@@ -42,7 +42,7 @@ func (s *Store) Add(t Task) (int, error) {
 		s.releaseLock(content)
 		return 0, err
 	}
-	pruneTombstones(&f)
+	pruneTombstones(&f, s.fmt.HasPreamble())
 	// Update project meta.
 	if s.fmt.HasPreamble() {
 		ensureProjectMeta(&f, now)
@@ -93,7 +93,7 @@ func (s *Store) AddMany(tasks []Task) ([]int, error) {
 		s.releaseLock(content)
 		return nil, err
 	}
-	pruneTombstones(&f)
+	pruneTombstones(&f, s.fmt.HasPreamble())
 	if s.fmt.HasPreamble() {
 		ensureProjectMeta(&f, now)
 		f.Meta["updated"] = now
@@ -140,7 +140,7 @@ func (s *Store) Delete(id int) error {
 			}
 		}
 	}
-	pruneTombstones(&f)
+	pruneTombstones(&f, s.fmt.HasPreamble())
 	now := time.Now().UTC().Format(time.RFC3339)
 	if s.fmt.HasPreamble() {
 		ensureProjectMeta(&f, now)
@@ -205,7 +205,7 @@ func (s *Store) DeleteMany(ids []int) error {
 			}
 		}
 	}
-	pruneTombstones(&f)
+	pruneTombstones(&f, s.fmt.HasPreamble())
 	now := time.Now().UTC().Format(time.RFC3339)
 	if s.fmt.HasPreamble() {
 		ensureProjectMeta(&f, now)
@@ -290,53 +290,23 @@ func (s *Store) Doctor() ([]DoctorFix, error) {
 
 // AutoCleanResult describes changes made by AutoClean.
 type AutoCleanResult struct {
-	Marked  []int // IDs of closed tasks that were marked deleted
-	Removed []int // IDs of deleted tasks that were physically removed
+	Removed []int // IDs of closed tasks that were removed this run
 }
 
-// AutoClean performs two-phase cleanup for the auto-delete hook.
-// Phase 1: physically remove tasks that were already "deleted" in prevContent (except tombstone).
-// Phase 2: mark "closed" tasks as "deleted".
-// prevContent is the file content from the previous commit (HEAD~1).
-// Returns the IDs affected in each phase, or nil if no changes were needed.
-func (s *Store) AutoClean(prevContent string) (*AutoCleanResult, error) {
+// AutoClean marks any "closed" tasks as deleted, then drops tombstone rows
+// (persisting the high-water mark via pruneTombstones). Returns the IDs
+// removed, or nil if there was nothing to do.
+func (s *Store) AutoClean() (*AutoCleanResult, error) {
 	_, content, err := s.acquireLock()
 	if err != nil {
 		return nil, err
 	}
 	f := s.fmt.Parse(content)
 
-	// Build set of task IDs that were deleted in the previous commit.
-	prevDeleted := make(map[int]bool)
-	if prevContent != "" {
-		prev := s.fmt.Parse(prevContent)
-		for _, t := range prev.Tasks {
-			if t.Deleted {
-				prevDeleted[t.ID] = true
-			}
-		}
-	}
-
 	var result AutoCleanResult
-
-	// Phase 1: physically remove tasks that were already committed as deleted.
-	if len(prevDeleted) > 0 {
-		filtered := make([]Task, 0, len(f.Tasks))
-		for _, t := range f.Tasks {
-			if t.Deleted && prevDeleted[t.ID] {
-				result.Removed = append(result.Removed, t.ID)
-				continue
-			}
-			filtered = append(filtered, t)
-		}
-		f.Tasks = filtered
-	}
-
-	// Phase 2: mark closed tasks as deleted.
 	for i := range f.Tasks {
 		if f.Tasks[i].Status == "closed" && !f.Tasks[i].Deleted {
-			result.Marked = append(result.Marked, f.Tasks[i].ID)
-			// Clean dangling deps from other tasks.
+			result.Removed = append(result.Removed, f.Tasks[i].ID)
 			delID := f.Tasks[i].ID
 			for j := range f.Tasks {
 				if j == i || f.Tasks[j].Deleted {
@@ -358,13 +328,12 @@ func (s *Store) AutoClean(prevContent string) (*AutoCleanResult, error) {
 		}
 	}
 
-	if len(result.Marked) == 0 && len(result.Removed) == 0 {
+	if len(result.Removed) == 0 {
 		s.releaseLock(content)
 		return nil, nil
 	}
 
-	// Prune tombstones: keep at most one for ID safety.
-	pruneTombstones(&f)
+	pruneTombstones(&f, s.fmt.HasPreamble())
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	if s.fmt.HasPreamble() {

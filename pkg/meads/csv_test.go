@@ -45,30 +45,32 @@ func TestCSV_NewlineEscaping(t *testing.T) {
 }
 
 // --- Tombstone pruning tests (whitebox — uses unexported pruneTombstones) ---
+// CSV (no preamble) keeps one tombstone row; markdown (preamble) records the
+// high-water mark in f.Meta["max-id"] instead.
 
-func TestPruneTombstones_NoTombstones(t *testing.T) {
+func TestPruneTombstones_CSV_NoTombstones(t *testing.T) {
 	f := &File{Tasks: []Task{{ID: 1, Status: "open"}, {ID: 2, Status: "open"}}}
-	pruneTombstones(f)
+	pruneTombstones(f, false)
 	if len(f.Tasks) != 2 {
 		t.Fatalf("expected 2 tasks, got %d", len(f.Tasks))
 	}
 }
 
-func TestPruneTombstones_ActiveHigherThanDeleted(t *testing.T) {
+func TestPruneTombstones_CSV_ActiveHigherThanDeleted(t *testing.T) {
 	f := &File{Tasks: []Task{
 		{ID: 1, Deleted: true}, {ID: 2, Deleted: true}, {ID: 3, Status: "open"},
 	}}
-	pruneTombstones(f)
+	pruneTombstones(f, false)
 	if len(f.Tasks) != 1 || f.Tasks[0].ID != 3 {
 		t.Fatalf("expected [3], got %v", f.Tasks)
 	}
 }
 
-func TestPruneTombstones_DeletedHigherThanActive(t *testing.T) {
+func TestPruneTombstones_CSV_DeletedHigherThanActive(t *testing.T) {
 	f := &File{Tasks: []Task{
 		{ID: 1, Status: "open"}, {ID: 2, Deleted: true}, {ID: 3, Deleted: true},
 	}}
-	pruneTombstones(f)
+	pruneTombstones(f, false)
 	if len(f.Tasks) != 2 {
 		t.Fatalf("expected 2 tasks, got %d", len(f.Tasks))
 	}
@@ -81,12 +83,56 @@ func TestPruneTombstones_DeletedHigherThanActive(t *testing.T) {
 	}
 }
 
-func TestPruneTombstones_AllDeleted(t *testing.T) {
+func TestPruneTombstones_CSV_AllDeleted(t *testing.T) {
 	f := &File{Tasks: []Task{
 		{ID: 1, Deleted: true}, {ID: 2, Deleted: true}, {ID: 3, Deleted: true},
 	}}
-	pruneTombstones(f)
+	pruneTombstones(f, false)
 	if len(f.Tasks) != 1 || f.Tasks[0].ID != 3 {
 		t.Fatalf("expected [3], got %v", f.Tasks)
+	}
+}
+
+func TestPruneTombstones_Markdown_DropsAllRowsClearsMetaWhenActiveHigher(t *testing.T) {
+	f := &File{
+		Meta: map[string]string{"max-id": "5"},
+		Tasks: []Task{
+			{ID: 1, Deleted: true}, {ID: 2, Deleted: true}, {ID: 3, Status: "open"},
+		},
+	}
+	pruneTombstones(f, true)
+	if len(f.Tasks) != 1 || f.Tasks[0].ID != 3 {
+		t.Fatalf("expected [3], got %v", f.Tasks)
+	}
+	if _, ok := f.Meta["max-id"]; ok {
+		t.Errorf("max-id should be cleared, got %q", f.Meta["max-id"])
+	}
+}
+
+func TestPruneTombstones_Markdown_DropsRowsRecordsMaxIDWhenDeletedHigher(t *testing.T) {
+	f := &File{
+		Tasks: []Task{
+			{ID: 1, Status: "open"}, {ID: 2, Deleted: true}, {ID: 3, Deleted: true},
+		},
+	}
+	pruneTombstones(f, true)
+	if len(f.Tasks) != 1 || f.Tasks[0].ID != 1 {
+		t.Fatalf("expected [1], got %v", f.Tasks)
+	}
+	if f.Meta["max-id"] != "3" {
+		t.Errorf("max-id = %q, want %q", f.Meta["max-id"], "3")
+	}
+}
+
+func TestPruneTombstones_Markdown_AllDeletedRecordsMaxID(t *testing.T) {
+	f := &File{Tasks: []Task{
+		{ID: 1, Deleted: true}, {ID: 2, Deleted: true}, {ID: 3, Deleted: true},
+	}}
+	pruneTombstones(f, true)
+	if len(f.Tasks) != 0 {
+		t.Fatalf("expected no tasks, got %v", f.Tasks)
+	}
+	if f.Meta["max-id"] != "3" {
+		t.Errorf("max-id = %q, want %q", f.Meta["max-id"], "3")
 	}
 }
