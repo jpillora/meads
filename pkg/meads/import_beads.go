@@ -68,8 +68,10 @@ func beadToTask(b beadIssue) Task {
 		t.SetStatus("inprogress")
 	case "closed":
 		t.SetStatus("closed")
-	case "blocked", "deferred":
-		t.SetStatus("open")
+	case "blocked":
+		t.SetStatus("blocked")
+	case "deferred":
+		t.SetStatus("blocked")
 		t.Meta["bead-status"] = b.Status
 	default:
 		if b.Status != "" {

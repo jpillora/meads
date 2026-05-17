@@ -13,7 +13,7 @@ type addCmd struct {
 	globals     *globals
 	Args        []string `opts:"mode=arg,min=0" help:"Note: task descriptions are JSON-encoded markdown — '\\n', '\\t', '\\uXXXX', etc. all decode.\n\nTwo modes for setting task fields:\n\n(1) Free-form string. Pass a single argument and meads extracts:\n      type prefix:   bug: / task: / feature: / idea:   (optional)\n      priority:      P0-P9 anywhere in the string      (default P2)\n      title:         text before the first '. ' (period+space) or newline\n      description:   text after that split point\n    Examples:\n      md add 'Fix the login bug'\n      md add 'bug: Fix login P1. Session cookie expires after 5min'\n      md add 'Fix login.\\nSession cookie expires.\\n\\nSteps to repro...'\n\n(2) Explicit flags. Set each field via --title, --type, --priority, etc.\n    Example:\n      md add --type=bug --priority=P1 --title='Fix login' \\\n             --description='## Steps\\n1. Repro\\n2. Patch'"`
 	Title       string   `help:"Set task title"`
-	Status      string   `help:"Set task status (draft, open, inprogress, closed)"`
+	Status      string   `help:"Set task status (draft, open, inprogress, blocked, closed)"`
 	Priority    string   `help:"Set task priority (P0-P9 or 0-9)"`
 	Type        string   `help:"Set task type (bug, task, feature, idea)"`
 	DependsOn   string   `opts:"name=depends-on" help:"Set dependency task ID"`

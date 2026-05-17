@@ -10,7 +10,7 @@ import (
 type setStatusCmd struct {
 	globals *globals
 	ID      string `opts:"mode=arg" help:"Task ID"`
-	Status  string `opts:"mode=arg" help:"New status (draft, open, inprogress, closed)"`
+	Status  string `opts:"mode=arg" help:"New status (draft, open, inprogress, blocked, closed)"`
 	Reason  string `help:"Reason for status change"`
 }
 

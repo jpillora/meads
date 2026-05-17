@@ -89,9 +89,31 @@ func TestReady_ExcludesClosed(t *testing.T) {
 	s.Add(meads.Task{Title: "Open", Status: "open"})
 	s.Add(meads.Task{Title: "Closed", Status: "closed"})
 	s.Add(meads.Task{Title: "InProgress", Status: "inprogress"})
+	s.Add(meads.Task{Title: "Blocked", Status: "blocked"})
 	ready, _ := s.Ready()
 	if len(ready) != 1 || ready[0].Title != "Open" {
 		t.Fatalf("expected only Open, got %v", ready)
+	}
+}
+
+func TestSetStatus_Blocked_RoundTrip(t *testing.T) {
+	s := newCSVStore(t)
+	id, _ := s.Add(meads.Task{Title: "Task", Status: "open"})
+	if err := s.Update(id, func(t *meads.Task) { t.SetStatus("blocked") }); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	tasks, _ := s.Get([]int{id})
+	if tasks[0].Status != "blocked" {
+		t.Fatalf("status = %q, want blocked", tasks[0].Status)
+	}
+	if tasks[0].Meta["status"] != "blocked" {
+		t.Fatalf("meta status = %q, want blocked", tasks[0].Meta["status"])
+	}
+}
+
+func TestValidateStatus_Blocked(t *testing.T) {
+	if err := meads.ValidateStatus("blocked"); err != nil {
+		t.Fatalf("ValidateStatus(\"blocked\"): %v", err)
 	}
 }
 

@@ -91,7 +91,7 @@ func NormalizePriority(s string) (string, error) {
 }
 
 // ValidStatuses lists the recognized task statuses.
-var ValidStatuses = []string{"draft", "open", "inprogress", "closed"}
+var ValidStatuses = []string{"draft", "open", "inprogress", "blocked", "closed"}
 
 // ValidTypes lists the recognized task types.
 var ValidTypes = []string{"bug", "task", "feature", "idea"}

@@ -117,7 +117,7 @@ function renderMeta() {
 
 // --- Actions -----------------------------------------------------------
 
-const STATUS_ORDER = ["draft", "open", "inprogress", "closed"];
+const STATUS_ORDER = ["draft", "open", "inprogress", "blocked", "closed"];
 function nextStatus(cur) {
   const i = STATUS_ORDER.indexOf(cur);
   if (i < 0) return "open";

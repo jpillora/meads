@@ -49,8 +49,8 @@ func TestBeadToTask_StatusMapping(t *testing.T) {
 		{"open", "open", ""},
 		{"in_progress", "inprogress", ""},
 		{"closed", "closed", ""},
-		{"blocked", "open", "blocked"},
-		{"deferred", "open", "deferred"},
+		{"blocked", "blocked", ""},
+		{"deferred", "blocked", "deferred"},
 	}
 	for _, tt := range tests {
 		b := beadIssue{ID: "1", Title: "t", Status: tt.beadStatus}
