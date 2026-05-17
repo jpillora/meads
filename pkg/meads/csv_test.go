@@ -93,19 +93,53 @@ func TestPruneTombstones_CSV_AllDeleted(t *testing.T) {
 	}
 }
 
-func TestPruneTombstones_Markdown_DropsAllRowsClearsMetaWhenActiveHigher(t *testing.T) {
+func TestPruneTombstones_Markdown_ClearsMetaWhenActiveReachesMaxID(t *testing.T) {
+	// Active task has the same ID as the existing high-water mark, so the
+	// marker is redundant and should be removed.
 	f := &File{
-		Meta: map[string]string{"max-id": "5"},
-		Tasks: []Task{
-			{ID: 1, Deleted: true}, {ID: 2, Deleted: true}, {ID: 3, Status: "open"},
-		},
+		Meta:  map[string]string{"max-id": "5"},
+		Tasks: []Task{{ID: 5, Status: "open"}},
 	}
 	pruneTombstones(f, true)
-	if len(f.Tasks) != 1 || f.Tasks[0].ID != 3 {
-		t.Fatalf("expected [3], got %v", f.Tasks)
-	}
 	if _, ok := f.Meta["max-id"]; ok {
-		t.Errorf("max-id should be cleared, got %q", f.Meta["max-id"])
+		t.Errorf("max-id should be cleared when active == max-id, got %q", f.Meta["max-id"])
+	}
+}
+
+func TestPruneTombstones_Markdown_ClearsMetaWhenActiveExceedsMaxID(t *testing.T) {
+	f := &File{
+		Meta:  map[string]string{"max-id": "5"},
+		Tasks: []Task{{ID: 9, Status: "open"}},
+	}
+	pruneTombstones(f, true)
+	if _, ok := f.Meta["max-id"]; ok {
+		t.Errorf("max-id should be cleared when active > max-id, got %q", f.Meta["max-id"])
+	}
+}
+
+func TestPruneTombstones_Markdown_PreservesMaxIDWhenStillAboveActive(t *testing.T) {
+	// max-id was set when a higher task was deleted; an unrelated prune
+	// (e.g. update, dep cleanup) must not regress the high-water mark.
+	f := &File{
+		Meta:  map[string]string{"max-id": "10"},
+		Tasks: []Task{{ID: 5, Status: "open"}},
+	}
+	pruneTombstones(f, true)
+	if f.Meta["max-id"] != "10" {
+		t.Errorf("max-id = %q, want %q (must preserve high-water mark)", f.Meta["max-id"], "10")
+	}
+}
+
+func TestPruneTombstones_Markdown_PreservesMaxIDWhenDeletingNonHighest(t *testing.T) {
+	// Deleting the only active task (id 5) when meta high-water is 10 must
+	// keep meta=10, not overwrite it with 5.
+	f := &File{
+		Meta:  map[string]string{"max-id": "10"},
+		Tasks: []Task{{ID: 5, Deleted: true}},
+	}
+	pruneTombstones(f, true)
+	if f.Meta["max-id"] != "10" {
+		t.Errorf("max-id = %q, want %q (highest deleted < existing mark)", f.Meta["max-id"], "10")
 	}
 }
 

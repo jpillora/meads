@@ -136,11 +136,21 @@ func pruneTombstones(f *File, hasPreamble bool) {
 			}
 		}
 		f.Tasks = filtered
-		if maxDeleted > maxActive {
+		// Combine the existing meta high-water mark with any new deletion so
+		// that non-highest deletes (or non-delete mutations) don't regress it.
+		existing := 0
+		if v, ok := f.Meta["max-id"]; ok {
+			existing, _ = strconv.Atoi(v)
+		}
+		newMax := maxDeleted
+		if existing > newMax {
+			newMax = existing
+		}
+		if newMax > maxActive {
 			if f.Meta == nil {
 				f.Meta = make(map[string]string)
 			}
-			f.Meta["max-id"] = strconv.Itoa(maxDeleted)
+			f.Meta["max-id"] = strconv.Itoa(newMax)
 		} else {
 			delete(f.Meta, "max-id")
 		}
