@@ -3,18 +3,9 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-05-20T15:27:23Z
+* updated: 2026-05-20T15:34:06Z
 * max-id: 12
 * next-id: 13
-
-## 3. webui keyboard shortcuts
-
-* status: open
-* priority: P2
-* type: feature
-* created: 2026-05-20T11:55:18Z
-
-j/k to move card focus, n to new, e to edit, d to delete (with confirm), / to focus filter, esc to clear, enter to advance status. Show a help popover with ?
 
 ## 4. webui remove-dependency support
 

@@ -13,8 +13,9 @@
     <span id="file-meta" class="muted"></span>
   </div>
   <div class="actions">
-    <input type="search" id="filter" placeholder="Filter…" autocomplete="off">
+    <input type="search" id="filter" placeholder="Filter…  (/ to focus)" autocomplete="off">
     <button id="new-task">+ New task</button>
+    <button id="help-toggle" title="Keyboard shortcuts (?)">?</button>
   </div>
 </header>
 
@@ -75,6 +76,23 @@
       <button type="submit" class="primary">Save</button>
     </div>
   </form>
+</dialog>
+
+<dialog id="help">
+  <h2>Keyboard shortcuts</h2>
+  <dl class="shortcuts">
+    <dt>j / k</dt><dd>Move focus down / up between cards</dd>
+    <dt>n</dt><dd>New task</dd>
+    <dt>e</dt><dd>Edit focused task</dd>
+    <dt>d</dt><dd>Delete focused task (asks first)</dd>
+    <dt>Enter</dt><dd>Advance status of focused task</dd>
+    <dt>/</dt><dd>Focus the filter input</dd>
+    <dt>Esc</dt><dd>Clear filter / close dialog</dd>
+    <dt>?</dt><dd>Toggle this help</dd>
+  </dl>
+  <div class="footer">
+    <button type="button" data-action="close-help">Close</button>
+  </div>
 </dialog>
 
 <template id="task-card">
