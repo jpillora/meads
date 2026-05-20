@@ -363,4 +363,5 @@ dialog .footer { display: flex; justify-content: flex-end; gap: 0.5rem; margin-t
   max-width: 420px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.15);
 }
+.toast.ok { border-color: var(--success); color: var(--success); }
 .toast.err { border-color: var(--danger); color: var(--danger); }
