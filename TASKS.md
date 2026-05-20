@@ -3,18 +3,9 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-05-20T15:55:16Z
+* updated: 2026-05-20T15:58:51Z
 * max-id: 12
 * next-id: 13
-
-## 7. webui sort/group controls
-
-* status: open
-* priority: P3
-* type: feature
-* created: 2026-05-20T11:55:18Z
-
-Header dropdown to choose sort (priority|id|status|updated) and toggle grouping by status. Persist in localStorage.
 
 ## 8. webui hide-closed toggle
 

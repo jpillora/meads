@@ -43,7 +43,30 @@ html, body {
 }
 .bar .title { display: flex; align-items: baseline; gap: 0.5rem; min-width: 0; }
 .bar .title strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.bar .actions { display: flex; gap: 0.5rem; align-items: center; }
+.bar .actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.bar .actions .toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.9em;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+.group-header {
+  margin: 0.75rem 0 0.1rem;
+  font-size: 0.85em;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  padding: 0 0.25rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.15rem;
+}
+.group-header:first-child { margin-top: 0; }
+.group-header[data-status="inprogress"] { color: var(--accent); }
+.group-header[data-status="blocked"] { color: var(--danger); }
+.group-header[data-status="closed"] { color: var(--muted); opacity: 0.7; }
 
 .muted { color: var(--muted); font-size: 0.9em; }
 

@@ -14,6 +14,15 @@
   </div>
   <div class="actions">
     <input type="search" id="filter" placeholder="Filter…  (/ to focus)" autocomplete="off">
+    <select id="sort-by" title="Sort tasks">
+      <option value="default">Sort: status</option>
+      <option value="priority">Sort: priority</option>
+      <option value="id">Sort: id</option>
+      <option value="updated">Sort: updated</option>
+    </select>
+    <label class="toggle" title="Show status group headers">
+      <input type="checkbox" id="group-by-status"> group
+    </label>
     <button id="new-task">+ New task</button>
     <button id="help-toggle" title="Keyboard shortcuts (?)">?</button>
   </div>
