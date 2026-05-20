@@ -173,6 +173,12 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if in.Type != "" {
+		if err := meads.ValidateType(in.Type); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+	}
 	priority := in.Priority
 	if priority != "" {
 		norm, err := meads.NormalizePriority(priority)
@@ -191,6 +197,9 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		}
 		if in.Title != "" {
 			t.Title = in.Title
+		}
+		if in.Type != "" {
+			t.SetType(in.Type)
 		}
 		if in.Description != "" {
 			t.Description = in.Description

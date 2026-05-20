@@ -3,18 +3,9 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-05-20T15:41:31Z
+* updated: 2026-05-20T15:55:16Z
 * max-id: 12
 * next-id: 13
-
-## 5. webui dependency picker in editor
-
-* status: open
-* priority: P3
-* type: feature
-* created: 2026-05-20T11:55:18Z
-
-Replace the plain comma-separated ID field with an autocomplete of existing tasks, showing id + title.
 
 ## 7. webui sort/group controls
 

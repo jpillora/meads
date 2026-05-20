@@ -28,6 +28,7 @@ type UpdateTaskInput struct {
 	Status       string `json:"status,omitempty" jsonschema:"new status (draft, open, inprogress, blocked, closed)"`
 	Priority     string `json:"priority,omitempty" jsonschema:"new priority (P0-P9)"`
 	Title        string `json:"title,omitempty" jsonschema:"new title"`
+	Type         string `json:"type,omitempty" jsonschema:"new type (bug, task, feature, idea)"`
 	Description  string `json:"description,omitempty" jsonschema:"new description"`
 	StatusReason string `json:"status_reason,omitempty" jsonschema:"reason for status change"`
 }

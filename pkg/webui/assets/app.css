@@ -205,6 +205,61 @@ dialog .footer { display: flex; justify-content: flex-end; gap: 0.5rem; margin-t
 
 #help-toggle { font-family: var(--vscode-editor-font-family, ui-monospace, monospace); min-width: 28px; }
 
+.dep-picker { position: relative; margin-bottom: 0.5rem; }
+.dep-chips { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-bottom: 0.25rem; }
+.dep-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.85em;
+  padding: 2px 4px 2px 8px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+  max-width: 100%;
+}
+.dep-chip > span:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 28ch; }
+.dep-chip-remove {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  padding: 0 4px;
+  font-size: 1.05em;
+  line-height: 1;
+  opacity: 0.8;
+}
+.dep-chip-remove:hover { opacity: 1; color: var(--danger); }
+.dep-results {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  margin-top: 2px;
+  z-index: 20;
+  max-height: 180px;
+  overflow-y: auto;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+}
+.dep-result {
+  display: flex;
+  gap: 0.5rem;
+  padding: 4px 8px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  text-align: left;
+  color: var(--fg);
+  cursor: pointer;
+}
+.dep-result:hover, .dep-result:focus { background: color-mix(in srgb, var(--accent) 14%, transparent); outline: none; }
+.dep-result-id { color: var(--muted); font-family: var(--vscode-editor-font-family, ui-monospace, monospace); min-width: 3ch; }
+.dep-result-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+
 .md-editor { display: flex; flex-direction: column; gap: 0; margin-bottom: 0.5rem; }
 .md-toolbar {
   display: flex;

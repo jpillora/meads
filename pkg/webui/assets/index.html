@@ -68,9 +68,13 @@
         placeholder="Markdown supported — use the toolbar above"></textarea>
       <div class="md-preview" aria-live="polite"></div>
     </div>
-    <label>Depends on (comma-separated IDs)
-      <input name="depends_on" placeholder="e.g. 1, 2">
-    </label>
+    <label for="dep-search">Depends on</label>
+    <div class="dep-picker">
+      <div class="dep-chips" id="dep-chips"></div>
+      <input id="dep-search" type="text" class="dep-search" placeholder="Search tasks by id or title…" autocomplete="off">
+      <div class="dep-results" id="dep-results" hidden></div>
+      <input type="hidden" name="depends_on" id="depends_on">
+    </div>
     <div class="footer">
       <button type="button" data-action="cancel">Cancel</button>
       <button type="submit" class="primary">Save</button>
