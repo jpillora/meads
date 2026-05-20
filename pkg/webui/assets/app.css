@@ -168,6 +168,63 @@ dialog .row label { flex: 1; }
 dialog textarea { font-family: var(--vscode-editor-font-family, ui-monospace, monospace); resize: vertical; }
 dialog .footer { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.5rem; }
 
+.md-editor { display: flex; flex-direction: column; gap: 0; margin-bottom: 0.5rem; }
+.md-toolbar {
+  display: flex;
+  gap: 0.15rem;
+  padding: 0.25rem;
+  border: 1px solid var(--input-border);
+  border-bottom: 0;
+  border-radius: 4px 4px 0 0;
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+  flex-wrap: wrap;
+}
+.md-toolbar button {
+  padding: 2px 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--fg);
+  font-size: 0.9em;
+  min-width: 1.8em;
+}
+.md-toolbar button:hover { background: color-mix(in srgb, var(--fg) 8%, transparent); border-color: var(--input-border); }
+.md-toolbar button code { font-size: 0.85em; }
+.md-source { border-radius: 0; border-bottom: 0; }
+.md-preview {
+  border: 1px solid var(--input-border);
+  border-radius: 0 0 4px 4px;
+  padding: 0.4rem 0.6rem;
+  background: color-mix(in srgb, var(--fg) 3%, transparent);
+  color: var(--fg);
+  font-size: 0.92em;
+  max-height: 140px;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}
+.md-preview.empty { display: none; }
+.md-preview.empty + * { border-top-left-radius: 0; border-top-right-radius: 0; }
+.md-preview p { margin: 0.2rem 0; }
+.md-preview ul, .md-preview ol { margin: 0.25rem 0; padding-left: 1.5rem; }
+.md-preview h1, .md-preview h2, .md-preview h3 { margin: 0.3rem 0 0.15rem; font-size: 1em; }
+.md-preview a { color: var(--accent); }
+.md-preview code {
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 0.9em;
+}
+.md-preview pre {
+  margin: 0.2rem 0;
+  padding: 0.4rem 0.6rem;
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  border-radius: 4px;
+  overflow-x: auto;
+}
+.md-preview pre code { background: transparent; padding: 0; }
+/* When preview is empty, give the textarea square corners on the bottom. */
+.md-editor:has(.md-preview.empty) .md-source { border-radius: 0 0 4px 4px; border-bottom: 1px solid var(--input-border); }
+
 .empty {
   text-align: center;
   padding: 4rem 1rem;

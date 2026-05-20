@@ -3,7 +3,8 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-05-20T15:20:56Z
+* updated: 2026-05-20T15:27:23Z
+* max-id: 12
 * next-id: 13
 
 ## 3. webui keyboard shortcuts
@@ -86,12 +87,3 @@ Currently only errors toast. Show a transient success toast after add/update/del
 * created: 2026-05-20T11:55:18Z
 
 Header button to copy the current URL (with token) to the clipboard so users can share quickly with collaborators on the same host.
-
-## 12. webui editor should be WYSIWYG with formatting toolbar
-
-* status: open
-* priority: P1
-* type: feature
-* created: 2026-05-20T15:17:29Z
-
-Replace the plain textarea with a rich editor that has a toolbar (bold/italic/code/link/list/heading) and shows the formatted output as you type. Should produce markdown on save so TASKS.md stays text-readable.
