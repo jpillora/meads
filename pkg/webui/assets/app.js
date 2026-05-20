@@ -57,18 +57,22 @@ function chip(label, cls) {
 function taskCard(t) {
   const tpl = document.getElementById("task-card");
   const node = tpl.content.firstElementChild.cloneNode(true);
+  const status = t.status || "open";
+  const priority = t.priority || "P2";
+  const type = t.type || "task";
   node.dataset.id = t.id;
-  node.dataset.status = t.status || "open";
-  node.dataset.priority = t.priority || "P2";
+  node.dataset.status = status;
+  node.dataset.priority = priority;
   node.id = "task-" + t.id;
 
   node.querySelector(".id").textContent = "#" + t.id;
   node.querySelector(".title").textContent = t.title || "(no title)";
 
+  // Status leads (most important state), then priority, then type.
   const chips = node.querySelector(".chips");
-  chips.append(chip(t.type || "task", "type-" + (t.type || "task")));
-  chips.append(chip(t.priority || "P2", (t.priority || "P2").toLowerCase()));
-  chips.append(chip(t.status || "open", "status-" + (t.status || "open")));
+  chips.append(chip(status, "status-" + status));
+  chips.append(chip(priority, priority.toLowerCase()));
+  chips.append(chip(type, "type-" + type));
 
   const deps = node.querySelector(".deps");
   if (Array.isArray(t.depends_on)) {
@@ -80,8 +84,27 @@ function taskCard(t) {
     }
   }
 
+  // "Advance status" button reveals the next status as its label.
+  const advance = node.querySelector('[data-action="status-next"]');
+  if (advance) advance.textContent = "→ " + nextStatus(status);
+
   node.querySelector(".description").textContent = t.description || "";
   return node;
+}
+
+// Visual sort order: active work first, blocked, draft, then closed. Within
+// each bucket, ascending priority (P0 highest), then ascending id for stability.
+const STATUS_RANK = { inprogress: 0, open: 1, blocked: 2, draft: 3, closed: 4 };
+function sortTasks(tasks) {
+  return tasks.slice().sort((a, b) => {
+    const sa = STATUS_RANK[a.status] ?? 1;
+    const sb = STATUS_RANK[b.status] ?? 1;
+    if (sa !== sb) return sa - sb;
+    const pa = parseInt((a.priority || "P2").slice(1), 10);
+    const pb = parseInt((b.priority || "P2").slice(1), 10);
+    if (pa !== pb) return pa - pb;
+    return a.id - b.id;
+  });
 }
 
 function renderList() {
@@ -97,22 +120,27 @@ function renderList() {
       || (t.status || "").toLowerCase() === filter
       || (t.priority || "").toLowerCase() === filter;
   });
+  renderMeta(visible.length);
   if (visible.length === 0) {
     const empty = el("div", state.tasks.length === 0 ? "No tasks yet. Add one with the button above." : "No matches.");
     empty.className = "empty";
     list.append(empty);
     return;
   }
-  for (const t of visible) list.append(taskCard(t));
+  for (const t of sortTasks(visible)) list.append(taskCard(t));
 }
 
-function renderMeta() {
+function renderMeta(matched) {
   document.getElementById("file-path").textContent = state.file ? state.file.path : "TASKS.md";
   const meta = document.getElementById("file-meta");
   if (!state.file) { meta.textContent = ""; return; }
-  const count = state.file.task_count;
+  const total = state.file.task_count;
+  const filtered = state.filter.trim() !== "" && matched != null && matched !== total;
+  const count = filtered
+    ? `${matched} of ${total} task${total === 1 ? "" : "s"}`
+    : `${total} task${total === 1 ? "" : "s"}`;
   const u = state.file.updated_at ? new Date(state.file.updated_at).toLocaleString() : "";
-  meta.textContent = `· ${count} task${count === 1 ? "" : "s"}${u ? " · updated " + u : ""}`;
+  meta.textContent = `· ${count}${u ? " · updated " + u : ""}`;
 }
 
 // --- Actions -----------------------------------------------------------

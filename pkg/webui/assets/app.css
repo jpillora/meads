@@ -1,18 +1,22 @@
-/* Use VS Code theme variables when available; fall back to sensible defaults. */
+/* Use VS Code theme variables when available; otherwise default to a dark palette.
+   In VS Code, the user's theme drives colors. In a plain browser, the fallbacks below take over. */
 :root {
-  --fg: var(--vscode-foreground, #1f2328);
-  --bg: var(--vscode-editor-background, #ffffff);
-  --muted: var(--vscode-descriptionForeground, #6a737d);
-  --border: var(--vscode-panel-border, #d0d7de);
-  --accent: var(--vscode-button-background, #0969da);
+  color-scheme: dark;
+  --fg: var(--vscode-foreground, #e6edf3);
+  --bg: var(--vscode-editor-background, #0d1117);
+  --muted: var(--vscode-descriptionForeground, #8b949e);
+  --border: var(--vscode-panel-border, #30363d);
+  --accent: var(--vscode-button-background, #2f81f7);
   --accent-fg: var(--vscode-button-foreground, #ffffff);
-  --card: var(--vscode-editorWidget-background, #f6f8fa);
-  --danger: var(--vscode-errorForeground, #cf222e);
-  --chip-bg: var(--vscode-badge-background, #ddf4ff);
-  --chip-fg: var(--vscode-badge-foreground, #0969da);
-  --input-bg: var(--vscode-input-background, #ffffff);
-  --input-fg: var(--vscode-input-foreground, #1f2328);
-  --input-border: var(--vscode-input-border, #d0d7de);
+  --card: var(--vscode-editorWidget-background, #161b22);
+  --danger: var(--vscode-errorForeground, #f85149);
+  --warn: #d29922;
+  --success: #3fb950;
+  --chip-bg: var(--vscode-badge-background, rgba(56,139,253,0.18));
+  --chip-fg: var(--vscode-badge-foreground, #79c0ff);
+  --input-bg: var(--vscode-input-background, #0d1117);
+  --input-fg: var(--vscode-input-foreground, #e6edf3);
+  --input-border: var(--vscode-input-border, #30363d);
 }
 
 * { box-sizing: border-box; }
@@ -104,8 +108,16 @@ main { padding: 0.75rem 1rem 2rem; display: flex; flex-direction: column; gap: 0
   line-height: 1.6;
 }
 .chip.type-bug { background: color-mix(in srgb, var(--danger) 18%, transparent); color: var(--danger); }
+.chip.type-feature { background: color-mix(in srgb, var(--success) 18%, transparent); color: var(--success); }
+.chip.type-idea { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
 .chip.status-inprogress { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); }
+.chip.status-blocked { background: color-mix(in srgb, var(--danger) 18%, transparent); color: var(--danger); }
+.chip.status-closed { background: color-mix(in srgb, var(--muted) 18%, transparent); color: var(--muted); }
+.chip.status-draft { background: color-mix(in srgb, var(--muted) 12%, transparent); color: var(--muted); }
 .chip.p0, .chip.p1 { background: color-mix(in srgb, var(--danger) 18%, transparent); color: var(--danger); }
+.chip.p3, .chip.p4, .chip.p5, .chip.p6, .chip.p7, .chip.p8, .chip.p9 {
+  background: color-mix(in srgb, var(--muted) 14%, transparent); color: var(--muted);
+}
 
 .deps { display: inline-flex; gap: 0.25rem; flex-wrap: wrap; }
 .dep-link {
