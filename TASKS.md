@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-05-20T15:37:37Z
+* updated: 2026-05-20T15:41:31Z
 * max-id: 12
 * next-id: 13
 
@@ -15,15 +15,6 @@ a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 * created: 2026-05-20T11:55:18Z
 
 Replace the plain comma-separated ID field with an autocomplete of existing tasks, showing id + title.
-
-## 6. webui status-reason inline prompt
-
-* status: open
-* priority: P2
-* type: feature
-* created: 2026-05-20T11:55:18Z
-
-When advancing to blocked or closed via the card button, prompt for a reason and PATCH it alongside status.
 
 ## 7. webui sort/group controls
 
