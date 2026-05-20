@@ -3,17 +3,8 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-05-20T16:41:38Z
+* updated: 2026-05-20T22:49:02Z
 * next-id: 13
-
-## 14. webui file path truncates to 'T...' on widths up to 1100px
-
-* status: open
-* priority: P2
-* type: bug
-* created: 2026-05-20T16:40:42Z
-
-The file-meta span ("· N tasks · updated 5/21/2026, 2:35:17 AM") consumes the title row's space, so .bar .title strong with overflow:hidden ellipsis-collapses even when there's room. Repro: open webui at 320/375/414/480/640/768/1024 — TASKS.md becomes T...TASKS.... Suggested fix: stack title strong + file-meta in column flex when actions wrap (or below some min-width), or use a shorter file-meta. See tmp/responsive/{320,768,1024}.png.
 
 ## 15. feat: cap card width at ~960px and center the main list
 

@@ -36,13 +36,16 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 0.5rem 1rem;
   padding: 0.5rem 1rem;
   border-bottom: 1px solid var(--border);
   background: var(--bg);
+  flex-wrap: wrap;
 }
-.bar .title { display: flex; align-items: baseline; gap: 0.5rem; min-width: 0; }
-.bar .title strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Title row: file path doesn't shrink (it's short — "TASKS.md" or similar);
+   the meta sits beside it on wide screens and wraps below when squeezed. */
+.bar .title { display: flex; align-items: baseline; gap: 0.5rem; min-width: 0; flex-wrap: wrap; }
+.bar .title strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; max-width: 100%; }
 .bar .actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
 .bar .actions .toggle {
   display: inline-flex;
