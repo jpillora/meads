@@ -3,17 +3,8 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-05-20T23:03:07Z
+* updated: 2026-05-20T23:07:33Z
 * next-id: 13
-
-## 16. header actions wrap a single button onto a second row near 1000-1100px
-
-* status: open
-* priority: P3
-* type: bug
-* created: 2026-05-20T16:40:57Z
-
-At ~1024px width the '?' help button drops to its own row because all other controls (filter, sort, group, show-closed, copy URL, +new task) just barely fit. Visually awkward — one tiny chip floating below a full row. Suggested fix: tighten the gap (currently 0.5rem) or shrink the trailing icon buttons in that range, or merge ?/copy URL into a kebab. See tmp/responsive/1024.png.
 
 ## 17. shorten the header timestamp (use relative time like the card footers)
 

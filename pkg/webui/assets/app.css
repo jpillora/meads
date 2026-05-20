@@ -46,7 +46,10 @@ html, body {
    the meta sits beside it on wide screens and wraps below when squeezed. */
 .bar .title { display: flex; align-items: baseline; gap: 0.5rem; min-width: 0; flex-wrap: wrap; }
 .bar .title strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; max-width: 100%; }
-.bar .actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; position: relative; }
+/* Tighter gap (0.35rem) keeps the 7 controls on one row in the awkward
+   1000-1100px range; the wider 0.5rem version used to push '?' alone to
+   a second row whenever the file-meta string ran long. */
+.bar .actions { display: flex; gap: 0.35rem; align-items: center; flex-wrap: wrap; position: relative; }
 .bar .actions .overflow-group { display: contents; }
 .bar .actions .toggle {
   display: inline-flex;
