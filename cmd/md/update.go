@@ -10,10 +10,11 @@ import (
 type updateCmd struct {
 	globals      *globals
 	ID           string `opts:"mode=arg" help:"Task ID to update"`
-	Status       string `help:"Set task status"`
-	Priority     string `help:"Set task priority"`
+	Status       string `help:"Set task status (draft, open, inprogress, blocked, closed)"`
+	Priority     string `help:"Set task priority (P0-P9 or 0-9)"`
 	Title        string `help:"Set task title"`
-	Description  string `help:"Set task description"`
+	Type         string `help:"Set task type (bug, task, feature, idea)"`
+	Description  string `help:"Set task description (JSON-encoded markdown)"`
 	StatusReason string `help:"Set status reason"`
 }
 
@@ -27,6 +28,11 @@ func (c *updateCmd) Run() error {
 			return err
 		}
 	}
+	if c.Type != "" {
+		if err := meads.ValidateType(c.Type); err != nil {
+			return err
+		}
+	}
 	priority := c.Priority
 	if priority != "" {
 		var perr error
@@ -35,6 +41,7 @@ func (c *updateCmd) Run() error {
 			return perr
 		}
 	}
+	description := decodeJSONEscapes(c.Description)
 	var updated meads.Task
 	err = c.globals.store().Update(id, func(t *meads.Task) {
 		if c.Status != "" {
@@ -46,8 +53,11 @@ func (c *updateCmd) Run() error {
 		if c.Title != "" {
 			t.Title = c.Title
 		}
-		if c.Description != "" {
-			t.Description = c.Description
+		if c.Type != "" {
+			t.SetType(c.Type)
+		}
+		if description != "" {
+			t.Description = description
 		}
 		if c.StatusReason != "" {
 			t.StatusReason = c.StatusReason
