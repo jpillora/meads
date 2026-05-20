@@ -3,16 +3,8 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-05-20T22:49:02Z
+* updated: 2026-05-20T22:58:10Z
 * next-id: 13
-
-## 15. feat: cap card width at ~960px and center the main list
-
-* status: open
-* priority: P2
-* created: 2026-05-20T16:40:48Z
-
-Cards span the full viewport at 1280/1440/1920px, leaving large empty space between the title and chips on the right, and producing 130+ char description lines that are hard to read. Suggested fix: main { max-width: 960px; margin: 0 auto; } (and maybe a higher max-width for true desktop). Cards stay full-width within that container. See tmp/responsive/{1280,1440,1920}.png.
 
 ## 16. header actions wrap a single button onto a second row near 1000-1100px
 
