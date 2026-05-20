@@ -17,7 +17,7 @@ type addCmd struct {
 	Priority    string   `help:"Set task priority (P0-P9 or 0-9)"`
 	Type        string   `help:"Set task type (bug, task, feature, idea)"`
 	DependsOn   string   `opts:"name=depends-on" help:"Set dependency task ID"`
-	Description string   `help:"Set task description (JSON-encoded markdown)"`
+	Description string   `help:"Set task description — markdown with JSON-style escapes (\\n, \\t, \\uXXXX, etc.)"`
 	Draft       bool     `help:"Create task with draft status (defaults to open)"`
 }
 

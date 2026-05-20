@@ -14,7 +14,7 @@ type updateCmd struct {
 	Priority     string `help:"Set task priority (P0-P9 or 0-9)"`
 	Title        string `help:"Set task title"`
 	Type         string `help:"Set task type (bug, task, feature, idea)"`
-	Description  string `help:"Set task description (JSON-encoded markdown)"`
+	Description  string `help:"Set task description — markdown with JSON-style escapes (\\n, \\t, \\uXXXX, etc.)"`
 	StatusReason string `help:"Set status reason"`
 }
 
