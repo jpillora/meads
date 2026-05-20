@@ -3,18 +3,9 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-05-20T15:58:51Z
+* updated: 2026-05-20T16:02:24Z
 * max-id: 12
 * next-id: 13
-
-## 8. webui hide-closed toggle
-
-* status: open
-* priority: P3
-* type: feature
-* created: 2026-05-20T11:55:18Z
-
-Header chip/checkbox to hide closed tasks; persist in localStorage; default to hidden once we have a way to see them again.
 
 ## 9. webui show created/updated per card
 
