@@ -3,18 +3,9 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-05-20T16:02:24Z
+* updated: 2026-05-20T16:06:56Z
 * max-id: 12
 * next-id: 13
-
-## 9. webui show created/updated per card
-
-* status: open
-* priority: P3
-* type: feature
-* created: 2026-05-20T11:55:18Z
-
-Add a small muted timestamp in the card footer using the task meta map.
 
 ## 10. webui success toast on action
 

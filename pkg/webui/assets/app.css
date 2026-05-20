@@ -126,7 +126,13 @@ main { padding: 0.75rem 1rem 2rem; display: flex; flex-direction: column; gap: 0
   overflow-x: auto;
 }
 .card .description pre code { background: transparent; padding: 0; }
-.card footer { display: flex; gap: 0.25rem; margin-top: 0.25rem; }
+.card footer { display: flex; gap: 0.25rem; margin-top: 0.25rem; align-items: center; }
+.card-time {
+  margin-left: auto;
+  font-size: 0.8em;
+  color: var(--muted);
+  white-space: nowrap;
+}
 .card footer button {
   background: transparent;
   border-color: transparent;
