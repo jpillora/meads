@@ -97,9 +97,9 @@ func readStartLine(r io.Reader, timeout time.Duration) (string, error) {
 		defer close(done)
 		s := bufio.NewScanner(r)
 		for s.Scan() {
-			t := s.Text()
-			if strings.HasPrefix(t, "MEADS_WEBUI ") {
-				line = strings.TrimPrefix(t, "MEADS_WEBUI ")
+			t := strings.TrimSpace(s.Text())
+			if strings.HasPrefix(t, "{") {
+				line = t
 				return
 			}
 		}

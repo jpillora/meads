@@ -185,7 +185,7 @@ func (s *Server) printStartLine() error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(s.cfg.Stdout, "MEADS_WEBUI %s\n", raw)
+		fmt.Fprintf(s.cfg.Stdout, "%s\n", raw)
 	case "url":
 		fmt.Fprintf(s.cfg.Stdout, "%s/?token=%s\n", info.URL, info.Token)
 	default:

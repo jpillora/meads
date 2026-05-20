@@ -49,20 +49,26 @@ export function start(
     const rl = readline.createInterface({ input: child.stdout! });
     const onTimeout = setTimeout(() => {
       rl.close();
-      reject(new Error("md webui did not print MEADS_WEBUI line within 5s"));
+      reject(new Error("md webui did not print start info within 5s"));
     }, 5000);
     rl.on("line", (line) => {
-      if (!line.startsWith("MEADS_WEBUI ")) {
+      // Start info is a single JSON object on stdout. Non-JSON lines are forwarded to the output channel.
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("{")) {
         output.appendLine(`[stdout] ${line}`);
         return;
       }
-      clearTimeout(onTimeout);
-      rl.close();
       try {
-        const json = JSON.parse(line.slice("MEADS_WEBUI ".length)) as StartInfo;
+        const json = JSON.parse(trimmed) as StartInfo;
+        if (!json.url || !json.token) {
+          output.appendLine(`[stdout] ${line}`);
+          return;
+        }
+        clearTimeout(onTimeout);
+        rl.close();
         resolve(json);
-      } catch (err) {
-        reject(err);
+      } catch {
+        output.appendLine(`[stdout] ${line}`);
       }
     });
     child.on("error", (err) => {

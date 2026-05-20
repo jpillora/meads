@@ -106,7 +106,7 @@ stdout on startup with the URL and access token:
 
 ```bash
 md webui
-# MEADS_WEBUI {"url":"http://127.0.0.1:54231","token":"…","file":"TASKS.md","format":"md"}
+# {"url":"http://127.0.0.1:54231","token":"…","file":"TASKS.md","format":"md"}
 ```
 
 Pass `--open` to launch the browser automatically, or `--port 3000` for a
