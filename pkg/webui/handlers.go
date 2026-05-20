@@ -24,6 +24,7 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("PATCH /api/tasks/{id}", s.handleUpdateTask)
 	mux.HandleFunc("DELETE /api/tasks/{id}", s.handleDeleteTask)
 	mux.HandleFunc("POST /api/tasks/{id}/deps", s.handleAddDep)
+	mux.HandleFunc("DELETE /api/tasks/{id}/deps/{parentId}", s.handleRemoveDep)
 	mux.HandleFunc("GET /api/ready", s.handleReady)
 	mux.HandleFunc("GET /api/events", s.handleEvents)
 	mux.HandleFunc("GET /bind-vscode", s.handleBindVSCode)
@@ -250,6 +251,34 @@ func (s *Server) handleAddDep(w http.ResponseWriter, r *http.Request) {
 	}
 	err = s.cfg.Store.Update(id, func(t *meads.Task) {
 		t.AddDep(in.ParentID)
+	})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	tasks, err := s.cfg.Store.Get([]int{id})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	s.events.publish(event{Kind: "task_updated", Task: &tasks[0]})
+	writeJSON(w, http.StatusOK, tasks[0])
+}
+
+func (s *Server) handleRemoveDep(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	parentRaw := r.PathValue("parentId")
+	parent, perr := strconv.Atoi(parentRaw)
+	if perr != nil || parent <= 0 {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("invalid parent id %q", parentRaw))
+		return
+	}
+	err = s.cfg.Store.Update(id, func(t *meads.Task) {
+		t.RemoveDep(parent)
 	})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)

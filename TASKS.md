@@ -3,18 +3,9 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-05-20T15:34:06Z
+* updated: 2026-05-20T15:37:37Z
 * max-id: 12
 * next-id: 13
-
-## 4. webui remove-dependency support
-
-* status: open
-* priority: P2
-* type: feature
-* created: 2026-05-20T11:55:18Z
-
-Add DELETE /api/tasks/{id}/deps/{parent_id} and a chip-x UI on each dependency. Title fix is the JS comment in submitEditor flagging this as out of v1 scope.
 
 ## 5. webui dependency picker in editor
 

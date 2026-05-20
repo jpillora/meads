@@ -165,6 +165,17 @@ func (t *Task) AddDep(id int) {
 	t.SetDependsOn(append(t.DependsOn, id))
 }
 
+// RemoveDep removes a dependency ID if present; no-op otherwise.
+func (t *Task) RemoveDep(id int) {
+	out := t.DependsOn[:0:0]
+	for _, d := range t.DependsOn {
+		if d != id {
+			out = append(out, d)
+		}
+	}
+	t.SetDependsOn(out)
+}
+
 // SetMeta sets a metadata key-value pair and syncs convenience fields.
 func (t *Task) SetMeta(key, value string) {
 	t.ensureMeta()

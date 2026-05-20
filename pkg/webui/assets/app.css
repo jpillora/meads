@@ -142,15 +142,32 @@ main { padding: 0.75rem 1rem 2rem; display: flex; flex-direction: column; gap: 0
 }
 
 .deps { display: inline-flex; gap: 0.25rem; flex-wrap: wrap; }
-.dep-link {
+.dep {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
   font-size: 0.8em;
+}
+.dep-link {
   color: var(--accent);
   cursor: pointer;
   background: transparent;
   border: 0;
   padding: 0;
+  font-size: inherit;
 }
 .dep-link:hover { text-decoration: underline; }
+.dep-remove {
+  color: var(--muted);
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  padding: 0 4px;
+  font-size: 1em;
+  line-height: 1;
+  border-radius: 2px;
+}
+.dep-remove:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
 
 dialog {
   border: 1px solid var(--border);
