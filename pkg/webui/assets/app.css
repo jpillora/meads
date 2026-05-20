@@ -46,7 +46,8 @@ html, body {
    the meta sits beside it on wide screens and wraps below when squeezed. */
 .bar .title { display: flex; align-items: baseline; gap: 0.5rem; min-width: 0; flex-wrap: wrap; }
 .bar .title strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; max-width: 100%; }
-.bar .actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.bar .actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; position: relative; }
+.bar .actions .overflow-group { display: contents; }
 .bar .actions .toggle {
   display: inline-flex;
   align-items: center;
@@ -55,6 +56,33 @@ html, body {
   color: var(--muted);
   cursor: pointer;
   user-select: none;
+}
+#overflow-toggle { display: none; font-family: var(--vscode-editor-font-family, ui-monospace, monospace); min-width: 28px; font-size: 1.1em; line-height: 1; }
+/* On narrow viewports, fold non-essential controls into a kebab dropdown so
+   the header stays one row of: filter, +New task, ⋮. */
+@media (max-width: 640px) {
+  #overflow-toggle { display: inline-flex; align-items: center; justify-content: center; }
+  .bar .actions .overflow-group { display: none; }
+  .bar .actions[data-overflow-open] .overflow-group {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 4px;
+    z-index: 11;
+    min-width: 180px;
+    padding: 0.5rem;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+  }
+  .bar .actions[data-overflow-open] .overflow-group .toggle { font-size: 1em; padding: 2px 0; }
+  .bar .actions[data-overflow-open] .overflow-group select,
+  .bar .actions[data-overflow-open] .overflow-group button { width: 100%; text-align: left; }
 }
 .group-header {
   margin: 0.75rem 0 0.1rem;

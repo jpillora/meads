@@ -14,21 +14,24 @@
   </div>
   <div class="actions">
     <input type="search" id="filter" placeholder="Filter…  (/ to focus)" autocomplete="off">
-    <select id="sort-by" title="Sort tasks">
-      <option value="default">Sort: status</option>
-      <option value="priority">Sort: priority</option>
-      <option value="id">Sort: id</option>
-      <option value="updated">Sort: updated</option>
-    </select>
-    <label class="toggle" title="Show status group headers">
-      <input type="checkbox" id="group-by-status"> group
-    </label>
-    <label class="toggle" title="Show tasks with status=closed">
-      <input type="checkbox" id="show-closed"> show closed
-    </label>
-    <button id="copy-url" title="Copy share URL (with token)">copy URL</button>
+    <div class="overflow-group">
+      <select id="sort-by" title="Sort tasks">
+        <option value="default">Sort: status</option>
+        <option value="priority">Sort: priority</option>
+        <option value="id">Sort: id</option>
+        <option value="updated">Sort: updated</option>
+      </select>
+      <label class="toggle" title="Show status group headers">
+        <input type="checkbox" id="group-by-status"> group
+      </label>
+      <label class="toggle" title="Show tasks with status=closed">
+        <input type="checkbox" id="show-closed"> show closed
+      </label>
+      <button id="copy-url" title="Copy share URL (with token)">copy URL</button>
+      <button id="help-toggle" title="Keyboard shortcuts (?)">?</button>
+    </div>
     <button id="new-task">+ New task</button>
-    <button id="help-toggle" title="Keyboard shortcuts (?)">?</button>
+    <button id="overflow-toggle" title="More options" aria-expanded="false" aria-haspopup="true">⋮</button>
   </div>
 </header>
 
