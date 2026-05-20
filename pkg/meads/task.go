@@ -165,8 +165,19 @@ func (t *Task) AddDep(id int) {
 	t.SetDependsOn(append(t.DependsOn, id))
 }
 
-// RemoveDep removes a dependency ID if present; no-op otherwise.
+// RemoveDep removes a dependency ID if present; true no-op otherwise so
+// callers that funnel through Store.Update don't trigger a needless write.
 func (t *Task) RemoveDep(id int) {
+	found := false
+	for _, d := range t.DependsOn {
+		if d == id {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return
+	}
 	out := t.DependsOn[:0:0]
 	for _, d := range t.DependsOn {
 		if d != id {

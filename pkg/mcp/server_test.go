@@ -169,20 +169,25 @@ func TestUpdateTask(t *testing.T) {
 	var addOut struct{ ID int }
 	unmarshalContent(t, addRes, &addOut)
 
-	// Update status
+	// Update status and type
 	callTool(t, cs, ctx, "update_task", map[string]any{
 		"id":     addOut.ID,
 		"status": "closed",
+		"type":   "bug",
 	})
 
-	// Verify
+	// Verify both fields landed.
 	getRes := callTool(t, cs, ctx, "get_task", map[string]any{"id": addOut.ID})
 	var task struct {
 		Status string `json:"status"`
+		Type   string `json:"type"`
 	}
 	unmarshalContent(t, getRes, &task)
 	if task.Status != "closed" {
 		t.Errorf("expected status 'closed', got %q", task.Status)
+	}
+	if task.Type != "bug" {
+		t.Errorf("expected type 'bug', got %q", task.Type)
 	}
 }
 

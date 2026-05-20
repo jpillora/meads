@@ -102,6 +102,11 @@ func NewServer(store *meads.Store, version string) *mcp.Server {
 				return nil, nil, err
 			}
 		}
+		if input.Type != "" {
+			if err := meads.ValidateType(input.Type); err != nil {
+				return nil, nil, err
+			}
+		}
 		priority := input.Priority
 		if priority != "" {
 			var perr error
@@ -119,6 +124,9 @@ func NewServer(store *meads.Store, version string) *mcp.Server {
 			}
 			if input.Title != "" {
 				t.Title = input.Title
+			}
+			if input.Type != "" {
+				t.SetType(input.Type)
 			}
 			if input.Description != "" {
 				t.Description = input.Description

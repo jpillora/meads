@@ -192,6 +192,63 @@ func TestAddDependency(t *testing.T) {
 	}
 }
 
+func TestRemoveDependency(t *testing.T) {
+	ts, token := newTestServer(t)
+	do(t, ts, token, http.MethodPost, "/api/tasks", meads.AddTaskInput{Title: "Parent"})
+	do(t, ts, token, http.MethodPost, "/api/tasks", meads.AddTaskInput{Title: "Child"})
+	do(t, ts, token, http.MethodPost, "/api/tasks/2/deps", map[string]int{"parent_id": 1})
+
+	resp, body := do(t, ts, token, http.MethodDelete, "/api/tasks/2/deps/1", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d body=%s", resp.StatusCode, body)
+	}
+	var got meads.Task
+	_ = json.Unmarshal(body, &got)
+	if len(got.DependsOn) != 0 {
+		t.Errorf("expected depends_on=[], got %v", got.DependsOn)
+	}
+
+	// Removing an absent parent is accepted and leaves deps empty.
+	resp, _ = do(t, ts, token, http.MethodDelete, "/api/tasks/2/deps/1", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200 for absent-parent remove, got %d", resp.StatusCode)
+	}
+
+	// Invalid parent IDs reject with 400.
+	resp, _ = do(t, ts, token, http.MethodDelete, "/api/tasks/2/deps/0", nil)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400 for zero parent, got %d", resp.StatusCode)
+	}
+	resp, _ = do(t, ts, token, http.MethodDelete, "/api/tasks/2/deps/abc", nil)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400 for non-numeric parent, got %d", resp.StatusCode)
+	}
+}
+
+func TestUpdateTask_Type(t *testing.T) {
+	ts, token := newTestServer(t)
+	do(t, ts, token, http.MethodPost, "/api/tasks", meads.AddTaskInput{Title: "Triage"})
+
+	// Valid type updates.
+	resp, body := do(t, ts, token, http.MethodPatch, "/api/tasks/1",
+		meads.UpdateTaskInput{ID: 1, Type: "bug"})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d body=%s", resp.StatusCode, body)
+	}
+	var got meads.Task
+	_ = json.Unmarshal(body, &got)
+	if got.Type != "bug" {
+		t.Errorf("expected type=bug, got %q", got.Type)
+	}
+
+	// Invalid type rejects.
+	resp, _ = do(t, ts, token, http.MethodPatch, "/api/tasks/1",
+		meads.UpdateTaskInput{ID: 1, Type: "nonsense"})
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400 for invalid type, got %d", resp.StatusCode)
+	}
+}
+
 func TestReady_FiltersBlocked(t *testing.T) {
 	ts, token := newTestServer(t)
 	do(t, ts, token, http.MethodPost, "/api/tasks", meads.AddTaskInput{Title: "Blocker"})
