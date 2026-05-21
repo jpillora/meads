@@ -3,17 +3,18 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-05-21T07:56:47Z
+* updated: 2026-05-21T08:00:23Z
+* max-id: 25
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
 
-* status: open
+* status: inprogress
 * priority: P2
 * type: feature
 * depends-on: 
 * created: 2026-05-21T07:29:29Z
-* updated: 2026-05-21T07:53:42Z
+* updated: 2026-05-21T07:57:54Z
 
 Package the extension locally (vsce package in vscode/), install the .vsix in VS Code, open a TASKS.md, confirm webui renders inside the webview, confirm changes round-trip, confirm bind-vscode JSON-RPC works (vscode.openFile, vscode.showQuickPick, vscode.copyToClipboard, vscode.openExternal, vscode.showMessage), confirm subprocess cleanup on tab close. Also test in a Remote-SSH or Codespaces workspace once #24 lands. Note: bearer token currently rides in the iframe query string — fine inside a sandboxed webview but worth a glance during review.
 
@@ -33,7 +34,7 @@ The setting is declared in vscode/package.json and getVersion() exists in vscode
 * status: open
 * priority: P2
 * type: task
-* depends-on: 20,21,25
+* depends-on: 20,21
 * created: 2026-05-21T07:29:29Z
 * updated: 2026-05-21T07:53:42Z
 
@@ -49,12 +50,3 @@ After the e2e test passes, push a v* tag — the release_vscode job in .github/w
 * updated: 2026-05-21T07:29:34Z
 
 Once the .vsix is attached to a real release, re-add the 'Web UI + VS Code extension' section to README.md with install instructions (download .vsix from Releases, install via 'Extensions: Install from VSIX...').
-
-## 25. Set explicit Content-Security-Policy on Meads webview
-
-* status: open
-* priority: P3
-* type: task
-* created: 2026-05-21T07:53:31Z
-
-vscode/src/webview.ts emits no CSP meta tag, so it relies on VS Code's default permissive CSP for webviews with scripts enabled. A future VS Code release could tighten the default and break the iframe. Add a <meta http-equiv="Content-Security-Policy"> tag whitelisting frame-src for the iframe origin (and connect-src for the websocket). The origin will be dynamic — derive it from info.url (post-asExternalUri).
