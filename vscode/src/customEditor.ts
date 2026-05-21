@@ -44,9 +44,21 @@ export class MeadsEditorProvider implements vscode.CustomTextEditorProvider {
       return;
     }
 
-    webviewPanel.webview.html = webviewHTML(info.url, info.token);
+    // The iframe runs in the user's browser. In Remote-SSH / Codespaces /
+    // dev-container workspaces the browser can't reach the extension host's
+    // localhost, so we ask VS Code to expose the port. asExternalUri is a
+    // no-op when the workspace is local.
+    const externalUri = await vscode.env.asExternalUri(
+      vscode.Uri.parse(info.url),
+    );
+    webviewPanel.webview.html = webviewHTML(
+      externalUri.toString(),
+      info.token,
+    );
 
-    // Bind a reverse-RPC channel from the extension host.
+    // The bind socket is opened by Node in the extension host, which runs
+    // on the same machine as `md webui` (the workspace side in remote
+    // scenarios). Localhost is reachable and avoids a needless tunnel hop.
     const wsURL = info.url.replace(/^http/i, "ws") + "/bind-vscode";
     const bind = new BindConnection(wsURL, info.token, this.output);
 

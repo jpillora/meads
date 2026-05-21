@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-05-21T07:53:42Z
+* updated: 2026-05-21T07:56:47Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -11,7 +11,7 @@ a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 * status: open
 * priority: P2
 * type: feature
-* depends-on: 24
+* depends-on: 
 * created: 2026-05-21T07:29:29Z
 * updated: 2026-05-21T07:53:42Z
 
@@ -33,7 +33,7 @@ The setting is declared in vscode/package.json and getVersion() exists in vscode
 * status: open
 * priority: P2
 * type: task
-* depends-on: 20,21,24,25
+* depends-on: 20,21,25
 * created: 2026-05-21T07:29:29Z
 * updated: 2026-05-21T07:53:42Z
 
@@ -49,15 +49,6 @@ After the e2e test passes, push a v* tag — the release_vscode job in .github/w
 * updated: 2026-05-21T07:29:34Z
 
 Once the .vsix is attached to a real release, re-add the 'Web UI + VS Code extension' section to README.md with install instructions (download .vsix from Releases, install via 'Extensions: Install from VSIX...').
-
-## 24. VS Code extension does not support Remote/Codespaces/SSH
-
-* status: open
-* priority: P2
-* type: bug
-* created: 2026-05-21T07:53:31Z
-
-vscode/src/webview.ts injects a literal http://127.0.0.1:<port> URL into the iframe src. When the workspace is remote, the webview runs in the user's browser and cannot reach that port on the extension host. Fix: in customEditor.ts, wrap info.url with vscode.env.asExternalUri(vscode.Uri.parse(info.url)) before passing it to webviewHTML(), so VS Code sets up port forwarding automatically. Also confirm the bind-vscode WebSocket URL is built from the forwarded URL, not the raw one.
 
 ## 25. Set explicit Content-Security-Policy on Meads webview
 
