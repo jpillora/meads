@@ -3,8 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-05-21T08:00:23Z
-* max-id: 25
+* updated: 2026-05-21T16:36:32Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -14,9 +13,9 @@ a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 * type: feature
 * depends-on: 
 * created: 2026-05-21T07:29:29Z
-* updated: 2026-05-21T07:57:54Z
+* updated: 2026-05-21T16:36:32Z
 
-Package the extension locally (vsce package in vscode/), install the .vsix in VS Code, open a TASKS.md, confirm webui renders inside the webview, confirm changes round-trip, confirm bind-vscode JSON-RPC works (vscode.openFile, vscode.showQuickPick, vscode.copyToClipboard, vscode.openExternal, vscode.showMessage), confirm subprocess cleanup on tab close. Also test in a Remote-SSH or Codespaces workspace once #24 lands. Note: bearer token currently rides in the iframe query string — fine inside a sandboxed webview but worth a glance during review.
+Package the extension locally (vsce package in vscode/), install the .vsix in **desktop VS Code** (NOT 'code serve-web' / vscode.dev / Codespaces — those are blocked by mixed-content; see #26), open a TASKS.md, confirm webui renders inside the webview, confirm changes round-trip, confirm bind-vscode JSON-RPC works (vscode.openFile, vscode.showQuickPick, vscode.copyToClipboard, vscode.openExternal, vscode.showMessage), confirm subprocess cleanup on tab close. Note: bearer token currently rides in the iframe query string — fine inside a sandboxed webview but worth a glance during review.
 
 ## 21. meads.minMdVersion setting is dead code
 
@@ -50,3 +49,12 @@ After the e2e test passes, push a v* tag — the release_vscode job in .github/w
 * updated: 2026-05-21T07:29:34Z
 
 Once the .vsix is attached to a real release, re-add the 'Web UI + VS Code extension' section to README.md with install instructions (download .vsix from Releases, install via 'Extensions: Install from VSIX...').
+
+## 26. extension doesn't work in code serve-web / vscode.dev / Codespaces
+
+* status: open
+* priority: P3
+* type: bug
+* created: 2026-05-21T16:36:32Z
+
+The webview iframe loads md webui over HTTP, but VS Code's web client hosts webviews on an HTTPS origin (*.vscode-cdn.net). Chrome blocks the iframe as mixed-content before VS Code's portMapping/asExternalUri proxy can intercept (verified empirically with code serve-web 1.103.2 + agent-browser: no request reaches md webui's HTTP handler). Fix options: (a) serve md webui over HTTPS with a self-signed cert; (b) refactor the webview to load static assets via webview.asWebviewUri and proxy all API/SSE/WS traffic through the existing /bind-vscode channel; (c) document desktop-only and stop pretending. Track this before promoting the extension beyond desktop.

@@ -45,9 +45,15 @@ export class MeadsEditorProvider implements vscode.CustomTextEditorProvider {
     }
 
     // The iframe runs in the user's browser. In Remote-SSH / Codespaces /
-    // dev-container workspaces the browser can't reach the extension host's
-    // localhost, so we ask VS Code to expose the port. asExternalUri is a
-    // no-op when the workspace is local.
+    // vscode.dev workspaces the browser can't reach the extension host's
+    // localhost, so asExternalUri returns a tunneled https://… URL that
+    // it can reach. Locally (and in desktop VS Code) it's a no-op.
+    //
+    // Note: in `code serve-web` the webview is hosted from an HTTPS origin,
+    // and asExternalUri does NOT tunnel — so the embedded HTTP iframe is
+    // silently blocked by mixed-content. serve-web isn't a supported host
+    // for this extension; use desktop VS Code or vscode.dev (with port
+    // forwarding) instead.
     const externalUri = await vscode.env.asExternalUri(
       vscode.Uri.parse(info.url),
     );

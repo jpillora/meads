@@ -1,12 +1,13 @@
 // Minimal HTML wrapper that embeds the webui inside an iframe.
 
 export function webviewHTML(url: string, token: string): string {
-  const full = url + "/?token=" + encodeURIComponent(token);
-  // Lock the webview down explicitly so a future tightening of VS Code's
-  // default webview CSP can't silently break the iframe. frame-src is
-  // dynamic: http://127.0.0.1:<port> locally, or the tunneled
-  // https://...preview... origin under Remote-SSH / Codespaces.
-  const frameOrigin = new URL(url).origin;
+  // Strip a trailing slash from url before re-adding "/" so we never
+  // produce "//?token=…" — vscode.Uri.toString() returns a trailing
+  // slash, but info.url from md webui doesn't, so the concat would
+  // otherwise produce a double slash that triggers a 307 redirect.
+  const base = url.replace(/\/+$/, "");
+  const full = base + "/?token=" + encodeURIComponent(token);
+  const frameOrigin = new URL(base).origin;
   const csp =
     "default-src 'none'; " +
     "style-src 'unsafe-inline'; " +
