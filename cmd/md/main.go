@@ -12,6 +12,9 @@ import (
 var version = "0.0.0-dev"
 
 func defaultTasksFile() string {
+	if v := os.Getenv("MEADS_TASK_FILE"); v != "" {
+		return v
+	}
 	if v := os.Getenv("MD_TASKS"); v != "" {
 		return v
 	}
@@ -21,11 +24,15 @@ func defaultTasksFile() string {
 	return "TASKS.md"
 }
 
+func defaultWebhookURL() string {
+	return os.Getenv("MEADS_WEBHOOK_URL")
+}
+
 type globals struct {
 	Store      *meads.Store `opts:"-"`
 	Git        meads.Git    `opts:"-"`
-	TasksFile  string       `help:"the tasks markdown file to manage"`
-	WebhookURL string       `help:"a url to POST to with {meads:true,action,data}"`
+	TasksFile  string       `help:"the tasks markdown file to manage (env MEADS_TASK_FILE)"`
+	WebhookURL string       `help:"a url to POST to with {meads:true,action,data} (env MEADS_WEBHOOK_URL)"`
 	Dir        string       `opts:"-"`
 }
 
@@ -80,6 +87,7 @@ type root struct {
 func main() {
 	c := root{}
 	c.Globals.TasksFile = defaultTasksFile()
+	c.Globals.WebhookURL = defaultWebhookURL()
 	g := &c.Globals
 	c.Add.globals = g
 	c.Create.globals = g
