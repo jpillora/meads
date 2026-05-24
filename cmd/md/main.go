@@ -32,7 +32,7 @@ type globals struct {
 	Store      *meads.Store `opts:"-"`
 	Git        meads.Git    `opts:"-"`
 	TasksFile  string       `help:"the tasks markdown file to manage (env MEADS_TASK_FILE)"`
-	WebhookURI string       `help:"a uri to POST to with {meads:true,action,data}; http(s):// or unix:///path/to/sock[:/http/path] (env MEADS_WEBHOOK_URI)"`
+	WebhookURI string       `help:"a uri to POST to with {meads:true,action,data}; http(s):// or unix:///path/to/sock or unix://[/path/to/sock]/http/path (env MEADS_WEBHOOK_URI)"`
 	Dir        string       `opts:"-"`
 }
 

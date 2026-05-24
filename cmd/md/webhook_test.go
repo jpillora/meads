@@ -113,7 +113,7 @@ func TestPostWebhook_UnixWithPath(t *testing.T) {
 	go srv.Serve(listener)
 	defer srv.Close()
 
-	g := &globals{WebhookURI: "unix://" + socketPath + ":/hooks/meads"}
+	g := &globals{WebhookURI: "unix://[" + socketPath + "]/hooks/meads"}
 	postWebhook(g, "add", map[string]int{"id": 1})
 
 	if receivedPath != "/hooks/meads" {
@@ -148,9 +148,11 @@ func TestParseUnixURI(t *testing.T) {
 		wantPath   string
 	}{
 		{"unix:///var/run/app.sock", "/var/run/app.sock", "/"},
-		{"unix:///var/run/app.sock:/webhook", "/var/run/app.sock", "/webhook"},
-		{"unix:///var/run/app.sock:/api/hooks", "/var/run/app.sock", "/api/hooks"},
-		{"unix:///tmp/s.sock:", "/tmp/s.sock", "/"},
+		{"unix://[/var/run/app.sock]/webhook", "/var/run/app.sock", "/webhook"},
+		{"unix://[/var/run/app.sock]/api/hooks", "/var/run/app.sock", "/api/hooks"},
+		{"unix://[/var/run/app.sock]", "/var/run/app.sock", "/"},
+		{"unix://[/var/run/app.sock]/", "/var/run/app.sock", "/"},
+		{"unix://[/path:with:colons.sock]/hook", "/path:with:colons.sock", "/hook"},
 	}
 	for _, tt := range tests {
 		sock, path := parseUnixURI(tt.input)
@@ -171,8 +173,8 @@ func TestWebhookHTTPURL(t *testing.T) {
 		{"http://example.com/hook", "http://example.com/hook"},
 		{"https://example.com/hook", "https://example.com/hook"},
 		{"unix:///var/run/app.sock", "http://localhost/"},
-		{"unix:///var/run/app.sock:/webhook", "http://localhost/webhook"},
-		{"unix:///var/run/app.sock:/api/hooks", "http://localhost/api/hooks"},
+		{"unix://[/var/run/app.sock]/webhook", "http://localhost/webhook"},
+		{"unix://[/var/run/app.sock]/api/hooks", "http://localhost/api/hooks"},
 	}
 	for _, tt := range tests {
 		got := webhookHTTPURL(tt.input)

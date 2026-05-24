@@ -56,20 +56,24 @@ func postWebhook(g *globals, action string, data any) {
 }
 
 // parseUnixURI splits a unix:// URI into socket path and HTTP path.
-// Format: unix:///path/to/socket:/http/path
-// The :/http/path suffix is optional and defaults to /.
+// Format: unix://[/path/to/socket]/http/path
+// Bracketed socket disambiguates paths containing colons or other characters.
+// Without brackets, the whole authority+path is treated as the socket and
+// the HTTP path defaults to /.
 func parseUnixURI(rawURI string) (socketPath, httpPath string) {
 	rest := strings.TrimPrefix(rawURI, "unix://")
-	if i := strings.LastIndex(rest, ":"); i > 0 {
-		socketPath = rest[:i]
-		httpPath = rest[i+1:]
-	} else {
-		socketPath = rest
-		httpPath = "/"
+	if strings.HasPrefix(rest, "[") {
+		if end := strings.Index(rest, "]"); end > 0 {
+			socketPath = rest[1:end]
+			httpPath = rest[end+1:]
+			if httpPath == "" {
+				httpPath = "/"
+			}
+			return
+		}
 	}
-	if httpPath == "" {
-		httpPath = "/"
-	}
+	socketPath = rest
+	httpPath = "/"
 	return
 }
 
