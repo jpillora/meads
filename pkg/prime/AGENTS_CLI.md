@@ -21,11 +21,13 @@
   - Title: everything before first `.`
   - Description: everything after the `.`
 - `md add --title="Fix login" --type=bug --priority=P1 --description="Details here"` - Flag-based
+- `md add --title="Fix login" --description-file=/path/to/notes.md` - Description from file
 
 ### Updating Tasks
 - `md update <id> --status=draft|open|inprogress|closed` - Update status
 - `md update <id> --priority=P1` - Update priority
 - `md update <id> --title="New title"` - Update title
+- `md update <id> --description-file=/path/to/notes.md` - Update description from file
 - `md set-status <id> <status>` - Shorthand for status changes
 - `md del <id>` - Delete a task
 

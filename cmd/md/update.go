@@ -2,20 +2,22 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 
 	"github.com/jpillora/meads/pkg/meads"
 )
 
 type updateCmd struct {
-	globals      *globals
-	ID           string `opts:"mode=arg" help:"Task ID to update"`
-	Status       string `help:"Set task status (draft, open, inprogress, blocked, closed)"`
-	Priority     string `help:"Set task priority (P0-P9 or 0-9)"`
-	Title        string `help:"Set task title"`
-	Type         string `help:"Set task type (bug, task, feature, idea)"`
-	Description  string `help:"Set task description — markdown with JSON-style escapes (\\n, \\t, \\uXXXX, etc.)"`
-	StatusReason string `help:"Set status reason"`
+	globals         *globals
+	ID              string `opts:"mode=arg" help:"Task ID to update"`
+	Status          string `help:"Set task status (draft, open, inprogress, blocked, closed)"`
+	Priority        string `help:"Set task priority (P0-P9 or 0-9)"`
+	Title           string `help:"Set task title"`
+	Type            string `help:"Set task type (bug, task, feature, idea)"`
+	Description     string `help:"Set task description — markdown with JSON-style escapes (\\n, \\t, \\uXXXX, etc.)"`
+	DescriptionFile string `opts:"name=description-file" help:"Path to a markdown file to use as the task description"`
+	StatusReason    string `help:"Set status reason"`
 }
 
 func (c *updateCmd) Run() error {
@@ -33,6 +35,18 @@ func (c *updateCmd) Run() error {
 			return err
 		}
 	}
+	// --description and --description-file are mutually exclusive
+	if c.Description != "" && c.DescriptionFile != "" {
+		return fmt.Errorf("cannot use both --description and --description-file")
+	}
+	description := decodeJSONEscapes(c.Description)
+	if c.DescriptionFile != "" {
+		data, err := os.ReadFile(c.DescriptionFile)
+		if err != nil {
+			return fmt.Errorf("reading description file: %w", err)
+		}
+		description = string(data)
+	}
 	priority := c.Priority
 	if priority != "" {
 		var perr error
@@ -41,7 +55,6 @@ func (c *updateCmd) Run() error {
 			return perr
 		}
 	}
-	description := decodeJSONEscapes(c.Description)
 	var updated meads.Task
 	err = c.globals.store().Update(id, func(t *meads.Task) {
 		if c.Status != "" {
