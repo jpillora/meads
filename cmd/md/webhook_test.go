@@ -40,7 +40,7 @@ func TestPostWebhook_HTTP(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	g := &globals{WebhookURL: ts.URL}
+	g := &globals{WebhookURI: ts.URL}
 	postWebhook(g, "add", map[string]int{"id": 42})
 
 	if !received.Meads {
@@ -79,7 +79,7 @@ func TestPostWebhook_Unix(t *testing.T) {
 	go srv.Serve(listener)
 	defer srv.Close()
 
-	g := &globals{WebhookURL: "unix://" + socketPath}
+	g := &globals{WebhookURI: "unix://" + socketPath}
 	postWebhook(g, "delete", map[string]int{"id": 7})
 
 	if !received.Meads {
@@ -113,7 +113,7 @@ func TestPostWebhook_UnixWithPath(t *testing.T) {
 	go srv.Serve(listener)
 	defer srv.Close()
 
-	g := &globals{WebhookURL: "unix://" + socketPath + ":/hooks/meads"}
+	g := &globals{WebhookURI: "unix://" + socketPath + ":/hooks/meads"}
 	postWebhook(g, "add", map[string]int{"id": 1})
 
 	if receivedPath != "/hooks/meads" {
@@ -131,17 +131,17 @@ func TestPostWebhook_ServerError(t *testing.T) {
 	defer ts.Close()
 
 	// Should not panic or return error; just logs to stderr.
-	g := &globals{WebhookURL: ts.URL}
+	g := &globals{WebhookURI: ts.URL}
 	postWebhook(g, "add", nil)
 }
 
 func TestPostWebhook_Unreachable(t *testing.T) {
 	// Should not panic; logs to stderr.
-	g := &globals{WebhookURL: "http://127.0.0.1:1"}
+	g := &globals{WebhookURI: "http://127.0.0.1:1"}
 	postWebhook(g, "add", nil)
 }
 
-func TestParseUnixURL(t *testing.T) {
+func TestParseUnixURI(t *testing.T) {
 	tests := []struct {
 		input      string
 		wantSocket string
@@ -153,12 +153,12 @@ func TestParseUnixURL(t *testing.T) {
 		{"unix:///tmp/s.sock:", "/tmp/s.sock", "/"},
 	}
 	for _, tt := range tests {
-		sock, path := parseUnixURL(tt.input)
+		sock, path := parseUnixURI(tt.input)
 		if sock != tt.wantSocket {
-			t.Errorf("parseUnixURL(%q) socket = %q, want %q", tt.input, sock, tt.wantSocket)
+			t.Errorf("parseUnixURI(%q) socket = %q, want %q", tt.input, sock, tt.wantSocket)
 		}
 		if path != tt.wantPath {
-			t.Errorf("parseUnixURL(%q) path = %q, want %q", tt.input, path, tt.wantPath)
+			t.Errorf("parseUnixURI(%q) path = %q, want %q", tt.input, path, tt.wantPath)
 		}
 	}
 }
@@ -280,7 +280,7 @@ func TestTasksFileWithWebhook(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	g := &globals{Store: store, TasksFile: file, WebhookURL: ts.URL}
+	g := &globals{Store: store, TasksFile: file, WebhookURI: ts.URL}
 
 	// Add
 	add := &addCmd{globals: g, Args: []string{"Webhook test"}}

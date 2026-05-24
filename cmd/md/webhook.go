@@ -18,10 +18,10 @@ type webhookPayload struct {
 	Data   any    `json:"data"`
 }
 
-// postWebhook sends a webhook notification if WebhookURL is configured.
+// postWebhook sends a webhook notification if WebhookURI is configured.
 // Errors are logged to stderr but do not fail the calling command.
 func postWebhook(g *globals, action string, data any) {
-	if g == nil || g.WebhookURL == "" {
+	if g == nil || g.WebhookURI == "" {
 		return
 	}
 	payload := webhookPayload{
@@ -34,8 +34,8 @@ func postWebhook(g *globals, action string, data any) {
 		fmt.Fprintf(os.Stderr, "webhook: marshal error: %v\n", err)
 		return
 	}
-	client := webhookClient(g.WebhookURL)
-	url := webhookHTTPURL(g.WebhookURL)
+	client := webhookClient(g.WebhookURI)
+	url := webhookHTTPURL(g.WebhookURI)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
@@ -55,11 +55,11 @@ func postWebhook(g *globals, action string, data any) {
 	}
 }
 
-// parseUnixURL splits a unix:// URL into socket path and HTTP path.
+// parseUnixURI splits a unix:// URI into socket path and HTTP path.
 // Format: unix:///path/to/socket:/http/path
 // The :/http/path suffix is optional and defaults to /.
-func parseUnixURL(rawURL string) (socketPath, httpPath string) {
-	rest := strings.TrimPrefix(rawURL, "unix://")
+func parseUnixURI(rawURI string) (socketPath, httpPath string) {
+	rest := strings.TrimPrefix(rawURI, "unix://")
 	if i := strings.LastIndex(rest, ":"); i > 0 {
 		socketPath = rest[:i]
 		httpPath = rest[i+1:]
@@ -73,11 +73,11 @@ func parseUnixURL(rawURL string) (socketPath, httpPath string) {
 	return
 }
 
-// webhookClient returns an http.Client configured for the given URL.
-// For unix:// URLs, it dials the Unix socket.
-func webhookClient(rawURL string) *http.Client {
-	if strings.HasPrefix(rawURL, "unix://") {
-		socketPath, _ := parseUnixURL(rawURL)
+// webhookClient returns an http.Client configured for the given URI.
+// For unix:// URIs, it dials the Unix socket.
+func webhookClient(rawURI string) *http.Client {
+	if strings.HasPrefix(rawURI, "unix://") {
+		socketPath, _ := parseUnixURI(rawURI)
 		return &http.Client{
 			Transport: &http.Transport{
 				DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
@@ -89,12 +89,12 @@ func webhookClient(rawURL string) *http.Client {
 	return http.DefaultClient
 }
 
-// webhookHTTPURL converts the webhook URL to a standard HTTP URL.
-// For unix:// URLs, extracts the HTTP path from the colon-separated suffix.
-func webhookHTTPURL(rawURL string) string {
-	if strings.HasPrefix(rawURL, "unix://") {
-		_, httpPath := parseUnixURL(rawURL)
+// webhookHTTPURL converts the webhook URI to a standard HTTP URL.
+// For unix:// URIs, extracts the HTTP path from the colon-separated suffix.
+func webhookHTTPURL(rawURI string) string {
+	if strings.HasPrefix(rawURI, "unix://") {
+		_, httpPath := parseUnixURI(rawURI)
 		return "http://localhost" + httpPath
 	}
-	return rawURL
+	return rawURI
 }
