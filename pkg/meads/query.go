@@ -114,16 +114,7 @@ func (s *Store) GetHistory(git Git) ([]Task, error) {
 		if err != nil {
 			continue // file may not exist in this commit
 		}
-		// Try primary parser first; fallback to the other for mid-history format migrations.
-		f := s.fmt.Parse(content)
-		if len(f.Tasks) == 0 {
-			if _, ok := s.fmt.(csvFormat); ok {
-				f = ParseFile(content)
-			} else {
-				f = ParseCSV(content)
-			}
-		}
-		for _, t := range f.Tasks {
+		for _, t := range s.parseHistorical(content).Tasks {
 			if _, exists := byID[t.ID]; !exists {
 				byID[t.ID] = t
 			}
@@ -139,4 +130,108 @@ func (s *Store) GetHistory(git Git) ([]Task, error) {
 		return tasks[i].ID < tasks[j].ID
 	})
 	return tasks, nil
+}
+
+// parseHistorical parses file content from a historical commit, trying the
+// store's primary format first and falling back to the other for mid-history
+// format migrations (md↔csv).
+func (s *Store) parseHistorical(content string) File {
+	f := s.fmt.Parse(content)
+	if len(f.Tasks) == 0 {
+		if _, ok := s.fmt.(csvFormat); ok {
+			f = ParseFile(content)
+		} else {
+			f = ParseCSV(content)
+		}
+	}
+	return f
+}
+
+// activeByID reads the working file and returns its non-deleted tasks keyed by
+// ID. A missing file yields an empty map (not an error), matching Get.
+func (s *Store) activeByID() (map[int]Task, error) {
+	data, err := util.ReadFile(s.fs, s.file)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return map[int]Task{}, nil
+		}
+		return nil, fmt.Errorf("reading %s: %w", s.file, err)
+	}
+	content := stripLockLines(string(data))
+	f := s.fmt.Parse(content)
+	active := make(map[int]Task, len(f.Tasks))
+	for _, t := range filterDeleted(f.Tasks) {
+		active[t.ID] = t
+	}
+	return active, nil
+}
+
+// recoverFromHistory walks the tasks file's git history newest→oldest and
+// returns the most-recent committed version of each wanted ID, stopping once
+// all are found. git errors are swallowed so a non-git directory simply yields
+// no recoveries.
+func (s *Store) recoverFromHistory(git Git, want map[int]bool) map[int]Task {
+	found := make(map[int]Task)
+	out, err := git.Output("log", "--all", "--format=%H", "--", s.file)
+	if err != nil || out == "" {
+		return found
+	}
+	for _, hash := range strings.Split(out, "\n") {
+		if len(found) == len(want) {
+			break
+		}
+		content, err := git.Output("show", hash+":"+s.file)
+		if err != nil {
+			continue // file may not exist in this commit
+		}
+		for _, t := range s.parseHistorical(content).Tasks {
+			if !want[t.ID] {
+				continue
+			}
+			if _, seen := found[t.ID]; !seen {
+				found[t.ID] = t
+			}
+		}
+	}
+	return found
+}
+
+// GetWithHistory behaves like Get, but any requested ID missing from the active
+// (non-deleted) working file is recovered from git history and returned as its
+// most-recent committed version. It errors only if an ID exists in neither the
+// working file nor history. git failures (e.g. not a git repo) degrade to the
+// plain "task N not found" rather than surfacing a git error.
+func (s *Store) GetWithHistory(git Git, ids []int) ([]Task, error) {
+	if len(ids) == 0 {
+		return s.Get(ids)
+	}
+	active, err := s.activeByID()
+	if err != nil {
+		return nil, err
+	}
+	// Collect IDs missing from the working file.
+	missing := make(map[int]bool)
+	for _, id := range ids {
+		if _, ok := active[id]; !ok {
+			missing[id] = true
+		}
+	}
+	// Only consult git when something is actually missing.
+	var recovered map[int]Task
+	if len(missing) > 0 && git != nil {
+		recovered = s.recoverFromHistory(git, missing)
+	}
+	out := make([]Task, 0, len(ids))
+	for _, id := range ids {
+		if t, ok := active[id]; ok {
+			out = append(out, t)
+			continue
+		}
+		if t, ok := recovered[id]; ok {
+			out = append(out, t)
+			continue
+		}
+		return nil, fmt.Errorf("task %d not found", id)
+	}
+	return out, nil
 }

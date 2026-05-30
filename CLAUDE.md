@@ -16,7 +16,7 @@
 - `md ready` - Show open tasks not blocked by dependencies (sorted by priority)
 - `md list` - List all tasks
 - `md list --json` - List all tasks as JSON
-- `md get <id>` - Get a specific task
+- `md get <id>` - Get a specific task (a deleted task absent from TASKS.md is recovered from git history)
 - `md get --json <id>` - Get a specific task as JSON
 
 ### Creating Tasks

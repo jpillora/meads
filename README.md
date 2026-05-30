@@ -83,7 +83,7 @@ md add "title"                        Add a simple task
 md add "bug: Fix login P1. Details"   Rich input (type, priority, body)
 md add --depends-on=1 "Write tests"   Add with dependency
 md create "title"                     Alias for add
-md get <id>                           View a task
+md get <id>                           View a task (recovers deleted tasks from git history)
 md list                               List all tasks
 md ready                              Show unblocked open tasks (by priority)
 md update <id> --priority=P1          Update task fields

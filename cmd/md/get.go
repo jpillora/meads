@@ -25,7 +25,7 @@ func (c *getCmd) Run() error {
 		}
 		ids[i] = n
 	}
-	tasks, err := c.globals.store().Get(ids)
+	tasks, err := c.globals.store().GetWithHistory(c.globals.git(), ids)
 	if err != nil {
 		return err
 	}
