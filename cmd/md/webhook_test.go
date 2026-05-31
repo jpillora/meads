@@ -319,6 +319,54 @@ func TestTasksFileWithWebhook(t *testing.T) {
 	}
 }
 
+func TestDeleteWebhookSendsFullTask(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "tasks.md")
+	store := meads.NewFileStore(file)
+
+	var last webhookPayload
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		json.Unmarshal(body, &last)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	g := &globals{Store: store, TasksFile: file, WebhookURI: ts.URL}
+	add := &addCmd{globals: g, Args: []string{"Doomed task"}}
+	if err := add.Run(); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	ss := &setStatusCmd{globals: g, ID: "1", Status: "inprogress"}
+	if err := ss.Run(); err != nil {
+		t.Fatalf("set-status: %v", err)
+	}
+	del := &delCmd{globals: g, ID: "1"}
+	if err := del.Run(); err != nil {
+		t.Fatalf("del: %v", err)
+	}
+
+	if last.Action != "delete" {
+		t.Fatalf("action = %q, want delete", last.Action)
+	}
+	data, ok := last.Data.(map[string]any)
+	if !ok {
+		t.Fatalf("data type = %T, want map[string]any", last.Data)
+	}
+	if id, _ := data["id"].(float64); id != 1 {
+		t.Errorf("data.id = %v, want 1", data["id"])
+	}
+	if title, _ := data["title"].(string); title != "Doomed task" {
+		t.Errorf("data.title = %q, want %q", title, "Doomed task")
+	}
+	if status, _ := data["status"].(string); status != "inprogress" {
+		t.Errorf("data.status = %q, want inprogress", status)
+	}
+	if deleted, _ := data["deleted"].(bool); !deleted {
+		t.Errorf("data.deleted = %v, want true", data["deleted"])
+	}
+}
+
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsSubstr(s, substr))
 }

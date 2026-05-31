@@ -246,7 +246,6 @@ func (h *testHarness) runAutoDelete() error {
 	return cmd.Run()
 }
 
-
 // createIndexLock creates a .git/index.lock to block git add/commit.
 func (h *testHarness) createIndexLock() {
 	h.t.Helper()

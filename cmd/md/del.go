@@ -15,10 +15,16 @@ func (c *delCmd) Run() error {
 	if err != nil {
 		return fmt.Errorf("invalid task ID: %s", c.ID)
 	}
+	tasks, err := c.globals.store().Get([]int{id})
+	if err != nil {
+		return err
+	}
 	if err := c.globals.store().Delete(id); err != nil {
 		return err
 	}
-	postWebhook(c.globals, "delete", map[string]int{"id": id})
+	deleted := tasks[0]
+	deleted.Deleted = true
+	postWebhook(c.globals, "delete", deleted)
 	fmt.Printf("deleted task %d\n", id)
 	return nil
 }
