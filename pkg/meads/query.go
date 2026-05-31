@@ -196,6 +196,27 @@ func (s *Store) recoverFromHistory(git Git, want map[int]bool) map[int]Task {
 	return found
 }
 
+// committedIDs returns the set of task IDs present in the committed (HEAD)
+// version of the tasks file. AutoClean uses this to avoid deleting tasks that
+// have never been committed: with no committed version to fall back on, deleting
+// such a task would lose it for good. A missing HEAD or file (e.g. the very
+// first commit), a nil git, or any git error yields an empty set — so an
+// uncommitted task is never auto-deleted.
+func (s *Store) committedIDs(git Git) map[int]bool {
+	ids := map[int]bool{}
+	if git == nil {
+		return ids
+	}
+	content, err := git.Output("show", "HEAD:"+s.file)
+	if err != nil {
+		return ids
+	}
+	for _, t := range s.parseHistorical(content).Tasks {
+		ids[t.ID] = true
+	}
+	return ids
+}
+
 // GetWithHistory behaves like Get, but any requested ID missing from the active
 // (non-deleted) working file is recovered from git history and returned as its
 // most-recent committed version. It errors only if an ID exists in neither the

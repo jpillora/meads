@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -236,5 +237,71 @@ func TestDeleteMany_CleansDeps(t *testing.T) {
 	tasks, _ := s.Get([]int{id2})
 	if len(tasks[0].DependsOn) != 0 {
 		t.Fatalf("expected 0 deps, got %v", tasks[0].DependsOn)
+	}
+}
+
+// mustAddOpen adds an open task and returns its ID, failing the test on error.
+func mustAddOpen(t *testing.T, s *meads.Store, title string) int {
+	t.Helper()
+	tk := meads.Task{Title: title}
+	tk.SetStatus("open")
+	id, err := s.Add(tk)
+	if err != nil {
+		t.Fatalf("add %q: %v", title, err)
+	}
+	return id
+}
+
+// AutoClean removes a closed task that is present in the committed (HEAD)
+// version, but leaves a closed task that was never committed.
+func TestAutoClean_OnlyRemovesCommittedClosed(t *testing.T) {
+	s := newMDStore(t)
+	committed := mustAddOpen(t, s, "Committed")
+	uncommitted := mustAddOpen(t, s, "Uncommitted")
+	for _, id := range []int{committed, uncommitted} {
+		if err := s.Update(id, func(t *meads.Task) { t.SetStatus("closed") }); err != nil {
+			t.Fatalf("close %d: %v", id, err)
+		}
+	}
+
+	// Only `committed` exists in HEAD.
+	git := &fakeGit{commits: map[string]string{
+		"HEAD:TASKS.md": fmt.Sprintf("## %d. Committed\n\n* status: open\n", committed),
+	}}
+
+	res, err := s.AutoClean(git)
+	if err != nil {
+		t.Fatalf("AutoClean: %v", err)
+	}
+	if res == nil || len(res.Removed) != 1 || res.Removed[0] != committed {
+		t.Fatalf("expected removed [%d], got %+v", committed, res)
+	}
+	if _, err := s.Get([]int{committed}); err == nil {
+		t.Fatalf("committed-closed task %d should have been removed", committed)
+	}
+	if got, err := s.Get([]int{uncommitted}); err != nil || len(got) != 1 {
+		t.Fatalf("uncommitted-closed task %d should remain, got %+v err %v", uncommitted, got, err)
+	}
+}
+
+// With no committed version of the file (e.g. first commit), AutoClean is a
+// no-op: every closed task is treated as uncommitted and kept.
+func TestAutoClean_NoCommittedFileKeepsAll(t *testing.T) {
+	s := newMDStore(t)
+	id := mustAddOpen(t, s, "Closed")
+	if err := s.Update(id, func(t *meads.Task) { t.SetStatus("closed") }); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	// fakeGit has no HEAD:TASKS.md, so `git show` errors → empty committed set.
+	res, err := s.AutoClean(&fakeGit{commits: map[string]string{}})
+	if err != nil {
+		t.Fatalf("AutoClean: %v", err)
+	}
+	if res != nil {
+		t.Fatalf("expected no removals when nothing is committed, got %+v", res)
+	}
+	if _, err := s.Get([]int{id}); err != nil {
+		t.Fatalf("task %d should remain, got err %v", id, err)
 	}
 }

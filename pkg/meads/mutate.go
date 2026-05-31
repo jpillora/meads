@@ -293,10 +293,14 @@ type AutoCleanResult struct {
 	Removed []int // IDs of closed tasks that were removed this run
 }
 
-// AutoClean marks any "closed" tasks as deleted, then drops tombstone rows
-// (persisting the high-water mark via pruneTombstones). Returns the IDs
-// removed, or nil if there was nothing to do.
-func (s *Store) AutoClean() (*AutoCleanResult, error) {
+// AutoClean marks "closed" tasks as deleted, then drops tombstone rows
+// (persisting the high-water mark via pruneTombstones). Only tasks already
+// captured in a commit are removed: a closed task that has never been committed
+// is left untouched, since deleting it would lose work that git history cannot
+// recover. Returns the IDs removed, or nil if there was nothing to do.
+func (s *Store) AutoClean(git Git) (*AutoCleanResult, error) {
+	committed := s.committedIDs(git)
+
 	_, content, err := s.acquireLock()
 	if err != nil {
 		return nil, err
@@ -305,7 +309,7 @@ func (s *Store) AutoClean() (*AutoCleanResult, error) {
 
 	var result AutoCleanResult
 	for i := range f.Tasks {
-		if f.Tasks[i].Status == "closed" && !f.Tasks[i].Deleted {
+		if f.Tasks[i].Status == "closed" && !f.Tasks[i].Deleted && committed[f.Tasks[i].ID] {
 			result.Removed = append(result.Removed, f.Tasks[i].ID)
 			delID := f.Tasks[i].ID
 			for j := range f.Tasks {

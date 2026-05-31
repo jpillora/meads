@@ -3,8 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-05-30T16:49:30Z
-* max-id: 28
+* updated: 2026-05-31T00:07:38Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -59,3 +58,13 @@ Once the .vsix is attached to a real release, re-add the 'Web UI + VS Code exten
 * created: 2026-05-21T16:36:32Z
 
 The webview iframe loads md webui over HTTP, but VS Code's web client hosts webviews on an HTTPS origin (*.vscode-cdn.net). Chrome blocks the iframe as mixed-content before VS Code's portMapping/asExternalUri proxy can intercept (verified empirically with code serve-web 1.103.2 + agent-browser: no request reaches md webui's HTTP handler). Fix options: (a) serve md webui over HTTPS with a self-signed cert; (b) refactor the webview to load static assets via webview.asWebviewUri and proxy all API/SSE/WS traffic through the existing /bind-vscode channel; (c) document desktop-only and stop pretending. Track this before promoting the extension beyond desktop.
+
+## 29. auto-delete only removes tasks captured in a previous commit
+
+* status: closed
+* priority: P2
+* type: feature
+* created: 2026-05-31T00:07:34Z
+* updated: 2026-05-31T00:07:38Z
+
+AutoClean now gates deletion on the task's ID being present in HEAD's committed version of the tasks file (new Store.committedIDs helper, passed git into AutoClean). A closed task that was never committed is left untouched, since deleting it would lose work that git history cannot recover (md get from history relies on the task existing in some commit). Same-session add+close tasks now persist one commit cycle before cleanup. The --disable flag already existed (uninstalls the pre-commit hook); no change needed there.

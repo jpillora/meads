@@ -16,6 +16,7 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 	id := h.addTask("Implement feature X")
 	h.assertTaskCount(1)
 	h.assertTaskStatus(id, "open")
+	h.commit("add task")
 
 	h.closeTask(id)
 	h.assertTaskStatus(id, "closed")
@@ -61,6 +62,7 @@ func TestIntegration_AutoDelete_NonStandardDefaultBranch(t *testing.T) {
 	h := newHarnessWithBranch(t, "beta")
 
 	id := h.addTask("Task on beta")
+	h.commit("add task")
 	h.closeTask(id)
 
 	// Pre-commit auto-clean marks closed task as deleted
@@ -97,6 +99,7 @@ func TestIntegration_AutoDelete_MultipleClosed(t *testing.T) {
 	id1 := h.addTask("Closed task A")
 	id2 := h.addTask("Open task B")
 	id3 := h.addTask("Closed task C")
+	h.commit("add tasks")
 
 	h.closeTask(id1)
 	h.closeTask(id3)
@@ -164,6 +167,7 @@ func TestIntegration_AutoDelete_MixedStatuses(t *testing.T) {
 	id3 := h.addTask("InProgress task")
 	id4 := h.addTask("Draft task")
 	id5 := h.addTask("Another closed task")
+	h.commit("add tasks")
 
 	h.closeTask(id1)
 	// id2 stays open
@@ -198,11 +202,14 @@ func TestIntegration_AutoDelete_PreservesTaskData(t *testing.T) {
 	h.updatePriority(id1, "P0")
 	h.updateDescription(id1, "Important details\nwith multiple lines")
 	id2 := h.addTask("Closed task")
-	h.closeTask(id2)
 
 	// Make id1 depend on a third task (not closed)
 	id3 := h.addTask("Dependency task")
 	h.addDep(id1, id3)
+
+	// Commit so the closed task exists in history before auto-clean runs.
+	h.commit("add tasks")
+	h.closeTask(id2)
 
 	// Pre-commit auto-clean marks closed task as deleted
 	if err := h.runAutoDelete(); err != nil {
@@ -231,6 +238,7 @@ func TestIntegration_AutoDelete_CleansDanglingDeps(t *testing.T) {
 	parent := h.addTask("Parent task")
 	child := h.addTask("Child task")
 	h.addDep(child, parent)
+	h.commit("add tasks")
 
 	// Close the parent
 	h.closeTask(parent)
@@ -263,6 +271,7 @@ func TestIntegration_AutoDelete_RestoresOnGitAddFailure(t *testing.T) {
 
 	id1 := h.addTask("Open task")
 	id2 := h.addTask("Closed task")
+	h.commit("add tasks")
 	h.closeTask(id2)
 
 	contentBefore := h.tasksFileContent()
@@ -295,6 +304,7 @@ func TestIntegration_AutoDelete_RecordsMaxIDWhenLatestClosed(t *testing.T) {
 
 	id1 := h.addTask("Open task")
 	id2 := h.addTask("Closed task (latest)")
+	h.commit("add tasks")
 	h.closeTask(id2)
 
 	// Pre-commit auto-clean removes the closed task. Because it was the
@@ -325,6 +335,7 @@ func TestIntegration_AutoDelete_NoMaxIDWhenNonLatestClosed(t *testing.T) {
 
 	id1 := h.addTask("Closed task (not latest)")
 	id2 := h.addTask("Open task")
+	h.commit("add tasks")
 	h.closeTask(id1)
 
 	if err := h.runAutoDelete(); err != nil {
@@ -345,6 +356,7 @@ func TestIntegration_AutoDelete_IncludedInUserCommit(t *testing.T) {
 
 	h.addTask("Open task")
 	id2 := h.addTask("Closed task")
+	h.commit("add tasks")
 	h.closeTask(id2)
 
 	commitsBefore := h.commitCount()
@@ -394,6 +406,7 @@ func TestIntegration_AutoDelete_ClosedWithMultipleDependents(t *testing.T) {
 	child2 := h.addTask("Child two")
 	h.addDep(child1, parent)
 	h.addDep(child2, parent)
+	h.commit("add tasks")
 
 	h.closeTask(parent)
 
@@ -416,6 +429,42 @@ func TestIntegration_AutoDelete_ClosedWithMultipleDependents(t *testing.T) {
 	h.assertReadyCount(2)
 }
 
+func TestIntegration_AutoDelete_KeepsUncommittedClosedTask(t *testing.T) {
+	h := newHarness(t)
+
+	// Added and closed without ever being committed.
+	id := h.addTask("Closed but uncommitted")
+	h.closeTask(id)
+
+	// Auto-clean must NOT remove it: with no committed version, deleting it
+	// would lose the task permanently (unrecoverable from git history).
+	if err := h.runAutoDelete(); err != nil {
+		t.Fatalf("runAutoDelete: %v", err)
+	}
+
+	h.assertTaskExists(id)
+	h.assertTaskStatus(id, "closed")
+}
+
+func TestIntegration_AutoDelete_OnlyRemovesCommittedClosedTasks(t *testing.T) {
+	h := newHarness(t)
+
+	// committed was captured in a commit (as open) before being closed.
+	committed := h.addTask("Committed then closed")
+	h.commit("add committed task")
+	h.closeTask(committed)
+
+	// uncommitted is created and closed in the same uncommitted session.
+	uncommitted := h.addTask("Uncommitted closed")
+	h.closeTask(uncommitted)
+
+	if err := h.runAutoDelete(); err != nil {
+		t.Fatalf("runAutoDelete: %v", err)
+	}
+
+	h.assertTaskNotExists(committed) // in HEAD → safe to delete
+	h.assertTaskExists(uncommitted)  // not in HEAD → kept
+}
 
 func TestIntegration_NewlineAsTitleDelimiter(t *testing.T) {
 	t.Run("newline splits title and description", func(t *testing.T) {

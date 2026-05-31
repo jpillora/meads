@@ -54,7 +54,7 @@ func (c *autoDeleteCmd) runFromHook() error {
 		return fmt.Errorf("reading %s: %w", store.Path(), err)
 	}
 
-	result, err := store.AutoClean()
+	result, err := store.AutoClean(git)
 	if err != nil {
 		util.WriteFile(store.FS(), store.Path(), backup, 0644)
 		return fmt.Errorf("auto-clean: %w", err)
