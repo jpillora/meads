@@ -80,6 +80,7 @@ type root struct {
 	Webui       webuiCmd       `opts:"mode=cmd,group=Misc" help:"Launch web UI for this TASKS file"`
 	Doctor      doctorCmd      `opts:"mode=cmd,group=Misc" help:"Detect and fix duplicate task IDs"`
 	AutoDelete  autoDeleteCmd  `opts:"mode=cmd,name=auto-delete,group=Misc" help:"Auto-delete closed tasks via git hook"`
+	AutoSave    autoSaveCmd    `opts:"mode=cmd,name=auto-save,group=Misc" help:"Auto-stage the tasks file in every commit via git hook"`
 	BeadsImport beadsImportCmd `opts:"mode=cmd,name=beads-import,group=Beads" help:"Import tasks from beads"`
 	BeadsNuke   nukeCmd        `opts:"mode=cmd,name=beads-nuke,group=Beads" help:"Completely remove beads from the current repository"`
 }
@@ -106,6 +107,7 @@ func main() {
 	c.Webui.globals = g
 	c.Doctor.globals = g
 	c.AutoDelete.globals = g
+	c.AutoSave.globals = g
 	c.BeadsNuke.globals = g
 
 	p := opts.New(&c).

@@ -246,6 +246,30 @@ func (h *testHarness) runAutoDelete() error {
 	return cmd.Run()
 }
 
+// runAutoSave simulates the pre-commit hook by running autoSaveCmd with GITHOOK=1.
+// It stages the tasks file but does not modify its content or commit.
+func (h *testHarness) runAutoSave() error {
+	h.t.Helper()
+	h.t.Setenv("GITHOOK", "1")
+	cmd := &autoSaveCmd{globals: h.globals}
+	return cmd.Run()
+}
+
+// preCommitHookPath returns the path to the repo's pre-commit hook file.
+func (h *testHarness) preCommitHookPath() string {
+	h.t.Helper()
+	return filepath.Join(h.dir, ".git", "hooks", "pre-commit")
+}
+
+// tasksFileStaged reports whether the tasks file has staged changes vs HEAD.
+func (h *testHarness) tasksFileStaged() bool {
+	h.t.Helper()
+	cmd := exec.Command("git", "diff", "--cached", "--quiet", "--", filepath.Base(h.globals.TasksFile))
+	cmd.Dir = h.dir
+	// Exit code 1 means there are staged changes.
+	return cmd.Run() != nil
+}
+
 // createIndexLock creates a .git/index.lock to block git add/commit.
 func (h *testHarness) createIndexLock() {
 	h.t.Helper()

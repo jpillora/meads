@@ -15,7 +15,13 @@ type autoDeleteCmd struct {
 	Status  bool `opts:"mode=flag" help:"Check if auto-delete is enabled"`
 }
 
-const hookMarker = "# md auto-delete hook"
+// autoDeleteBlock prunes committed closed tasks and stages the result. It lives
+// beside the auto-save block in the same pre-commit hook.
+var autoDeleteBlock = hookBlock{
+	marker:  "# md auto-delete hook",
+	comment: "Automatically delete closed tasks when committing to default branch",
+	command: "md auto-delete",
+}
 
 func (c *autoDeleteCmd) Run() error {
 	// Check if we're running from the git hook
@@ -104,107 +110,45 @@ func (c *autoDeleteCmd) isOnDefaultBranch() bool {
 }
 
 func (c *autoDeleteCmd) enable() error {
-	hookPath, err := c.getHookPath()
+	// Migrate away from the old post-commit hook if present.
+	c.cleanupOldPostCommitHook()
+
+	installed, err := autoDeleteBlock.install(c.globals)
 	if err != nil {
 		return err
 	}
-
-	// Clean up old post-commit hook if it has our marker
-	c.cleanupOldPostCommitHook()
-
-	hookContent := c.generateHook()
-
-	// Check if hook already exists with our marker
-	if _, err := os.Stat(hookPath); err == nil {
-		existingContent, err := os.ReadFile(hookPath)
-		if err != nil {
-			return fmt.Errorf("reading existing hook: %w", err)
-		}
-		if strings.Contains(string(existingContent), hookMarker) {
-			fmt.Println("auto-delete is already enabled")
-			return nil
-		}
-
-		// Prepend our hook to the existing content
-		newContent := hookContent + string(existingContent)
-		if err := os.WriteFile(hookPath, []byte(newContent), 0755); err != nil {
-			return fmt.Errorf("writing hook: %w", err)
-		}
+	if installed {
+		fmt.Println("auto-delete enabled")
 	} else {
-		// Create new hook
-		if err := os.WriteFile(hookPath, []byte(hookContent), 0755); err != nil {
-			return fmt.Errorf("creating hook: %w", err)
-		}
+		fmt.Println("auto-delete is already enabled")
 	}
-
-	fmt.Println("auto-delete enabled")
 	return nil
 }
 
 func (c *autoDeleteCmd) disable() error {
-	hookPath, err := c.getHookPath()
+	removed, err := autoDeleteBlock.remove(c.globals)
 	if err != nil {
 		return err
 	}
-
-	content, err := os.ReadFile(hookPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			fmt.Println("auto-delete is not enabled")
-			return nil
-		}
-		return fmt.Errorf("reading hook: %w", err)
-	}
-
-	hookStart := strings.Index(string(content), hookMarker)
-	if hookStart == -1 {
-		fmt.Println("auto-delete is not enabled")
-		return nil
-	}
-
-	// Remove our hook content (from marker to end of our block)
-	// Our hook ends with "fi\n\n" followed by the original content
-	ourHook := c.generateHook()
-	newContent := strings.Replace(string(content), ourHook, "", 1)
-
-	// Remove trailing empty lines
-	newContent = strings.TrimRight(newContent, "\n")
-
-	if len(newContent) == 0 {
-		os.Remove(hookPath)
+	if removed {
+		fmt.Println("auto-delete disabled")
 	} else {
-		os.WriteFile(hookPath, []byte(newContent+"\n"), 0755)
+		fmt.Println("auto-delete is not enabled")
 	}
-
-	fmt.Println("auto-delete disabled")
 	return nil
 }
 
 func (c *autoDeleteCmd) checkStatus() error {
-	hookPath, err := c.getHookPath()
+	on, err := autoDeleteBlock.installed(c.globals)
 	if err != nil {
 		return err
 	}
-
-	content, err := os.ReadFile(hookPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			fmt.Println("auto-delete: disabled")
-			return nil
-		}
-		return fmt.Errorf("reading hook: %w", err)
-	}
-
-	if strings.Contains(string(content), hookMarker) {
-		fmt.Println("auto-delete: enabled")
-	} else {
-		fmt.Println("auto-delete: disabled")
-	}
+	fmt.Printf("auto-delete: %s\n", enabledLabel(on))
 	return nil
 }
 
 func (c *autoDeleteCmd) cleanupOldPostCommitHook() {
-	out, err := c.globals.gitCommand("rev-parse", "--git-dir").Output()
+	out, err := c.globals.gitCommand("rev-parse", "--absolute-git-dir").Output()
 	if err != nil {
 		return
 	}
@@ -215,38 +159,15 @@ func (c *autoDeleteCmd) cleanupOldPostCommitHook() {
 	if err != nil {
 		return
 	}
-	if !strings.Contains(string(content), hookMarker) {
+	if !strings.Contains(string(content), autoDeleteBlock.marker) {
 		return
 	}
 
 	// Remove our hook content from the post-commit hook
-	ourHook := c.generateHook()
-	newContent := strings.Replace(string(content), ourHook, "", 1)
-	newContent = strings.TrimRight(newContent, "\n")
-
-	if len(newContent) == 0 {
+	newContent := normalizeHook(strings.Replace(string(content), autoDeleteBlock.body(), "", 1))
+	if newContent == "" {
 		os.Remove(oldHookPath)
 	} else {
 		os.WriteFile(oldHookPath, []byte(newContent+"\n"), 0755)
 	}
-}
-
-func (c *autoDeleteCmd) getHookPath() (string, error) {
-	// Find git root — uses gitCommand directly since this manages .git/hooks/
-	out, err := c.globals.gitCommand("rev-parse", "--git-dir").Output()
-	if err != nil {
-		return "", fmt.Errorf("not in a git repository")
-	}
-	gitDir := strings.TrimSpace(string(out))
-	return filepath.Join(gitDir, "hooks", "pre-commit"), nil
-}
-
-func (c *autoDeleteCmd) generateHook() string {
-	return fmt.Sprintf(`%s
-# Automatically delete closed tasks when committing to default branch
-if command -v md >/dev/null 2>&1; then
-    GITHOOK=1 md auto-delete
-fi
-
-`, hookMarker)
 }

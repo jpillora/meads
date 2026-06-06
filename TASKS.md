@@ -3,8 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-05-31T01:17:11Z
-* max-id: 29
+* updated: 2026-06-06T01:45:07Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -59,3 +58,28 @@ Once the .vsix is attached to a real release, re-add the 'Web UI + VS Code exten
 * created: 2026-05-21T16:36:32Z
 
 The webview iframe loads md webui over HTTP, but VS Code's web client hosts webviews on an HTTPS origin (*.vscode-cdn.net). Chrome blocks the iframe as mixed-content before VS Code's portMapping/asExternalUri proxy can intercept (verified empirically with code serve-web 1.103.2 + agent-browser: no request reaches md webui's HTTP handler). Fix options: (a) serve md webui over HTTPS with a self-signed cert; (b) refactor the webview to load static assets via webview.asWebviewUri and proxy all API/SSE/WS traffic through the existing /bind-vscode channel; (c) document desktop-only and stop pretending. Track this before promoting the extension beyond desktop.
+
+## 30. Git mode
+
+* status: draft
+* priority: P2
+* type: idea
+* created: 2026-06-06T01:24:43Z
+
+Git mode
+
+The tasks file is moved into JSON and out of the working tree, and it’ll live purely in gitrefs 
+
+When you init in git mode, a meads ref tree is made, with an empty tasks json as the first “virtual commit”
+
+All changes are persisted solely in git
+
+## 31. Add 'md auto-save' command
+
+* status: closed
+* priority: P2
+* type: feature
+* created: 2026-06-06T01:34:29Z
+* updated: 2026-06-06T01:45:07Z
+
+Pre-commit hook (sibling to auto-delete) that stages the tasks file so it rides along in every commit. Extract a shared hookBlock helper from auto_delete.go, add auto_save.go, wire into main.go, add e2e coverage. Marker-based enablement, no git config. No default-branch guard, no backup/restore (never modifies content).
