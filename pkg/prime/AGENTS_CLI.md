@@ -16,10 +16,10 @@
 ### Creating Tasks
 - `md add "Fix the login bug"` - Add a simple task
 - `md add "bug: Fix login P1. Session cookie expires"` - Rich input parsing
-  - Type prefix: `bug:`, `task:`, `feature:` (optional)
+  - Type prefix: `bug:`, `task:`, `feature:`, `idea:` (optional)
   - Priority: `P0`-`P9` (0=critical, 4=backlog, default=P2)
-  - Title: everything before first `.`
-  - Description: everything after the `.`
+  - Title: text before the first `. ` (period+space) or newline
+  - Description: text after that split point
 - `md add --title="Fix login" --type=bug --priority=P1 --description="Details here"` - Flag-based
 - `md add --title="Fix login" --description-file=/path/to/notes.md` - Description from file
 
@@ -27,7 +27,8 @@
 - `md update <id> --status=draft|open|inprogress|closed` - Update status
 - `md update <id> --priority=P1` - Update priority
 - `md update <id> --title="New title"` - Update title
-- `md update <id> --description-file=/path/to/notes.md` - Update description from file
+- `md update <id> --description="## Notes\n\n- detail one\n- detail two"` - Update description. **Preferred** for rich text: the value is JSON-encoded markdown, so `\n`, `\t`, `\uXXXX`, etc. decode to a real multi-line document passed in a single argument
+- `md update <id> --description-file=/path/to/notes.md` - Update description from a markdown file (alternative to inline `--description`)
 - `md set-status <id> <status>` - Shorthand for status changes
 - `md del <id>` - Delete a task
 

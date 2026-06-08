@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-06-08T05:17:44Z
+* updated: 2026-06-08T06:28:31Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -183,14 +183,22 @@ command layer).
 - Concurrency: run two `md add` in parallel; confirm CAS retry yields both (no lost update).
 - Speed: confirm git‑mode `md add` stays single‑digit‑ms (the 0.70 ms write path).
 
-## 32. Title extract change
+## 33. prime --write + document inline --description update
 
 * status: closed
 * priority: P2
-* type: idea
-* created: 2026-06-08T03:27:10Z
-* updated: 2026-06-08T05:17:44Z
+* type: feature
+* created: 2026-06-08T06:24:15Z
+* updated: 2026-06-08T06:28:22Z
 
-Title extract change
+### Goal
 
-The title extraction is too harsh; lets change given a `md add` argument, we should only treat `. ` (dot space) OR `\n` (newline) as a title separator
+Update the `prime` command:
+
+1. Document the preferred task-update flow: `md update <id> --description="..."` with JSON-encoded multiline markdown (\n, \t, \uXXXX decode).
+2. Add `md prime --write <file>` (CLAUDE.md / AGENTS.md): replace an existing marker-delimited prime block in place, else append at end, else create the file.
+
+### Notes
+
+- Markers: `<!-- md-prime:start -->` / `<!-- md-prime:end -->`.
+- Write logic lives in `pkg/prime/write.go` (+ tests); flag wired in `cmd/md/prime.go`.
