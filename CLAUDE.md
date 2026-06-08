@@ -24,8 +24,8 @@
 - `md add "bug: Fix login P1. Session cookie expires"` - Rich input parsing
   - Type prefix: `bug:`, `task:`, `feature:`, `idea:` (optional)
   - Priority: `P0`-`P9` (0=critical, 4=backlog, default=P2)
-  - Title: everything before first `.`
-  - Description: everything after the `.`
+  - Title: text before the first `. ` (period+space) or newline
+  - Description: text after that split point
 - `md add --title="Fix login" --type=bug --priority=P1 --description="Details here"` - Flag-based
 - `md add --title="Fix login" --description-file=/path/to/notes.md` - Description from file
 

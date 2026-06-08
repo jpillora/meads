@@ -30,9 +30,6 @@ type createCmd struct {
 var (
 	typeRe     = regexp.MustCompile(`^(bug|task|feature|idea):`)
 	priorityRe = regexp.MustCompile(`\bP(\d)\b`)
-	// title/description split: period+whitespace (sentence boundary) or bare newline.
-	// Bare "." doesn't split, so URLs like http://foo.com stay intact.
-	splitRe = regexp.MustCompile(`\.\s|\n`)
 )
 
 func (c *addCmd) Run() error {
@@ -99,13 +96,7 @@ func runAdd(g *globals, args []string, title, status, priority, typ, dependsOn, 
 			input = strings.TrimSpace(priorityRe.ReplaceAllString(input, ""))
 		}
 		// (3) Split title/description at the first ". " (period+space) or newline.
-		var parsedTitle, parsedDescription string
-		if loc := splitRe.FindStringIndex(input); loc != nil {
-			parsedTitle = strings.TrimSpace(input[:loc[0]])
-			parsedDescription = strings.TrimSpace(input[loc[1]:])
-		} else {
-			parsedTitle = strings.TrimSpace(input)
-		}
+		parsedTitle, parsedDescription := meads.SplitTitleDescription(input)
 		// Check for conflicts between flags and parsed values
 		if typ != "" && parsedType != "" {
 			return fmt.Errorf("type set by both flag and argument")

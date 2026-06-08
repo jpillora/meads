@@ -3,8 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-06-06T06:00:14Z
-* max-id: 31
+* updated: 2026-06-08T05:17:44Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -183,3 +182,15 @@ command layer).
   recovers from history.
 - Concurrency: run two `md add` in parallel; confirm CAS retry yields both (no lost update).
 - Speed: confirm git‑mode `md add` stays single‑digit‑ms (the 0.70 ms write path).
+
+## 32. Title extract change
+
+* status: closed
+* priority: P2
+* type: idea
+* created: 2026-06-08T03:27:10Z
+* updated: 2026-06-08T05:17:44Z
+
+Title extract change
+
+The title extraction is too harsh; lets change given a `md add` argument, we should only treat `. ` (dot space) OR `\n` (newline) as a title separator
