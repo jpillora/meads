@@ -44,18 +44,22 @@ func WriteFile(path, content string) (string, error) {
 	}
 	text := string(data)
 	// Replace an existing block in place (end marker must follow the start one).
+	// A start marker with no matching end is a corrupted block: error out rather
+	// than appending a second block and risk splicing across user content later.
 	if s := strings.Index(text, BlockStart); s != -1 {
-		if rel := strings.Index(text[s:], BlockEnd); rel != -1 {
-			end := s + rel + len(BlockEnd)
-			updated := text[:s] + blk + text[end:]
-			if updated == text {
-				return "unchanged", nil
-			}
-			if err := os.WriteFile(path, []byte(updated), 0o644); err != nil {
-				return "", err
-			}
-			return "updated", nil
+		rel := strings.Index(text[s:], BlockEnd)
+		if rel == -1 {
+			return "", fmt.Errorf("%s: found %s without a matching %s; fix or remove the stray marker", path, BlockStart, BlockEnd)
 		}
+		end := s + rel + len(BlockEnd)
+		updated := text[:s] + blk + text[end:]
+		if updated == text {
+			return "unchanged", nil
+		}
+		if err := os.WriteFile(path, []byte(updated), 0o644); err != nil {
+			return "", err
+		}
+		return "updated", nil
 	}
 	// No block yet: append after a blank-line separator. A blank/whitespace-only
 	// file gets just the block (treated as a fresh create).

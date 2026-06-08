@@ -94,6 +94,58 @@ func TestWriteFile(t *testing.T) {
 			t.Fatal("file changed on idempotent rewrite")
 		}
 	})
+
+	t.Run("creates from a whitespace-only file", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "CLAUDE.md")
+		writeFile(t, path, "   \n\n")
+		action, err := WriteFile(path, testContent)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if action != "created" {
+			t.Fatalf("action = %q, want created", action)
+		}
+		got := readFile(t, path)
+		if !strings.HasPrefix(got, BlockStart) || strings.Count(got, BlockStart) != 1 {
+			t.Fatalf("want a single leading block, got:\n%q", got)
+		}
+	})
+
+	t.Run("append inserts a blank-line separator when no trailing newline", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "AGENTS.md")
+		writeFile(t, path, "no trailing newline")
+		action, err := WriteFile(path, testContent)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if action != "appended" {
+			t.Fatalf("action = %q, want appended", action)
+		}
+		if got := readFile(t, path); !strings.HasPrefix(got, "no trailing newline\n\n"+BlockStart) {
+			t.Fatalf("want blank-line separator before block, got:\n%q", got)
+		}
+	})
+
+	t.Run("errors on a start marker without an end", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "CLAUDE.md")
+		writeFile(t, path, "# Top\n\n"+BlockStart+"\ndangling body\n")
+		if _, err := WriteFile(path, testContent); err == nil {
+			t.Fatal("want error for dangling start marker, got nil")
+		}
+	})
+
+	t.Run("errors when the path is a directory", func(t *testing.T) {
+		if _, err := WriteFile(t.TempDir(), testContent); err == nil {
+			t.Fatal("want error writing to a directory path, got nil")
+		}
+	})
+
+	t.Run("errors creating into a missing parent directory", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "nope", "CLAUDE.md")
+		if _, err := WriteFile(path, testContent); err == nil {
+			t.Fatal("want error creating into missing dir, got nil")
+		}
+	})
 }
 
 func readFile(t *testing.T, path string) string {

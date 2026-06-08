@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-06-08T06:28:31Z
+* updated: 2026-06-08T07:50:30Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -183,22 +183,16 @@ command layer).
 - Concurrency: run two `md add` in parallel; confirm CAS retry yields both (no lost update).
 - Speed: confirm git‑mode `md add` stays single‑digit‑ms (the 0.70 ms write path).
 
-## 33. prime --write + document inline --description update
+## 34. Improve prime --write test coverage
 
 * status: closed
 * priority: P2
-* type: feature
-* created: 2026-06-08T06:24:15Z
-* updated: 2026-06-08T06:28:22Z
+* type: task
+* created: 2026-06-08T07:47:55Z
+* updated: 2026-06-08T07:50:20Z
 
-### Goal
+`prime.go` Run was 0%% covered and `WriteFile` 81%%.
 
-Update the `prime` command:
-
-1. Document the preferred task-update flow: `md update <id> --description="..."` with JSON-encoded multiline markdown (\n, \t, \uXXXX decode).
-2. Add `md prime --write <file>` (CLAUDE.md / AGENTS.md): replace an existing marker-delimited prime block in place, else append at end, else create the file.
-
-### Notes
-
-- Markers: `<!-- md-prime:start -->` / `<!-- md-prime:end -->`.
-- Write logic lives in `pkg/prime/write.go` (+ tests); flag wired in `cmd/md/prime.go`.
+- Add cmd-level tests for `primeCmd.Run` (stdout, --write CLI/MCP selection).
+- Cover WriteFile branches: whitespace-only file => created, no-trailing-newline append, read error (dir path), create write error (missing parent).
+- Harden dangling start-marker (no end) to error instead of silently appending a second block.
