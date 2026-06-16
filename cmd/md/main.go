@@ -46,6 +46,21 @@ func (g *globals) gitCommand(args ...string) *exec.Cmd {
 	return cmd
 }
 
+// warnCycles prints a stderr warning for each circular dependency in the tasks
+// file. A cycle silently deadlocks the tasks it spans — they can never become
+// ready — so read commands surface it rather than letting it go unnoticed. It
+// writes to stderr to keep stdout (including --json) clean, and stays quiet on
+// read errors, which the calling command reports through its own path.
+func warnCycles(g *globals) {
+	cycles, err := g.store().FindCycles()
+	if err != nil {
+		return
+	}
+	for _, cycle := range cycles {
+		fmt.Fprintf(os.Stderr, "warning: circular dependency: %s (run 'md doctor')\n", meads.FormatCycle(cycle))
+	}
+}
+
 // store returns the Store, lazily initializing from TasksFile if not set.
 func (g *globals) store() *meads.Store {
 	if g.Store == nil {

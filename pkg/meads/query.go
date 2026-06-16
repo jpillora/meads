@@ -94,6 +94,26 @@ func (s *Store) Ready() ([]Task, error) {
 	return ready, nil
 }
 
+// FindCycles returns every circular dependency in the active (non-deleted)
+// task graph, one representative cycle per cyclic cluster, each as a path
+// start → … → start. It is read-only: unlike validateDeps (which blocks
+// mutations), this surfaces cycles that are already present — e.g. introduced
+// by a git merge of two individually-valid edits, or a hand-edit — so callers
+// can warn about them. A missing file yields no cycles.
+func (s *Store) FindCycles() ([][]int, error) {
+	data, err := util.ReadFile(s.fs, s.file)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("reading %s: %w", s.file, err)
+	}
+	content := stripLockLines(string(data))
+	f := s.fmt.Parse(content)
+	ids, adj := depGraph(&f)
+	return findCycles(ids, adj), nil
+}
+
 // GetHistory returns all tasks that have ever existed across git history,
 // using the most recent version of each task. Tasks are sorted by ID ascending.
 // Deleted tasks are excluded.

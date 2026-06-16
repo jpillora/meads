@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"strings"
 
 	"github.com/go-git/go-billy/v5/util"
 )
@@ -28,16 +27,10 @@ func nextID(f *File) int {
 }
 
 // validateDeps checks that all DependsOn IDs reference existing non-deleted tasks
-// and detects circular dependencies.
+// and detects circular dependencies. It is the gate that prevents a mutation
+// from creating (or leaving behind) a cycle.
 func validateDeps(f *File) error {
-	ids := make(map[int]bool, len(f.Tasks))
-	adj := make(map[int][]int, len(f.Tasks))
-	for _, t := range f.Tasks {
-		if !t.Deleted {
-			ids[t.ID] = true
-			adj[t.ID] = t.DependsOn
-		}
-	}
+	ids, adj := depGraph(f)
 	for _, t := range f.Tasks {
 		if t.Deleted {
 			continue
@@ -48,58 +41,8 @@ func validateDeps(f *File) error {
 			}
 		}
 	}
-	// Cycle detection via DFS.
-	const (
-		unvisited = 0
-		inPath    = 1
-		done      = 2
-	)
-	state := make(map[int]int, len(f.Tasks))
-	parent := make(map[int]int, len(f.Tasks))
-	for id := range ids {
-		state[id] = unvisited
-	}
-	var dfs func(id int) (int, bool)
-	dfs = func(id int) (int, bool) {
-		state[id] = inPath
-		for _, dep := range adj[id] {
-			if state[dep] == inPath {
-				// Found a cycle. Build the cycle path.
-				parent[dep] = id
-				return dep, true
-			}
-			if state[dep] == unvisited {
-				parent[dep] = id
-				if cycleStart, found := dfs(dep); found {
-					return cycleStart, true
-				}
-			}
-		}
-		state[id] = done
-		return 0, false
-	}
-	for id := range ids {
-		if state[id] == unvisited {
-			if cycleStart, found := dfs(id); found {
-				// Reconstruct cycle path.
-				path := []int{cycleStart}
-				cur := parent[cycleStart]
-				for cur != cycleStart {
-					path = append(path, cur)
-					cur = parent[cur]
-				}
-				path = append(path, cycleStart)
-				// Reverse so it reads start → ... → start.
-				for i, j := 0, len(path)-1; i < j; i, j = i+1, j-1 {
-					path[i], path[j] = path[j], path[i]
-				}
-				parts := make([]string, len(path))
-				for i, p := range path {
-					parts[i] = strconv.Itoa(p)
-				}
-				return fmt.Errorf("circular dependency detected: %s", strings.Join(parts, " → "))
-			}
-		}
+	if cycle := findCycle(ids, adj); cycle != nil {
+		return fmt.Errorf("circular dependency detected: %s", FormatCycle(cycle))
 	}
 	return nil
 }

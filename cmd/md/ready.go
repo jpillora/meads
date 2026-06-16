@@ -11,6 +11,9 @@ func (c *readyCmd) Run() error {
 	if err != nil {
 		return err
 	}
+	// A cycle hides its tasks from this list forever; flag it so the omission
+	// isn't silent.
+	warnCycles(c.globals)
 	if c.Limit > 0 && len(tasks) > c.Limit {
 		tasks = tasks[:c.Limit]
 	}

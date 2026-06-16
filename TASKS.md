@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-06-08T07:50:30Z
+* updated: 2026-06-16T07:48:28Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -183,16 +183,12 @@ command layer).
 - Concurrency: run two `md add` in parallel; confirm CAS retry yields both (no lost update).
 - Speed: confirm git‑mode `md add` stays single‑digit‑ms (the 0.70 ms write path).
 
-## 34. Improve prime --write test coverage
+## 35. Validate & warn on circular dependencies
 
 * status: closed
 * priority: P2
-* type: task
-* created: 2026-06-08T07:47:55Z
-* updated: 2026-06-08T07:50:20Z
+* type: feature
+* created: 2026-06-16T07:47:42Z
+* updated: 2026-06-16T07:47:45Z
 
-`prime.go` Run was 0%% covered and `WriteFile` 81%%.
-
-- Add cmd-level tests for `primeCmd.Run` (stdout, --write CLI/MCP selection).
-- Cover WriteFile branches: whitespace-only file => created, no-trailing-newline append, read error (dir path), create write error (missing parent).
-- Harden dangling start-marker (no end) to error instead of silently appending a second block.
+Prevention already existed via validateDeps on every mutation (add/add-dep/update/MCP/webui). Added read-only detection (Store.FindCycles + shared findCycle/findCycles) and surfaced pre-existing cycles — which a git merge of two individually-valid edits can create unpreventably — in 'md doctor' (reports each cycle, exits non-zero) and as stderr warnings on 'md ready'/'md list' (stdout/JSON stays clean).

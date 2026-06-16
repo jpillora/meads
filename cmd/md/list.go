@@ -29,6 +29,7 @@ func (c *listCmd) Run() error {
 	if err != nil {
 		return err
 	}
+	warnCycles(c.globals)
 	tasks = c.filterTasks(tasks)
 	if len(tasks) == 0 && !c.JSON && !c.Md {
 		fmt.Fprintln(os.Stderr, "no tasks found (run 'md add' to create one)")

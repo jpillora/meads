@@ -1,22 +1,44 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/jpillora/meads/pkg/meads"
+)
 
 type doctorCmd struct {
 	globals *globals
 }
 
 func (c *doctorCmd) Run() error {
-	fixes, err := c.globals.store().Doctor()
+	s := c.globals.store()
+	fixes, err := s.Doctor()
 	if err != nil {
 		return err
 	}
-	if len(fixes) == 0 {
+	for _, fix := range fixes {
+		fmt.Printf("Duplicate ID %d detected. Renumbered to %d.\n", fix.OldID, fix.NewID)
+	}
+	// Detect circular dependencies. These can't be auto-fixed (which edge to
+	// cut is ambiguous), and a cycle present in the file blocks every future
+	// mutation, so report each one and exit non-zero.
+	cycles, err := s.FindCycles()
+	if err != nil {
+		return err
+	}
+	for _, cycle := range cycles {
+		fmt.Printf("Circular dependency detected: %s\n", meads.FormatCycle(cycle))
+	}
+	if len(fixes) == 0 && len(cycles) == 0 {
 		fmt.Println("no issues found")
 		return nil
 	}
-	for _, fix := range fixes {
-		fmt.Printf("Duplicate ID %d detected. Renumbered to %d.\n", fix.OldID, fix.NewID)
+	if len(cycles) > 0 {
+		noun := "dependency"
+		if len(cycles) > 1 {
+			noun = "dependencies"
+		}
+		return fmt.Errorf("%d circular %s detected; remove a dependency to break each cycle", len(cycles), noun)
 	}
 	return nil
 }
