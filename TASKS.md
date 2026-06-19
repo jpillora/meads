@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-06-19T13:40:03Z
+* updated: 2026-06-19T13:45:04Z
 * max-id: 54
 * next-id: 13
 
@@ -185,15 +185,6 @@ command layer).
   recovers from history.
 - Concurrency: run two `md add` in parallel; confirm CAS retry yields both (no lost update).
 - Speed: confirm git‑mode `md add` stays single‑digit‑ms (the 0.70 ms write path).
-
-## 49. web UI: single markdown body field with derived title in the editor
-
-* status: open
-* priority: P3
-* type: idea
-* created: 2026-06-19T11:54:03Z
-
-The editor dialog (pkg/webui/assets/index.html + app.js) has separate Title and Description inputs. ../rais MeadsTaskDetail instead edits one markdown body and derives the title from its first line, matching md add rich parsing (title is the text before the first period-space or newline). Consider collapsing to a single body editor: less chrome, fewer fields, and consistent with the CLI. Keep an explicit fallback (Untitled) when the first line is empty.
 
 ## 50. web UI: persist the unsaved New task form as a draft
 

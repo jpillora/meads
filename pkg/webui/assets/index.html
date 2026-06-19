@@ -55,7 +55,6 @@
 <dialog id="editor">
   <form method="dialog" id="editor-form">
     <h2 id="editor-title">New task</h2>
-    <label>Title <input name="title" required></label>
     <div class="row">
       <label>Type
         <select name="type">
@@ -87,7 +86,7 @@
     <label id="reason-field" hidden>Status reason
       <input name="status_reason" id="editor-reason" autocomplete="off" placeholder="Why blocked/closed (optional)">
     </label>
-    <label for="editor-description">Description</label>
+    <label for="editor-description">Task <span class="muted">— first line becomes the title</span></label>
     <div class="md-editor">
       <div class="md-toolbar" role="toolbar" aria-label="Format">
         <button type="button" data-md="bold" title="Bold"><strong>B</strong></button>
@@ -98,10 +97,11 @@
         <button type="button" data-md="ol" title="Numbered list">1. list</button>
         <button type="button" data-md="heading" title="Heading (cycles H1→H2→H3→off)">H</button>
       </div>
-      <textarea id="editor-description" name="description" rows="5" class="md-source"
-        placeholder="Markdown supported — use the toolbar above"></textarea>
+      <textarea id="editor-description" name="description" rows="6" required class="md-source"
+        placeholder="First line is the title. Add details below — markdown supported."></textarea>
       <div class="md-preview" aria-live="polite"></div>
     </div>
+    <div class="derived-title muted" id="derived-title"></div>
     <label for="dep-search">Depends on</label>
     <div class="dep-picker">
       <div class="dep-chips" id="dep-chips"></div>

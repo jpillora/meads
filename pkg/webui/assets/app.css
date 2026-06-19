@@ -418,6 +418,8 @@ dialog h2 { margin: 0 0 0.5rem; font-size: 1.05em; }
 dialog label { display: grid; gap: 0.15rem; margin-bottom: 0.5rem; }
 dialog .row { display: flex; gap: 0.5rem; }
 dialog .row label { flex: 1; }
+.derived-title { margin: 0 0 0.5rem; }
+.derived-title:empty { display: none; }
 dialog textarea { font-family: var(--vscode-editor-font-family, ui-monospace, monospace); resize: vertical; }
 dialog .footer { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.5rem; }
 

@@ -626,6 +626,24 @@ function updateReasonVisibility() {
   field.hidden = !(s === "blocked" || s === "closed");
 }
 
+// deriveTitleDesc splits an editor body into title + description, matching
+// `md add`: the title is the text before the first ". " (period-space) or
+// newline; the rest is the description.
+function deriveTitleDesc(body) {
+  const b = (body || "").trim();
+  const m = /\. |\n/.exec(b);
+  if (!m) return { title: b, description: "" };
+  return { title: b.slice(0, m.index).trim(), description: b.slice(m.index + m[0].length).trim() };
+}
+
+// composeBody joins a task's title + description back into one editable body.
+function composeBody(task) {
+  if (!task) return "";
+  const title = task.title || "";
+  const desc = task.description || "";
+  return desc ? `${title}\n${desc}` : title;
+}
+
 function openEditor(task) {
   state.editing = task;
   const dlg = document.getElementById("editor");
@@ -633,20 +651,19 @@ function openEditor(task) {
   form.reset();
   document.getElementById("editor-title").textContent = task ? `Edit task #${task.id}` : "New task";
   if (task) {
-    form.title.value = task.title || "";
     form.type.value = task.type || "task";
     form.priority.value = task.priority || "P2";
     form.status.value = task.status || "open";
-    form.description.value = task.description || "";
     form.status_reason.value = task.status_reason || "";
   }
+  form.description.value = composeBody(task);
   updateReasonVisibility();
   setEditingDeps(task ? (task.depends_on || []) : []);
   document.getElementById("dep-search").value = "";
   hideDepResults();
   renderPreview();
   dlg.showModal();
-  form.title.focus();
+  form.description.focus();
 }
 
 // --- Dependency picker --------------------------------------------------
@@ -739,6 +756,11 @@ function renderPreview() {
   if (!ta || !preview) return;
   preview.innerHTML = renderMarkdown(ta.value);
   preview.classList.toggle("empty", ta.value.trim() === "");
+  const dt = document.getElementById("derived-title");
+  if (dt) {
+    const { title } = deriveTitleDesc(ta.value);
+    dt.textContent = ta.value.trim() ? `Title: ${title || "Untitled"}` : "";
+  }
 }
 
 function wrapSelection(ta, before, after, placeholder) {
@@ -823,12 +845,13 @@ async function submitEditor(ev) {
   const form = ev.target;
   const fd = new FormData(form);
   const depsRaw = String(fd.get("depends_on") || "").trim();
+  const { title, description } = deriveTitleDesc(String(fd.get("description") || ""));
   const data = {
-    title: String(fd.get("title") || "").trim(),
+    title: title || "Untitled",
     type: String(fd.get("type") || ""),
     priority: String(fd.get("priority") || ""),
     status: String(fd.get("status") || ""),
-    description: String(fd.get("description") || ""),
+    description,
   };
   // status_reason applies only to blocked/closed; the server keeps the prior
   // value when this is empty (the API cannot clear it).
