@@ -1,23 +1,66 @@
 /* Use VS Code theme variables when available; otherwise default to a dark palette.
    In VS Code, the user's theme drives colors. In a plain browser, the fallbacks below take over. */
 :root {
-  color-scheme: dark;
-  --fg: var(--vscode-foreground, #e6edf3);
-  --bg: var(--vscode-editor-background, #0d1117);
-  --muted: var(--vscode-descriptionForeground, #8b949e);
-  --border: var(--vscode-panel-border, #30363d);
-  --accent: var(--vscode-button-background, #2f81f7);
-  --accent-fg: var(--vscode-button-foreground, #ffffff);
-  --card: var(--vscode-editorWidget-background, #161b22);
-  --danger: var(--vscode-errorForeground, #f85149);
-  --warn: #d29922;
-  --success: #3fb950;
-  --chip-bg: var(--vscode-badge-background, rgba(56,139,253,0.18));
-  --chip-fg: var(--vscode-badge-foreground, #79c0ff);
-  --input-bg: var(--vscode-input-background, #0d1117);
-  --input-fg: var(--vscode-input-foreground, #e6edf3);
-  --input-border: var(--vscode-input-border, #30363d);
+  color-scheme: light dark;
+  /* Plain-browser palette (dark by default). Inside VS Code the --vscode-*
+     values win via the fallbacks below, so the webview always follows the IDE
+     theme regardless of these values or the manual toggle. */
+  --p-fg: #e6edf3;
+  --p-bg: #0d1117;
+  --p-muted: #8b949e;
+  --p-border: #30363d;
+  --p-accent: #2f81f7;
+  --p-accent-fg: #ffffff;
+  --p-card: #161b22;
+  --p-danger: #f85149;
+  --p-warn: #d29922;
+  --p-success: #3fb950;
+  --p-chip-bg: rgba(56,139,253,0.18);
+  --p-chip-fg: #79c0ff;
+  --p-input-bg: #0d1117;
+  --p-input-fg: #e6edf3;
+  --p-input-border: #30363d;
+
+  --fg: var(--vscode-foreground, var(--p-fg));
+  --bg: var(--vscode-editor-background, var(--p-bg));
+  --muted: var(--vscode-descriptionForeground, var(--p-muted));
+  --border: var(--vscode-panel-border, var(--p-border));
+  --accent: var(--vscode-button-background, var(--p-accent));
+  --accent-fg: var(--vscode-button-foreground, var(--p-accent-fg));
+  --card: var(--vscode-editorWidget-background, var(--p-card));
+  --danger: var(--vscode-errorForeground, var(--p-danger));
+  --warn: var(--p-warn);
+  --success: var(--p-success);
+  --chip-bg: var(--vscode-badge-background, var(--p-chip-bg));
+  --chip-fg: var(--vscode-badge-foreground, var(--p-chip-fg));
+  --input-bg: var(--vscode-input-background, var(--p-input-bg));
+  --input-fg: var(--vscode-input-foreground, var(--p-input-fg));
+  --input-border: var(--vscode-input-border, var(--p-input-border));
 }
+
+/* Light palette for plain browsers. JS resolves "auto" to light/dark via
+   prefers-color-scheme and sets data-theme, so only these attribute blocks are
+   needed. Only the --p-* (plain-browser) values change, so VS Code keeps
+   precedence inside the extension. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --p-fg: #1f2328;
+  --p-bg: #ffffff;
+  --p-muted: #59636e;
+  --p-border: #d1d9e0;
+  --p-accent: #0969da;
+  --p-accent-fg: #ffffff;
+  --p-card: #f6f8fa;
+  --p-danger: #cf222e;
+  --p-warn: #9a6700;
+  --p-success: #1a7f37;
+  --p-chip-bg: rgba(9,105,218,0.12);
+  --p-chip-fg: #0969da;
+  --p-input-bg: #ffffff;
+  --p-input-fg: #1f2328;
+  --p-input-border: #d1d9e0;
+}
+:root[data-theme="dark"] { color-scheme: dark; }
 
 * { box-sizing: border-box; }
 

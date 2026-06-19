@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-06-19T13:17:39Z
+* updated: 2026-06-19T13:22:39Z
 * max-id: 54
 * next-id: 13
 
@@ -185,15 +185,6 @@ command layer).
   recovers from history.
 - Concurrency: run two `md add` in parallel; confirm CAS retry yields both (no lost update).
 - Speed: confirm git‑mode `md add` stays single‑digit‑ms (the 0.70 ms write path).
-
-## 43. web UI: light theme support for plain-browser users
-
-* status: open
-* priority: P3
-* type: feature
-* created: 2026-06-19T11:43:30Z
-
-app.css hardcodes color-scheme: dark with dark fallback values, so outside the VS Code webview the UI is always dark. Respect prefers-color-scheme with a proper light palette and add a manual theme toggle persisted in localStorage (like the existing sort/group/show-closed prefs). Keep the VS Code theme variables taking precedence when running inside the extension.
 
 ## 44. web UI: richer combinable filtering and clearer empty states
 

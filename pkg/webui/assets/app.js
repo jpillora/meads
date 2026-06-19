@@ -994,6 +994,25 @@ if (compactToggle) {
   });
 }
 
+// --- Theme -------------------------------------------------------------
+// "auto" follows the OS; "light"/"dark" force a palette. Only affects a plain
+// browser — inside VS Code the --vscode-* vars win regardless (see app.css).
+let themePref = localStorage.getItem("meads.theme") || "auto";
+const sysLight = window.matchMedia("(prefers-color-scheme: light)");
+function applyTheme() {
+  const resolved = themePref === "auto" ? (sysLight.matches ? "light" : "dark") : themePref;
+  document.documentElement.dataset.theme = resolved;
+  const btn = document.getElementById("theme-toggle");
+  if (btn) btn.textContent = themePref;
+}
+sysLight.addEventListener("change", () => { if (themePref === "auto") applyTheme(); });
+document.getElementById("theme-toggle")?.addEventListener("click", () => {
+  themePref = themePref === "auto" ? "light" : themePref === "light" ? "dark" : "auto";
+  localStorage.setItem("meads.theme", themePref);
+  applyTheme();
+});
+applyTheme();
+
 // Dep picker: typeahead + click-to-pick.
 document.getElementById("dep-search")?.addEventListener("input", (e) => {
   renderDepResults(e.target.value);
