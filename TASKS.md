@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-06-16T07:48:28Z
+* updated: 2026-06-19T11:44:11Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -183,12 +183,101 @@ command layer).
 - Concurrency: run two `md add` in parallel; confirm CAS retry yields both (no lost update).
 - Speed: confirm git‑mode `md add` stays single‑digit‑ms (the 0.70 ms write path).
 
-## 35. Validate & warn on circular dependencies
+## 36. web UI: surface dependency-blocked tasks to match `md ready`
 
-* status: closed
+* status: open
+* priority: P1
+* type: feature
+* created: 2026-06-19T11:43:16Z
+
+A task whose dependencies are not all closed is excluded from `md ready`, but the web UI shows it as an ordinary open task. Example seen live: #22 depends on still-open #20 and #21 yet renders identically to a genuinely ready task, with an Advance button that implies it can start. In pkg/webui/assets (app.js taskCard + app.css) add a computed blocked-by-deps state: a badge / left-border like the manual blocked status, a list of the unmet (non-closed) parents, and relabel or disable Advance status while blocked. Keep it visually distinct from a manually set status=blocked.
+
+## 37. web UI: make card status controls contextual, not a wrap-around cycle
+
+* status: open
 * priority: P2
 * type: feature
-* created: 2026-06-16T07:47:42Z
-* updated: 2026-06-16T07:47:45Z
+* created: 2026-06-19T11:43:16Z
 
-Prevention already existed via validateDeps on every mutation (add/add-dep/update/MCP/webui). Added read-only detection (Store.FindCycles + shared findCycle/findCycles) and surfaced pre-existing cycles — which a git merge of two individually-valid edits can create unpreventably — in 'md doctor' (reports each cycle, exits non-zero) and as stderr warnings on 'md ready'/'md list' (stdout/JSON stays clean).
+The Advance status button (pkg/webui/assets/app.js nextStatus/advanceStatus) cycles draft -> open -> inprogress -> blocked -> closed -> draft. Two bad outcomes: advancing an inprogress task lands on blocked (a regression state nobody wants from an Advance action), and advancing a closed task wraps back to draft. Replace the single cycling button with meaningful actions (e.g. Start / Done plus an explicit status menu) so blocked is only reachable deliberately and closed never wraps. Update the help dialog shortcuts to match.
+
+## 38. web UI: show dependency titles and status on cards, not just ids
+
+* status: open
+* priority: P2
+* type: feature
+* created: 2026-06-19T11:43:16Z
+
+Cards render each dependency as a bare arrow-and-id (e.g. the link reading just 20) with no title or status, in the taskCard deps loop of pkg/webui/assets/app.js. The editor typeahead already shows id plus title, so cards are inconsistent and force a click to learn what a dependency is. Show the parent title (truncated) and indicate whether each parent is closed (satisfied) or still open (blocking), with a tooltip. Consider also surfacing reverse links: which tasks this one blocks.
+
+## 39. web UI: display status_reason on blocked and closed cards
+
+* status: open
+* priority: P2
+* type: feature
+* created: 2026-06-19T11:43:16Z
+
+advanceStatus() in pkg/webui/assets/app.js prompts for a reason when moving a task to blocked or closed and PATCHes status_reason, but that reason is never shown anywhere afterwards. Render it on the card (a muted line under the title, or a tooltip on the status chip) and let it be viewed and edited from the task editor dialog.
+
+## 40. web UI: clamp long task descriptions with a show more toggle
+
+* status: open
+* priority: P2
+* type: feature
+* created: 2026-06-19T11:43:16Z
+
+Descriptions render in full inside every card (.description in app.css / taskCard in app.js), so a long task (around 600 chars was seen live) dominates the list and ruins scannability. Clamp to a few lines with a fade, plus a Show more / Show less toggle that keeps full markdown rendering when expanded.
+
+## 41. web UI: accessibility pass for keyboard and screen readers
+
+* status: open
+* priority: P2
+* type: task
+* created: 2026-06-19T11:43:30Z
+
+The j/k focus model in pkg/webui/assets/app.js paints a custom data-focused attribute but never moves real DOM focus, so screen readers do not announce the focused card and Tab never reaches cards. Make cards focusable (tabindex/role), move real focus on j/k, and add aria-labels to icon-only controls (the x remove-dep button, the arrow dep links, the advance-status arrow). Verify dialog focus trapping and color contrast for the chips.
+
+## 42. web UI: replace native prompt/confirm with styled dialogs and add undo on delete
+
+* status: open
+* priority: P3
+* type: feature
+* created: 2026-06-19T11:43:30Z
+
+The UI relies on window.prompt (status reason, link URL) and window.confirm (delete) in pkg/webui/assets/app.js: unstyled, single-line, and jarring against the custom dialog styling. Replace them with in-app styled inputs (multiline status reason). Because deleted tasks are recoverable from git history, drop the delete confirm in favour of an immediate delete with an Undo action on the toast.
+
+## 43. web UI: light theme support for plain-browser users
+
+* status: open
+* priority: P3
+* type: feature
+* created: 2026-06-19T11:43:30Z
+
+app.css hardcodes color-scheme: dark with dark fallback values, so outside the VS Code webview the UI is always dark. Respect prefers-color-scheme with a proper light palette and add a manual theme toggle persisted in localStorage (like the existing sort/group/show-closed prefs). Keep the VS Code theme variables taking precedence when running inside the extension.
+
+## 44. web UI: richer combinable filtering and clearer empty states
+
+* status: open
+* priority: P3
+* type: feature
+* created: 2026-06-19T11:43:30Z
+
+The filter in pkg/webui/assets/app.js is a single lowercase substring match with whole-token equality for status/type/priority; you cannot combine facets such as status:open type:bug. Add structured combinable filters (facet chips or a small token syntax). Also fix a misleading case: when a query matches only closed tasks while Show closed is off, the list says No matches; instead hint that N closed matches are hidden.
+
+## 45. web UI: inline quick-edit of status, priority and type via chips
+
+* status: open
+* priority: P3
+* type: idea
+* created: 2026-06-19T11:43:30Z
+
+Changing status, priority or type currently requires opening the full editor dialog. Make the chips on each card interactive: click a chip to pick a new value from a small popover and PATCH immediately, for faster triage. Builds on the existing chip rendering in pkg/webui/assets/app.js.
+
+## 46. web UI: dependency graph / tree visualization
+
+* status: open
+* priority: P3
+* type: idea
+* created: 2026-06-19T11:43:30Z
+
+Dependencies are the core differentiator but are only shown as flat per-card links. Add an optional graph or tree view of the task DAG (parents and children, highlighting blocked chains and ready leaves). Reuse the existing /api/tasks data and render with a lightweight no-build approach to match the current vanilla JS stack.
