@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-06-19T11:45:59Z
+* updated: 2026-06-19T11:54:03Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -261,8 +261,9 @@ app.css hardcodes color-scheme: dark with dark fallback values, so outside the V
 * priority: P3
 * type: feature
 * created: 2026-06-19T11:43:30Z
+* updated: 2026-06-19T11:54:03Z
 
-The filter in pkg/webui/assets/app.js is a single lowercase substring match with whole-token equality for status/type/priority; you cannot combine facets such as status:open type:bug. Add structured combinable filters (facet chips or a small token syntax). Also fix a misleading case: when a query matches only closed tasks while Show closed is off, the list says No matches; instead hint that N closed matches are hidden.
+The filter in pkg/webui/assets/app.js is a single lowercase substring match with whole-token equality for status/type/priority; you cannot combine facets such as status:open type:bug. Add structured combinable filters (facet chips or a small token syntax). Also fix a misleading case: when a query matches only closed tasks while Show closed is off, the list says No matches; instead hint that N closed matches are hidden. Reference (../rais MeadsTaskList): a segmented All / Open / Ready control (the Ready option backed by `md ready` semantics, which also satisfies the readiness surfacing in #36) plus a row of type-icon facet toggle chips (idea/task/bug/feature, multi-select) above the list.
 
 ## 45. web UI: inline quick-edit of status, priority and type via chips
 
@@ -288,5 +289,33 @@ Dependencies are the core differentiator but are only shown as flat per-card lin
 * priority: P2
 * type: feature
 * created: 2026-06-19T11:45:59Z
+* updated: 2026-06-19T11:54:03Z
 
-Cards and the editor preview both call the hand-rolled renderMarkdown() in pkg/webui/assets/app.js, a tiny subset: bold, italic, inline/fenced code, links, ul/ol, h1-h3. They already render identically (same function), but the subset misses common markdown: tables, blockquotes, task-list checkboxes, nested/indented lists, strikethrough, images, horizontal rules, autolinks, multi-line list items. Goal: render full standard markdown from one shared renderer so cards and preview stay consistent. Options: (a) extend renderMarkdown to cover the missing constructs; (b) adopt a small zero-dependency markdown library; (c) a richer editor/WYSIWYG component used read-only for cards. Constraint: app.js is deliberately vanilla with no framework and no build step, so a heavy WYSIWYG lib likely needs a bundler - weigh that tradeoff. Note: a read-only WYSIWYG buys nothing for display (rendered HTML is enough); WYSIWYG only helps editing, which would be a separate larger task. Preserve XSS-safety (the current renderer HTML-escapes before emitting tags). Pairs with the description-clamping work.
+Cards and the editor preview both call the hand-rolled renderMarkdown() in pkg/webui/assets/app.js, a tiny subset: bold, italic, inline/fenced code, links, ul/ol, h1-h3. They already render identically (same function), but the subset misses common markdown: tables, blockquotes, task-list checkboxes, nested/indented lists, strikethrough, images, horizontal rules, autolinks. Goal: render full standard markdown from one shared renderer so cards and preview stay consistent, preserving XSS-safety (the current renderer HTML-escapes before emitting tags). Reference (../rais Meads UI): it renders read-only descriptions with the marked library (plus marked-highlight + highlight.js) in a dedicated MarkdownViewer component, getting full GFM including tables (wrapped for horizontal scroll), blockquotes and hr; for editing it uses TipTap (tiptap-markdown) or Lexxy WYSIWYG. Both editors need a bundler, confirming a true WYSIWYG editor is a build-step decision; for the no-build meads webui a small renderer like marked (read-only) is the pragmatic match. Pairs with description-clamping (#40).
+
+## 48. web UI: compact table/list view with type icons and status dots
+
+* status: open
+* priority: P2
+* type: feature
+* created: 2026-06-19T11:54:03Z
+
+The current card list (pkg/webui/assets) reads well but scans poorly once there are many tasks: each card is tall and shows the full description. Add a denser one-line-per-task table view (toggle, persisted like the other prefs) with columns: ID, title (ellipsized), a type icon, a status dot, priority, deps. Borrow progressive disclosure from ../rais MeadsTaskList: hide the priority column when all visible tasks share a priority, hide the deps column when none have deps. Encode status as a small colored dot and render closed-with-a-status_reason distinctly from a clean close (rais colors the dot red when a reason is present). Optionally pair with a master/detail pane (click a row to open detail) like rais MeadsContent, instead of only the modal editor. Complements description-clamping (#40) and dependency display (#38).
+
+## 49. web UI: single markdown body field with derived title in the editor
+
+* status: open
+* priority: P3
+* type: idea
+* created: 2026-06-19T11:54:03Z
+
+The editor dialog (pkg/webui/assets/index.html + app.js) has separate Title and Description inputs. ../rais MeadsTaskDetail instead edits one markdown body and derives the title from its first line, matching md add rich parsing (title is the text before the first period-space or newline). Consider collapsing to a single body editor: less chrome, fewer fields, and consistent with the CLI. Keep an explicit fallback (Untitled) when the first line is empty.
+
+## 50. web UI: persist the unsaved New task form as a draft
+
+* status: open
+* priority: P3
+* type: feature
+* created: 2026-06-19T11:54:03Z
+
+openEditor() calls form.reset(), so a half-written new task is lost if the dialog is closed or the page reloads. ../rais MeadsTaskDetail autosaves the in-progress add form to localStorage (body/type/priority) and restores it on mount, clearing it on successful create. Add the same draft persistence to the meads new-task form under a single localStorage key so accidental closes do not lose work; clear it on submit and on explicit cancel.
