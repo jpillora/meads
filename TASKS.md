@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-06-19T11:57:27Z
+* updated: 2026-06-19T12:00:21Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -50,13 +50,15 @@ After the e2e test passes, push a v* tag — the release_vscode job in .github/w
 
 Once the .vsix is attached to a real release, re-add the 'Web UI + VS Code extension' section to README.md with install instructions (download .vsix from Releases, install via 'Extensions: Install from VSIX...').
 
-## 26. extension doesn't work in code serve-web / vscode.dev / Codespaces
+## 26. extension doesn't work in code serve
 
-* status: open
+* status: draft
 * priority: P3
 * type: bug
 * created: 2026-05-21T16:36:32Z
+* updated: 2026-06-19T11:59:05Z
 
+extension doesn't work in code serve-web / vscode.dev / Codespaces
 The webview iframe loads md webui over HTTP, but VS Code's web client hosts webviews on an HTTPS origin (*.vscode-cdn.net). Chrome blocks the iframe as mixed-content before VS Code's portMapping/asExternalUri proxy can intercept (verified empirically with code serve-web 1.103.2 + agent-browser: no request reaches md webui's HTTP handler). Fix options: (a) serve md webui over HTTPS with a self-signed cert; (b) refactor the webview to load static assets via webview.asWebviewUri and proxy all API/SSE/WS traffic through the existing /bind-vscode channel; (c) document desktop-only and stop pretending. Track this before promoting the extension beyond desktop.
 
 ## 30. Git mode
@@ -330,3 +332,30 @@ openEditor() calls form.reset(), so a half-written new task is lost if the dialo
 * created: 2026-06-19T11:57:27Z
 
 Constraint: the meads webui (pkg/webui/assets) must stay no-build - no npm, no bundler, no runtime CDN. Establish the pattern for pulling in third-party JS without one. Mechanics already in place: assets.go embeds the assets dir with go:embed and serves it through a plain http.FileServer, so any file dropped under pkg/webui/assets/ is auto-served at its relative path with a correct content-type (e.g. assets/vendor/marked.esm.js becomes GET /vendor/marked.esm.js), and index.html already loads app.js as a module. Plan: (1) add a script type=importmap block to index.html mapping bare specifiers to /vendor/*.esm.js; (2) app.js then uses normal import statements; (3) vendor only libraries that ship a single self-contained ESM file with zero or few runtime deps (marked for markdown, dompurify for sanitising) and avoid TipTap/ProseMirror/Lexxy whose deep dep graphs cannot be hand-vendored without a bundler - which is why WYSIWYG editing stays out of scope; (4) commit the vendored files under assets/vendor/ so go:embed ships them, pin the version, and document a refresh step (curl jsdelivr or esm.sh +esm, or copy the package dist) with the source URL and a hash. Prerequisite for #47 and any future library use.
+
+## 52. auto-save: print staged-file notice to stderr
+
+* status: open
+* priority: P2
+* type: task
+* created: 2026-06-19T12:00:21Z
+
+Agents get confused when TASKS.md appears in a commit they did not stage it into, and try to unstage/remove it. auto-delete already prints 'md: removed closed task N' to stderr, but auto-save stages silently (cmd/md/auto_save.go runFromHook). Print a line like 'md: auto-staged TASKS.md' so the inclusion is visible and agents stop fighting the hook.
+
+## 53. Document auto-save pre-commit hook behavior in CLAUDE.md
+
+* status: open
+* priority: P3
+* type: task
+* created: 2026-06-19T12:00:21Z
+
+Add a note to CLAUDE.md explaining that a pre-commit hook auto-stages TASKS.md into every commit, and agents should NOT unstage or remove it. Reduces agents fighting the hook.
+
+## 54. Skip pre-commit TASKS.md staging during rebase/merge/cherry-pick
+
+* status: open
+* priority: P2
+* type: bug
+* created: 2026-06-19T12:00:21Z
+
+The pre-commit hook's 'git add TASKS.md' (auto-save + auto-delete) races git for .git/index.lock during rebase and commit --amend, failing the op (see memory feedback_rebase_hook_deadlock). Detect in-progress sequencer ops — .git/rebase-merge or .git/rebase-apply dirs, or MERGE_HEAD/CHERRY_PICK_HEAD set — and skip staging, which is redundant during replay. Removes the need for the manual 'git -c core.hooksPath=/dev/null' bypass.
