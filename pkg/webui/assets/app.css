@@ -160,6 +160,25 @@ main { padding: 0.75rem 1rem 2rem; display: flex; flex-direction: column; gap: 0
   overflow-x: auto;
 }
 .card .description pre code { background: transparent; padding: 0; }
+/* Elements from full markdown (tables, quotes, rules, images, task lists),
+   shared by card descriptions and the editor preview. */
+.card .description blockquote, .md-preview blockquote {
+  margin: 0.3rem 0; padding-left: 0.6rem;
+  border-left: 3px solid var(--border); color: var(--muted);
+}
+.card .description table, .md-preview table {
+  border-collapse: collapse; margin: 0.3rem 0; font-size: 0.95em;
+  display: block; overflow-x: auto;
+}
+.card .description th, .card .description td,
+.md-preview th, .md-preview td { border: 1px solid var(--border); padding: 2px 8px; text-align: left; }
+.card .description th, .md-preview th { background: color-mix(in srgb, var(--fg) 6%, transparent); }
+.card .description hr, .md-preview hr { border: 0; border-top: 1px solid var(--border); margin: 0.5rem 0; }
+.card .description img, .md-preview img { max-width: 100%; height: auto; border-radius: 4px; }
+.card .description del, .md-preview del { opacity: 0.7; }
+.card .description li:has(> input[type="checkbox"]),
+.md-preview li:has(> input[type="checkbox"]) { list-style: none; margin-left: -1rem; }
+.card .description input[type="checkbox"], .md-preview input[type="checkbox"] { margin: 0 0.35rem 0 0; }
 .card footer { display: flex; gap: 0.25rem; margin-top: 0.25rem; align-items: center; }
 .card-time {
   margin-left: auto;

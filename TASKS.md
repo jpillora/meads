@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-06-19T12:34:29Z
+* updated: 2026-06-19T12:40:38Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -266,17 +266,6 @@ Changing status, priority or type currently requires opening the full editor dia
 * created: 2026-06-19T11:43:30Z
 
 Dependencies are the core differentiator but are only shown as flat per-card links. Add an optional graph or tree view of the task DAG (parents and children, highlighting blocked chains and ready leaves). Reuse the existing /api/tasks data and render with a lightweight no-build approach to match the current vanilla JS stack.
-
-## 47. web UI: proper markdown rendering for descriptions (shared by cards + editor)
-
-* status: open
-* priority: P2
-* type: feature
-* depends-on: 
-* created: 2026-06-19T11:45:59Z
-* updated: 2026-06-19T11:57:27Z
-
-Cards and the editor preview both call the hand-rolled renderMarkdown() in pkg/webui/assets/app.js, a tiny subset: bold, italic, inline/fenced code, links, ul/ol, h1-h3. They already render identically (same function) but miss common markdown: tables, blockquotes, task-list checkboxes, nested/indented lists, strikethrough, images, horizontal rules, autolinks. Goal: render full standard markdown from one shared renderer used by both cards and the editor preview, preserving XSS-safety. Approach under the no-build constraint (see the ESM import-map + vendoring task #51): vendor a single-file zero-dep ESM markdown lib (marked, as ../rais uses for its read-only MarkdownViewer) into assets/vendor and import it via the import map; pair it with a vendored sanitiser (dompurify) since marked does not escape embedded HTML by default. WYSIWYG editors (TipTap/Lexxy, also seen in rais) are out of scope here: their dep trees need a bundler and break no-build, so editing stays markdown-source plus live preview. Pairs with description-clamping (#40).
 
 ## 49. web UI: single markdown body field with derived title in the editor
 
