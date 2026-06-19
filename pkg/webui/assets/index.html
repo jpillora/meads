@@ -5,6 +5,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Meads</title>
 <link rel="stylesheet" href="/app.css">
+<!-- No-build dependency resolution: bare specifiers map to vendored ESM files
+     under /vendor (embedded via go:embed). See assets/vendor/README.md. -->
+<script type="importmap">
+{
+  "imports": {
+    "marked": "/vendor/marked.esm.js",
+    "dompurify": "/vendor/purify.es.mjs"
+  }
+}
+</script>
 </head>
 <body>
 <header class="bar">

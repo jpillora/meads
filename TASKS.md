@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-06-19T12:24:38Z
+* updated: 2026-06-19T12:29:08Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -281,7 +281,7 @@ Dependencies are the core differentiator but are only shown as flat per-card lin
 * status: open
 * priority: P2
 * type: feature
-* depends-on: 51
+* depends-on: 
 * created: 2026-06-19T11:45:59Z
 * updated: 2026-06-19T11:57:27Z
 
@@ -304,15 +304,6 @@ The editor dialog (pkg/webui/assets/index.html + app.js) has separate Title and 
 * created: 2026-06-19T11:54:03Z
 
 openEditor() calls form.reset(), so a half-written new task is lost if the dialog is closed or the page reloads. ../rais MeadsTaskDetail autosaves the in-progress add form to localStorage (body/type/priority) and restores it on mount, clearing it on successful create. Add the same draft persistence to the meads new-task form under a single localStorage key so accidental closes do not lose work; clear it on submit and on explicit cancel.
-
-## 51. web UI: no-build dependency strategy via ESM import maps + vendored assets
-
-* status: open
-* priority: P2
-* type: task
-* created: 2026-06-19T11:57:27Z
-
-Constraint: the meads webui (pkg/webui/assets) must stay no-build - no npm, no bundler, no runtime CDN. Establish the pattern for pulling in third-party JS without one. Mechanics already in place: assets.go embeds the assets dir with go:embed and serves it through a plain http.FileServer, so any file dropped under pkg/webui/assets/ is auto-served at its relative path with a correct content-type (e.g. assets/vendor/marked.esm.js becomes GET /vendor/marked.esm.js), and index.html already loads app.js as a module. Plan: (1) add a script type=importmap block to index.html mapping bare specifiers to /vendor/*.esm.js; (2) app.js then uses normal import statements; (3) vendor only libraries that ship a single self-contained ESM file with zero or few runtime deps (marked for markdown, dompurify for sanitising) and avoid TipTap/ProseMirror/Lexxy whose deep dep graphs cannot be hand-vendored without a bundler - which is why WYSIWYG editing stays out of scope; (4) commit the vendored files under assets/vendor/ so go:embed ships them, pin the version, and document a refresh step (curl jsdelivr or esm.sh +esm, or copy the package dist) with the source URL and a hash. Prerequisite for #47 and any future library use.
 
 ## 52. auto-save: print staged-file notice to stderr
 
