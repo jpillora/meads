@@ -162,16 +162,23 @@ function taskCard(t) {
 
   // Status leads (most important state), then priority, then type.
   const chips = node.querySelector(".chips");
-  const statusChip = chip(status, "status-" + status);
-  if (t.status_reason && (status === "blocked" || status === "closed")) statusChip.title = t.status_reason;
+  const statusChip = chip(status, "status-" + status + " editable");
+  statusChip.dataset.facet = "status";
+  statusChip.title = (t.status_reason && (status === "blocked" || status === "closed")) ? t.status_reason : "Change status";
   chips.append(statusChip);
   if (blocking.length) {
     const c = chip("blocked by deps", "dep-blocked");
     c.title = "Not ready — waiting on " + blocking.map((p) => "#" + p.id).join(", ");
     chips.append(c);
   }
-  chips.append(chip(priority, priority.toLowerCase()));
-  chips.append(chip(type, "type-" + type));
+  const prChip = chip(priority, priority.toLowerCase() + " editable");
+  prChip.dataset.facet = "priority";
+  prChip.title = "Change priority";
+  chips.append(prChip);
+  const typeChip = chip(type, "type-" + type + " editable");
+  typeChip.dataset.facet = "type";
+  typeChip.title = "Change type";
+  chips.append(typeChip);
 
   const deps = node.querySelector(".deps");
   if (Array.isArray(t.depends_on)) {
@@ -934,6 +941,54 @@ function deleteWithUndo(task) {
   });
 }
 
+// --- Chip quick-edit ---------------------------------------------------
+const PRIORITIES = ["P0", "P1", "P2", "P3", "P4"];
+const TYPES = ["task", "bug", "feature", "idea"];
+let openMenu = null;
+
+function closeChipMenu() {
+  if (!openMenu) return;
+  openMenu.el.remove();
+  window.removeEventListener("scroll", openMenu.onScroll, true);
+  document.removeEventListener("keydown", openMenu.onKey, true);
+  openMenu = null;
+}
+
+// openChipMenu floats a small option list under a chip; picking one applies it.
+function openChipMenu(anchor, task, facet, options) {
+  closeChipMenu();
+  const menu = el("div");
+  menu.className = "chip-menu";
+  for (const opt of options) {
+    const b = el("button", opt);
+    b.type = "button";
+    b.className = "chip-menu-item" + (opt === (task[facet] || "") ? " current" : "");
+    b.addEventListener("click", (e) => { e.stopPropagation(); closeChipMenu(); quickEdit(task, facet, opt); });
+    menu.append(b);
+  }
+  document.body.append(menu);
+  const r = anchor.getBoundingClientRect();
+  menu.style.left = `${Math.round(r.left)}px`;
+  menu.style.top = `${Math.round(r.bottom + 4)}px`;
+  const onScroll = () => closeChipMenu();
+  const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); closeChipMenu(); } };
+  window.addEventListener("scroll", onScroll, true);
+  document.addEventListener("keydown", onKey, true);
+  openMenu = { el: menu, onScroll, onKey };
+}
+
+// quickEdit applies a chip-chosen value. Status reuses setStatus (reason prompt
+// for blocked/closed); priority and type PATCH directly.
+async function quickEdit(task, facet, value) {
+  if (facet === "status") return setStatus(task, value);
+  if (value === (task[facet] || "")) return;
+  try {
+    await updateTask(task.id, { id: task.id, [facet]: value });
+    await reload();
+    toast(`Task #${task.id} ${facet} → ${value}`);
+  } catch (err) { toast(err.message, "err"); }
+}
+
 // --- Event delegation --------------------------------------------------
 
 // Open/close the narrow-viewport kebab dropdown. Outside-click closes via the
@@ -951,6 +1006,21 @@ document.addEventListener("click", async (e) => {
   // Outside-click closes the overflow menu (before the early-return below).
   const inActions = e.target.closest(".bar .actions");
   if (!inActions) setOverflowOpen(false);
+
+  // Chip quick-edit popover: open on an editable chip, close on any click that
+  // is neither an editable chip nor inside the open menu.
+  const editChip = e.target.closest(".chip.editable");
+  if (!editChip && !e.target.closest(".chip-menu")) closeChipMenu();
+  if (editChip) {
+    const card = editChip.closest("[data-id]");
+    const task = card && state.tasks.find((t) => t.id === parseInt(card.dataset.id, 10));
+    if (task) {
+      const facet = editChip.dataset.facet;
+      const opts = facet === "status" ? STATUS_ALL : facet === "priority" ? PRIORITIES : TYPES;
+      openChipMenu(editChip, task, facet, opts);
+    }
+    return;
+  }
 
   const btn = e.target.closest("button");
   if (!btn) return;

@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-06-19T13:27:32Z
+* updated: 2026-06-19T13:34:23Z
 * max-id: 54
 * next-id: 13
 
@@ -185,15 +185,6 @@ command layer).
   recovers from history.
 - Concurrency: run two `md add` in parallel; confirm CAS retry yields both (no lost update).
 - Speed: confirm git‑mode `md add` stays single‑digit‑ms (the 0.70 ms write path).
-
-## 45. web UI: inline quick-edit of status, priority and type via chips
-
-* status: open
-* priority: P3
-* type: idea
-* created: 2026-06-19T11:43:30Z
-
-Changing status, priority or type currently requires opening the full editor dialog. Make the chips on each card interactive: click a chip to pick a new value from a small popover and PATCH immediately, for faster triage. Builds on the existing chip rendering in pkg/webui/assets/app.js.
 
 ## 46. web UI: dependency graph / tree visualization
 

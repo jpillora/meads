@@ -307,6 +307,33 @@ main { padding: 0.75rem 1rem 2rem; display: flex; flex-direction: column; gap: 0
 .chip.status-closed { background: color-mix(in srgb, var(--muted) 18%, transparent); color: var(--muted); }
 .chip.status-draft { background: color-mix(in srgb, var(--muted) 12%, transparent); color: var(--muted); }
 .chip.dep-blocked { background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn); }
+.chip.editable { cursor: pointer; }
+.chip.editable:hover { outline: 1px solid var(--border); outline-offset: 1px; }
+.chip-menu {
+  position: fixed;
+  z-index: 30;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+  padding: 3px;
+  display: flex;
+  flex-direction: column;
+  min-width: 7em;
+}
+.chip-menu-item {
+  background: transparent;
+  border: 0;
+  color: var(--fg);
+  text-align: left;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.9em;
+}
+.chip-menu-item:hover { background: color-mix(in srgb, var(--fg) 8%, transparent); }
+.chip-menu-item.current { color: var(--accent); font-weight: 600; }
 .chip.p0, .chip.p1 { background: color-mix(in srgb, var(--danger) 18%, transparent); color: var(--danger); }
 .chip.p3, .chip.p4, .chip.p5, .chip.p6, .chip.p7, .chip.p8, .chip.p9 {
   background: color-mix(in srgb, var(--muted) 14%, transparent); color: var(--muted);
