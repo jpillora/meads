@@ -388,6 +388,32 @@ dialog {
   max-width: 92vw;
 }
 dialog::backdrop { background: rgba(0,0,0,0.3); }
+#graph { width: min(92vw, 900px); max-width: 92vw; }
+.graph-header { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem; flex-wrap: wrap; }
+.graph-header h2 { margin: 0; font-size: 1.05em; }
+.graph-legend { display: inline-flex; gap: 0.5rem; font-size: 0.8em; color: var(--muted); margin-left: auto; }
+.graph-legend .lg::before {
+  content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 2px;
+  border: 2px solid var(--muted); margin-right: 3px; vertical-align: middle;
+}
+.graph-legend .lg.ready::before { border-color: var(--success); }
+.graph-legend .lg.blocked::before { border-color: var(--warn); }
+.graph-legend .lg.inprogress::before { border-color: var(--accent); }
+.graph-legend .lg.closed::before { border-color: var(--muted); }
+.graph-body { overflow: auto; max-height: 70vh; }
+.dep-graph { display: block; }
+.dep-edge { stroke: var(--border); stroke-width: 1.5; fill: none; }
+.dep-edge.unmet { stroke: var(--warn); }
+.dep-node { cursor: pointer; }
+.dep-node rect { fill: var(--card); stroke: var(--border); stroke-width: 1.5; }
+.dep-node text { fill: var(--fg); font-size: 11px; font-family: inherit; }
+.dep-node.ready rect { stroke: var(--success); }
+.dep-node.blocked rect { stroke: var(--warn); }
+.dep-node.inprogress rect { stroke: var(--accent); }
+.dep-node.closed rect { stroke: var(--muted); opacity: 0.6; }
+.dep-node:hover rect { filter: brightness(1.2); }
+.dep-node:focus { outline: none; }
+.dep-node:focus rect { stroke-width: 3; }
 dialog h2 { margin: 0 0 0.5rem; font-size: 1.05em; }
 dialog label { display: grid; gap: 0.15rem; margin-bottom: 0.5rem; }
 dialog .row { display: flex; gap: 0.5rem; }

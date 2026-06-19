@@ -989,6 +989,94 @@ async function quickEdit(task, facet, value) {
   } catch (err) { toast(err.message, "err"); }
 }
 
+// --- Dependency graph --------------------------------------------------
+const SVGNS = "http://www.w3.org/2000/svg";
+function svgEl(tag, attrs) {
+  const e = document.createElementNS(SVGNS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  return e;
+}
+
+// nodeState classifies a task for graph node colouring.
+function nodeState(t) {
+  const s = t.status || "open";
+  if (s === "closed") return "closed";
+  if (isDepBlocked(t)) return "blocked";
+  if (s === "inprogress") return "inprogress";
+  if (s === "open") return "ready";
+  return "other";
+}
+
+// openGraph renders the dependency DAG: every task that has, or is, a dependency,
+// laid out in longest-path layers (prerequisites left, dependents right).
+function openGraph() {
+  const dlg = document.getElementById("graph");
+  const body = dlg.querySelector(".graph-body");
+  body.innerHTML = "";
+  const byId = state.tasksById;
+  const depended = new Set();
+  for (const t of state.tasks) for (const p of (t.depends_on || [])) depended.add(p);
+  const nodes = state.tasks.filter((t) => (t.depends_on && t.depends_on.length) || depended.has(t.id));
+  if (nodes.length === 0) {
+    body.append(Object.assign(el("div", "No dependencies yet."), { className: "empty" }));
+    dlg.showModal();
+    return;
+  }
+  // Longest-path level: 0 for tasks with no present deps, else 1 + max(parent).
+  const level = new Map();
+  const lvl = (t, seen) => {
+    if (level.has(t.id)) return level.get(t.id);
+    if (seen.has(t.id)) return 0; // cycle guard
+    seen.add(t.id);
+    const parents = (t.depends_on || []).map((id) => byId.get(id)).filter(Boolean);
+    const v = parents.length ? 1 + Math.max(...parents.map((p) => lvl(p, seen))) : 0;
+    seen.delete(t.id);
+    level.set(t.id, v);
+    return v;
+  };
+  for (const t of nodes) lvl(t, new Set());
+  const cols = [];
+  for (const t of nodes) (cols[level.get(t.id)] ||= []).push(t);
+  const COLW = 175, ROWH = 50, NODEW = 145, NODEH = 32, PAD = 16;
+  const pos = new Map();
+  let maxRows = 0;
+  cols.forEach((col, L) => {
+    maxRows = Math.max(maxRows, col.length);
+    col.forEach((t, i) => pos.set(t.id, { x: L * COLW + PAD, y: i * ROWH + PAD }));
+  });
+  const w = (cols.length - 1) * COLW + NODEW + 2 * PAD;
+  const h = maxRows * ROWH + PAD;
+  const svg = svgEl("svg", { width: w, height: h, viewBox: `0 0 ${w} ${h}`, class: "dep-graph" });
+  for (const t of nodes) {
+    const c = pos.get(t.id);
+    for (const pid of (t.depends_on || [])) {
+      const p = pos.get(pid);
+      if (!p) continue;
+      const parent = byId.get(pid);
+      const unmet = parent && (parent.status || "open") !== "closed";
+      svg.append(svgEl("line", {
+        x1: p.x + NODEW, y1: p.y + NODEH / 2, x2: c.x, y2: c.y + NODEH / 2,
+        class: "dep-edge" + (unmet ? " unmet" : ""),
+      }));
+    }
+  }
+  for (const t of nodes) {
+    const c = pos.get(t.id);
+    const g = svgEl("g", { class: "dep-node " + nodeState(t), "data-id": t.id, tabindex: "0" });
+    g.append(svgEl("rect", { x: c.x, y: c.y, width: NODEW, height: NODEH, rx: 6 }));
+    const text = svgEl("text", { x: c.x + 8, y: c.y + NODEH / 2 + 4 });
+    const label = `#${t.id} ${t.title || ""}`;
+    text.textContent = label.length > 20 ? label.slice(0, 19) + "…" : label;
+    g.append(text);
+    const tip = svgEl("title");
+    tip.textContent = `#${t.id} ${t.title || ""} — ${t.status || "open"}`;
+    g.append(tip);
+    svg.append(g);
+  }
+  body.append(svg);
+  dlg.showModal();
+}
+
 // --- Event delegation --------------------------------------------------
 
 // Open/close the narrow-viewport kebab dropdown. Outside-click closes via the
@@ -1022,6 +1110,15 @@ document.addEventListener("click", async (e) => {
     return;
   }
 
+  // Graph node click → jump to the task's card.
+  const gnode = e.target.closest(".dep-node");
+  if (gnode) {
+    document.getElementById("graph").close();
+    const card = document.getElementById("task-" + gnode.dataset.id);
+    if (card) { card.scrollIntoView({ block: "center" }); if (card.focus) card.focus(); }
+    return;
+  }
+
   const btn = e.target.closest("button");
   if (!btn) return;
   const card = e.target.closest(".card");
@@ -1036,8 +1133,13 @@ document.addEventListener("click", async (e) => {
   if (btn.id === "new-task") { setOverflowOpen(false); return openEditor(null); }
   if (btn.id === "help-toggle") { setOverflowOpen(false); return toggleHelp(); }
   if (btn.id === "copy-url") { setOverflowOpen(false); return copyShareUrl(); }
+  if (btn.id === "graph-toggle") { setOverflowOpen(false); return openGraph(); }
   if (action === "close-help") {
     document.getElementById("help").close();
+    return;
+  }
+  if (action === "close-graph") {
+    document.getElementById("graph").close();
     return;
   }
   if (action === "cancel") {

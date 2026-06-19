@@ -42,6 +42,7 @@
       </label>
       <button id="copy-url" title="Copy share URL (with token)">copy URL</button>
       <button id="theme-toggle" title="Theme — click to cycle auto / light / dark" aria-label="Theme">auto</button>
+      <button id="graph-toggle" title="Dependency graph">graph</button>
       <button id="help-toggle" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">?</button>
     </div>
     <button id="new-task">+ New task</button>
@@ -142,6 +143,20 @@
       <button type="submit" class="primary" data-action="prompt-ok">OK</button>
     </div>
   </form>
+</dialog>
+
+<dialog id="graph">
+  <div class="graph-header">
+    <h2>Dependency graph</h2>
+    <span class="graph-legend">
+      <span class="lg ready">ready</span>
+      <span class="lg blocked">blocked</span>
+      <span class="lg inprogress">in&nbsp;progress</span>
+      <span class="lg closed">closed</span>
+    </span>
+    <button type="button" data-action="close-graph">Close</button>
+  </div>
+  <div class="graph-body"></div>
 </dialog>
 
 <template id="task-card">
