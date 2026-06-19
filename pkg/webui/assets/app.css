@@ -504,6 +504,10 @@ dialog .footer { display: flex; justify-content: flex-end; gap: 0.5rem; margin-t
   padding: 4rem 1rem;
   color: var(--muted);
 }
+.link-btn {
+  background: transparent; border: 0; color: var(--accent);
+  cursor: pointer; font: inherit; text-decoration: underline; padding: 0;
+}
 
 /* Compact one-line table view (toggle in the header). */
 #list.compact { gap: 0; }

@@ -418,25 +418,75 @@ function clampDescription(desc) {
   desc.after(btn);
 }
 
+// parseQuery turns the filter string into combinable facets + free-text terms.
+// Tokens: status:/s:, type:/t:, priority:/pri:/p:, is:ready|blocked|open|closed,
+// id:N or #N. Bare words are free-text (also matched against facet values).
+function parseQuery(str) {
+  const q = { status: [], type: [], priority: [], is: [], ids: [], terms: [] };
+  for (const tok of str.trim().toLowerCase().split(/\s+/).filter(Boolean)) {
+    let m;
+    if ((m = /^(?:status|s):(.+)$/.exec(tok))) q.status.push(m[1]);
+    else if ((m = /^(?:type|t):(.+)$/.exec(tok))) q.type.push(m[1]);
+    else if ((m = /^(?:priority|pri|p):(.+)$/.exec(tok))) q.priority.push(/^\d$/.test(m[1]) ? "p" + m[1] : m[1]);
+    else if ((m = /^is:(.+)$/.exec(tok))) q.is.push(m[1]);
+    else if ((m = /^id:(\d+)$/.exec(tok))) q.ids.push(m[1]);
+    else if ((m = /^#(\d+)$/.exec(tok))) q.ids.push(m[1]);
+    else q.terms.push(tok);
+  }
+  return q;
+}
+
+// matchesQuery ANDs across facets and free-text terms, ORs within one facet.
+function matchesQuery(t, q) {
+  const status = (t.status || "open").toLowerCase();
+  const type = (t.type || "task").toLowerCase();
+  const pri = (t.priority || "P2").toLowerCase();
+  if (q.status.length && !q.status.includes(status)) return false;
+  if (q.type.length && !q.type.includes(type)) return false;
+  if (q.priority.length && !q.priority.includes(pri)) return false;
+  if (q.ids.length && !q.ids.includes(String(t.id))) return false;
+  for (const v of q.is) {
+    if (v === "ready" && !(status === "open" && !isDepBlocked(t))) return false;
+    if (v === "blocked" && !(isDepBlocked(t) || status === "blocked")) return false;
+    if (v === "open" && status === "closed") return false;
+    if (v === "closed" && status !== "closed") return false;
+  }
+  for (const term of q.terms) {
+    const hay = `${t.title || ""} ${t.description || ""}`.toLowerCase();
+    if (!(hay.includes(term) || type === term || status === term || pri === term || String(t.id) === term)) return false;
+  }
+  return true;
+}
+
 function renderList() {
   const list = document.getElementById("list");
   list.innerHTML = "";
-  const filter = state.filter.trim().toLowerCase();
-  const visible = state.tasks.filter((t) => {
-    if (pendingDeletes.has(t.id)) return false; // hidden during its undo window
-    if (!state.showClosed && (t.status || "open") === "closed") return false;
-    if (!filter) return true;
-    return (t.title || "").toLowerCase().includes(filter)
-      || (t.description || "").toLowerCase().includes(filter)
-      || String(t.id) === filter
-      || (t.type || "").toLowerCase() === filter
-      || (t.status || "").toLowerCase() === filter
-      || (t.priority || "").toLowerCase() === filter;
-  });
+  const q = parseQuery(state.filter);
+  // matches ignores the show-closed filter so closed hits can be reported.
+  const matches = state.tasks.filter((t) => !pendingDeletes.has(t.id) && matchesQuery(t, q));
+  const visible = matches.filter((t) => state.showClosed || (t.status || "open") !== "closed");
   renderMeta(visible.length);
   if (visible.length === 0) {
-    const empty = el("div", state.tasks.length === 0 ? "No tasks yet. Add one with the button above." : "No matches.");
+    const empty = el("div");
     empty.className = "empty";
+    const hiddenClosed = matches.length - visible.length;
+    if (state.tasks.length === 0) {
+      empty.textContent = "No tasks yet. Add one with the button above.";
+    } else if (hiddenClosed > 0) {
+      empty.append(`No open matches — ${hiddenClosed} closed ${hiddenClosed === 1 ? "task is" : "tasks are"} hidden. `);
+      const b = el("button", "Show closed");
+      b.className = "link-btn";
+      b.addEventListener("click", () => {
+        state.showClosed = true;
+        const cb = document.getElementById("show-closed");
+        if (cb) cb.checked = true;
+        localStorage.setItem("meads.showClosed", "1");
+        renderList();
+      });
+      empty.append(b);
+    } else {
+      empty.textContent = "No matches.";
+    }
     list.append(empty);
     state.focusedId = null;
     return;
