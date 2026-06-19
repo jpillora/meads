@@ -175,11 +175,15 @@ main { padding: 0.75rem 1rem 2rem; display: flex; flex-direction: column; gap: 0
   font-size: 0.9em;
 }
 .card footer button:hover { color: var(--fg); background: color-mix(in srgb, var(--fg) 6%, transparent); }
+.card footer button:disabled { opacity: 0.45; cursor: not-allowed; }
+.card footer button:disabled:hover { color: var(--muted); background: transparent; filter: none; }
 
 .card[data-status="closed"] .title { text-decoration: line-through; opacity: 0.65; }
 .card[data-status="draft"] { opacity: 0.85; border-style: dashed; }
 .card[data-status="inprogress"] { border-left: 3px solid var(--accent); }
 .card[data-status="blocked"] { border-left: 3px solid var(--danger); }
+/* Dependency-blocked: amber left border, distinct from the red manual blocked. */
+.card[data-dep-blocked="true"] { border-left: 3px solid var(--warn); }
 .card[data-focused="true"] { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .chips { display: inline-flex; gap: 0.25rem; flex-wrap: wrap; }
@@ -199,6 +203,7 @@ main { padding: 0.75rem 1rem 2rem; display: flex; flex-direction: column; gap: 0
 .chip.status-blocked { background: color-mix(in srgb, var(--danger) 18%, transparent); color: var(--danger); }
 .chip.status-closed { background: color-mix(in srgb, var(--muted) 18%, transparent); color: var(--muted); }
 .chip.status-draft { background: color-mix(in srgb, var(--muted) 12%, transparent); color: var(--muted); }
+.chip.dep-blocked { background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn); }
 .chip.p0, .chip.p1 { background: color-mix(in srgb, var(--danger) 18%, transparent); color: var(--danger); }
 .chip.p3, .chip.p4, .chip.p5, .chip.p6, .chip.p7, .chip.p8, .chip.p9 {
   background: color-mix(in srgb, var(--muted) 14%, transparent); color: var(--muted);
@@ -220,6 +225,7 @@ main { padding: 0.75rem 1rem 2rem; display: flex; flex-direction: column; gap: 0
   font-size: inherit;
 }
 .dep-link:hover { text-decoration: underline; }
+.dep.unmet .dep-link { color: var(--warn); font-weight: 600; }
 .dep-remove {
   color: var(--muted);
   cursor: pointer;

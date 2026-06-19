@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-06-19T12:00:21Z
+* updated: 2026-06-19T12:10:58Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -184,16 +184,6 @@ command layer).
   recovers from history.
 - Concurrency: run two `md add` in parallel; confirm CAS retry yields both (no lost update).
 - Speed: confirm git‑mode `md add` stays single‑digit‑ms (the 0.70 ms write path).
-
-## 36. web UI: surface dependency-blocked tasks to match `md ready`
-
-* status: open
-* priority: P1
-* type: feature
-* created: 2026-06-19T11:43:16Z
-* updated: 2026-06-19T11:57:27Z
-
-A task whose dependencies are not all closed is excluded from `md ready`, but the web UI shows it as an ordinary open task. Example seen live: #22 depends on still-open #20 and #21 yet renders identically to a genuinely ready task, with an Advance button that implies it can start. In pkg/webui/assets (app.js taskCard + app.css) add a computed blocked-by-deps state: a badge / left-border like the manual blocked status, a list of the unmet (non-closed) parents, and relabel or disable Advance status while blocked. Keep it visually distinct from a manually set status=blocked. Note: the server already exposes GET /api/ready (pkg/webui/handlers.go), so the UI can either call it or compute the blocked set client-side from the depends_on and statuses it already loads.
 
 ## 37. web UI: make card status controls contextual, not a wrap-around cycle
 
