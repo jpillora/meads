@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-06-19T11:54:03Z
+* updated: 2026-06-19T11:57:27Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -189,8 +189,9 @@ command layer).
 * priority: P1
 * type: feature
 * created: 2026-06-19T11:43:16Z
+* updated: 2026-06-19T11:57:27Z
 
-A task whose dependencies are not all closed is excluded from `md ready`, but the web UI shows it as an ordinary open task. Example seen live: #22 depends on still-open #20 and #21 yet renders identically to a genuinely ready task, with an Advance button that implies it can start. In pkg/webui/assets (app.js taskCard + app.css) add a computed blocked-by-deps state: a badge / left-border like the manual blocked status, a list of the unmet (non-closed) parents, and relabel or disable Advance status while blocked. Keep it visually distinct from a manually set status=blocked.
+A task whose dependencies are not all closed is excluded from `md ready`, but the web UI shows it as an ordinary open task. Example seen live: #22 depends on still-open #20 and #21 yet renders identically to a genuinely ready task, with an Advance button that implies it can start. In pkg/webui/assets (app.js taskCard + app.css) add a computed blocked-by-deps state: a badge / left-border like the manual blocked status, a list of the unmet (non-closed) parents, and relabel or disable Advance status while blocked. Keep it visually distinct from a manually set status=blocked. Note: the server already exposes GET /api/ready (pkg/webui/handlers.go), so the UI can either call it or compute the blocked set client-side from the depends_on and statuses it already loads.
 
 ## 37. web UI: make card status controls contextual, not a wrap-around cycle
 
@@ -288,10 +289,11 @@ Dependencies are the core differentiator but are only shown as flat per-card lin
 * status: open
 * priority: P2
 * type: feature
+* depends-on: 51
 * created: 2026-06-19T11:45:59Z
-* updated: 2026-06-19T11:54:03Z
+* updated: 2026-06-19T11:57:27Z
 
-Cards and the editor preview both call the hand-rolled renderMarkdown() in pkg/webui/assets/app.js, a tiny subset: bold, italic, inline/fenced code, links, ul/ol, h1-h3. They already render identically (same function), but the subset misses common markdown: tables, blockquotes, task-list checkboxes, nested/indented lists, strikethrough, images, horizontal rules, autolinks. Goal: render full standard markdown from one shared renderer so cards and preview stay consistent, preserving XSS-safety (the current renderer HTML-escapes before emitting tags). Reference (../rais Meads UI): it renders read-only descriptions with the marked library (plus marked-highlight + highlight.js) in a dedicated MarkdownViewer component, getting full GFM including tables (wrapped for horizontal scroll), blockquotes and hr; for editing it uses TipTap (tiptap-markdown) or Lexxy WYSIWYG. Both editors need a bundler, confirming a true WYSIWYG editor is a build-step decision; for the no-build meads webui a small renderer like marked (read-only) is the pragmatic match. Pairs with description-clamping (#40).
+Cards and the editor preview both call the hand-rolled renderMarkdown() in pkg/webui/assets/app.js, a tiny subset: bold, italic, inline/fenced code, links, ul/ol, h1-h3. They already render identically (same function) but miss common markdown: tables, blockquotes, task-list checkboxes, nested/indented lists, strikethrough, images, horizontal rules, autolinks. Goal: render full standard markdown from one shared renderer used by both cards and the editor preview, preserving XSS-safety. Approach under the no-build constraint (see the ESM import-map + vendoring task #51): vendor a single-file zero-dep ESM markdown lib (marked, as ../rais uses for its read-only MarkdownViewer) into assets/vendor and import it via the import map; pair it with a vendored sanitiser (dompurify) since marked does not escape embedded HTML by default. WYSIWYG editors (TipTap/Lexxy, also seen in rais) are out of scope here: their dep trees need a bundler and break no-build, so editing stays markdown-source plus live preview. Pairs with description-clamping (#40).
 
 ## 48. web UI: compact table/list view with type icons and status dots
 
@@ -319,3 +321,12 @@ The editor dialog (pkg/webui/assets/index.html + app.js) has separate Title and 
 * created: 2026-06-19T11:54:03Z
 
 openEditor() calls form.reset(), so a half-written new task is lost if the dialog is closed or the page reloads. ../rais MeadsTaskDetail autosaves the in-progress add form to localStorage (body/type/priority) and restores it on mount, clearing it on successful create. Add the same draft persistence to the meads new-task form under a single localStorage key so accidental closes do not lose work; clear it on submit and on explicit cancel.
+
+## 51. web UI: no-build dependency strategy via ESM import maps + vendored assets
+
+* status: open
+* priority: P2
+* type: task
+* created: 2026-06-19T11:57:27Z
+
+Constraint: the meads webui (pkg/webui/assets) must stay no-build - no npm, no bundler, no runtime CDN. Establish the pattern for pulling in third-party JS without one. Mechanics already in place: assets.go embeds the assets dir with go:embed and serves it through a plain http.FileServer, so any file dropped under pkg/webui/assets/ is auto-served at its relative path with a correct content-type (e.g. assets/vendor/marked.esm.js becomes GET /vendor/marked.esm.js), and index.html already loads app.js as a module. Plan: (1) add a script type=importmap block to index.html mapping bare specifiers to /vendor/*.esm.js; (2) app.js then uses normal import statements; (3) vendor only libraries that ship a single self-contained ESM file with zero or few runtime deps (marked for markdown, dompurify for sanitising) and avoid TipTap/ProseMirror/Lexxy whose deep dep graphs cannot be hand-vendored without a bundler - which is why WYSIWYG editing stays out of scope; (4) commit the vendored files under assets/vendor/ so go:embed ships them, pin the version, and document a refresh step (curl jsdelivr or esm.sh +esm, or copy the package dist) with the source URL and a hash. Prerequisite for #47 and any future library use.
