@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-06-19T11:44:11Z
+* updated: 2026-06-19T11:45:59Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -281,3 +281,12 @@ Changing status, priority or type currently requires opening the full editor dia
 * created: 2026-06-19T11:43:30Z
 
 Dependencies are the core differentiator but are only shown as flat per-card links. Add an optional graph or tree view of the task DAG (parents and children, highlighting blocked chains and ready leaves). Reuse the existing /api/tasks data and render with a lightweight no-build approach to match the current vanilla JS stack.
+
+## 47. web UI: proper markdown rendering for descriptions (shared by cards + editor)
+
+* status: open
+* priority: P2
+* type: feature
+* created: 2026-06-19T11:45:59Z
+
+Cards and the editor preview both call the hand-rolled renderMarkdown() in pkg/webui/assets/app.js, a tiny subset: bold, italic, inline/fenced code, links, ul/ol, h1-h3. They already render identically (same function), but the subset misses common markdown: tables, blockquotes, task-list checkboxes, nested/indented lists, strikethrough, images, horizontal rules, autolinks, multi-line list items. Goal: render full standard markdown from one shared renderer so cards and preview stay consistent. Options: (a) extend renderMarkdown to cover the missing constructs; (b) adopt a small zero-dependency markdown library; (c) a richer editor/WYSIWYG component used read-only for cards. Constraint: app.js is deliberately vanilla with no framework and no build step, so a heavy WYSIWYG lib likely needs a bundler - weigh that tradeoff. Note: a read-only WYSIWYG buys nothing for display (rendered HTML is enough); WYSIWYG only helps editing, which would be a separate larger task. Preserve XSS-safety (the current renderer HTML-escapes before emitting tags). Pairs with the description-clamping work.
