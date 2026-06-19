@@ -155,7 +155,9 @@ function taskCard(t) {
 
   // Status leads (most important state), then priority, then type.
   const chips = node.querySelector(".chips");
-  chips.append(chip(status, "status-" + status));
+  const statusChip = chip(status, "status-" + status);
+  if (t.status_reason && (status === "blocked" || status === "closed")) statusChip.title = t.status_reason;
+  chips.append(statusChip);
   if (blocking.length) {
     const c = chip("blocked by deps", "dep-blocked");
     c.title = "Not ready — waiting on " + blocking.map((p) => "#" + p.id).join(", ");
@@ -229,6 +231,13 @@ function taskCard(t) {
 
   // Description renders full markdown; renderMarkdown sanitises with
   // DOMPurify so innerHTML is safe.
+  // Surface the status reason (captured when a task was blocked/closed) above
+  // the description; it is otherwise invisible after the prompt.
+  if (t.status_reason && (status === "blocked" || status === "closed")) {
+    const r = el("div", t.status_reason);
+    r.className = "status-reason";
+    node.querySelector(".description").before(r);
+  }
   node.querySelector(".description").innerHTML = renderMarkdown(t.description || "");
   const ts = taskTimestamp(t);
   if (ts) {
@@ -511,6 +520,16 @@ async function setStatus(task, status) {
   if (!ok) renderList();
 }
 
+// updateReasonVisibility shows the editor's status-reason field only when the
+// chosen status is blocked or closed.
+function updateReasonVisibility() {
+  const form = document.getElementById("editor-form");
+  const field = document.getElementById("reason-field");
+  if (!form || !field) return;
+  const s = form.status.value;
+  field.hidden = !(s === "blocked" || s === "closed");
+}
+
 function openEditor(task) {
   state.editing = task;
   const dlg = document.getElementById("editor");
@@ -523,7 +542,9 @@ function openEditor(task) {
     form.priority.value = task.priority || "P2";
     form.status.value = task.status || "open";
     form.description.value = task.description || "";
+    form.status_reason.value = task.status_reason || "";
   }
+  updateReasonVisibility();
   setEditingDeps(task ? (task.depends_on || []) : []);
   document.getElementById("dep-search").value = "";
   hideDepResults();
@@ -710,6 +731,12 @@ async function submitEditor(ev) {
     status: String(fd.get("status") || ""),
     description: String(fd.get("description") || ""),
   };
+  // status_reason applies only to blocked/closed; the server keeps the prior
+  // value when this is empty (the API cannot clear it).
+  if (data.status === "blocked" || data.status === "closed") {
+    const reason = String(fd.get("status_reason") || "").trim();
+    if (reason) data.status_reason = reason;
+  }
   try {
     let msg;
     if (state.editing) {
@@ -823,6 +850,7 @@ document.addEventListener("click", async (e) => {
 });
 
 document.getElementById("editor-form").addEventListener("submit", submitEditor);
+document.querySelector('#editor-form [name="status"]')?.addEventListener("change", updateReasonVisibility);
 document.getElementById("filter").addEventListener("input", (e) => {
   state.filter = e.target.value;
   renderList();

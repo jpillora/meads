@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-06-19T12:45:15Z
+* updated: 2026-06-19T12:51:08Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -184,15 +184,6 @@ command layer).
   recovers from history.
 - Concurrency: run two `md add` in parallel; confirm CAS retry yields both (no lost update).
 - Speed: confirm git‑mode `md add` stays single‑digit‑ms (the 0.70 ms write path).
-
-## 39. web UI: display status_reason on blocked and closed cards
-
-* status: open
-* priority: P2
-* type: feature
-* created: 2026-06-19T11:43:16Z
-
-advanceStatus() in pkg/webui/assets/app.js prompts for a reason when moving a task to blocked or closed and PATCHes status_reason, but that reason is never shown anywhere afterwards. Render it on the card (a muted line under the title, or a tooltip on the status chip) and let it be viewed and edited from the task editor dialog.
 
 ## 40. web UI: clamp long task descriptions with a show more toggle
 
