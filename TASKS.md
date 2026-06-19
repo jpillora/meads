@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-06-19T13:45:04Z
+* updated: 2026-06-19T13:49:39Z
 * max-id: 54
 * next-id: 13
 
@@ -185,15 +185,6 @@ command layer).
   recovers from history.
 - Concurrency: run two `md add` in parallel; confirm CAS retry yields both (no lost update).
 - Speed: confirm git‑mode `md add` stays single‑digit‑ms (the 0.70 ms write path).
-
-## 50. web UI: persist the unsaved New task form as a draft
-
-* status: open
-* priority: P3
-* type: feature
-* created: 2026-06-19T11:54:03Z
-
-openEditor() calls form.reset(), so a half-written new task is lost if the dialog is closed or the page reloads. ../rais MeadsTaskDetail autosaves the in-progress add form to localStorage (body/type/priority) and restores it on mount, clearing it on successful create. Add the same draft persistence to the meads new-task form under a single localStorage key so accidental closes do not lose work; clear it on submit and on explicit cancel.
 
 ## 53. Document auto-save pre-commit hook behavior in CLAUDE.md
 

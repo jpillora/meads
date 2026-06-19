@@ -644,6 +644,44 @@ function composeBody(task) {
   return desc ? `${title}\n${desc}` : title;
 }
 
+const DRAFT_KEY = "meads.draft";
+
+// saveDraft persists the in-progress New task form so an accidental close or
+// reload does not lose work. Only the New task form is saved (not edits), and
+// only when it differs from a pristine form.
+function saveDraft() {
+  if (state.editing) return;
+  const form = document.getElementById("editor-form");
+  if (!form) return;
+  const d = {
+    body: form.description.value,
+    type: form.type.value,
+    priority: form.priority.value,
+    status: form.status.value,
+  };
+  if (d.body.trim() || d.type !== "task" || d.priority !== "P2" || d.status !== "open") {
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(d));
+  } else {
+    localStorage.removeItem(DRAFT_KEY);
+  }
+}
+
+// loadDraft restores a saved New task draft into the form.
+function loadDraft() {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (!raw) return;
+    const d = JSON.parse(raw);
+    const form = document.getElementById("editor-form");
+    if (typeof d.body === "string") form.description.value = d.body;
+    if (d.type) form.type.value = d.type;
+    if (d.priority) form.priority.value = d.priority;
+    if (d.status) form.status.value = d.status;
+  } catch { /* ignore a malformed draft */ }
+}
+
+function clearDraft() { localStorage.removeItem(DRAFT_KEY); }
+
 function openEditor(task) {
   state.editing = task;
   const dlg = document.getElementById("editor");
@@ -657,6 +695,7 @@ function openEditor(task) {
     form.status_reason.value = task.status_reason || "";
   }
   form.description.value = composeBody(task);
+  if (!task) loadDraft(); // restore an in-progress New task draft
   updateReasonVisibility();
   setEditingDeps(task ? (task.depends_on || []) : []);
   document.getElementById("dep-search").value = "";
@@ -867,6 +906,7 @@ async function submitEditor(ev) {
       msg = `Task #${state.editing.id} saved`;
     } else {
       const { id } = await addTask(data);
+      clearDraft();
       await syncDeps({ id, depends_on: [] }, depsRaw);
       msg = `Task #${id} added`;
     }
@@ -1166,6 +1206,7 @@ document.addEventListener("click", async (e) => {
     return;
   }
   if (action === "cancel") {
+    if (!state.editing) clearDraft(); // explicit discard of the New task draft
     document.getElementById("editor").close();
     return;
   }
@@ -1195,6 +1236,8 @@ document.addEventListener("click", async (e) => {
 });
 
 document.getElementById("editor-form").addEventListener("submit", submitEditor);
+document.getElementById("editor-form").addEventListener("input", saveDraft);
+document.getElementById("editor-form").addEventListener("change", saveDraft);
 document.querySelector('#editor-form [name="status"]')?.addEventListener("change", updateReasonVisibility);
 document.getElementById("filter").addEventListener("input", (e) => {
   state.filter = e.target.value;
