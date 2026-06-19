@@ -151,7 +151,6 @@ function taskCard(t) {
   // Dependency-blocked: unmet (non-closed) parents hold this task back even
   // though its own status is open/inprogress. Distinct from a manual "blocked".
   const blocking = isDepBlocked(t) ? unmetDeps(t) : [];
-  const unmetIds = new Set(blocking.map((p) => p.id));
   if (blocking.length) node.dataset.depBlocked = "true";
 
   // Status leads (most important state), then priority, then type.
@@ -168,12 +167,18 @@ function taskCard(t) {
   const deps = node.querySelector(".deps");
   if (Array.isArray(t.depends_on)) {
     for (const dep of t.depends_on) {
+      const parent = state.tasksById.get(dep);
+      // A missing parent has most likely been closed and pruned from the file.
+      const satisfied = !parent || (parent.status || "open") === "closed";
       const wrap = el("span");
-      wrap.className = "dep" + (unmetIds.has(dep) ? " unmet" : "");
-      const b = el("button", "↳ " + dep);
+      wrap.className = "dep" + (satisfied ? " satisfied" : " unmet");
+      const label = parent && parent.title ? `↳ #${dep} ${parent.title}` : `↳ #${dep}`;
+      const b = el("button", label);
       b.className = "dep-link";
       b.dataset.dep = dep;
-      if (unmetIds.has(dep)) b.title = "Open dependency — still blocking";
+      b.title = parent
+        ? `#${dep} ${parent.title || ""} — ${parent.status || "open"}`
+        : `#${dep} — not in the current list (likely closed)`;
       const x = el("button", "×");
       x.className = "dep-remove";
       x.dataset.action = "remove-dep";
@@ -182,6 +187,21 @@ function taskCard(t) {
       wrap.append(b, x);
       deps.append(wrap);
     }
+  }
+  // Reverse links: tasks that depend on this one ("blocks #X").
+  const blocks = state.tasks.filter((x) => Array.isArray(x.depends_on) && x.depends_on.includes(t.id));
+  if (blocks.length) {
+    const wrap = el("span");
+    wrap.className = "rdep";
+    wrap.append(Object.assign(el("span", "blocks"), { className: "rdep-label" }));
+    for (const child of blocks) {
+      const b = el("button", "#" + child.id);
+      b.className = "dep-link rev";
+      b.dataset.dep = child.id;
+      b.title = `Blocks #${child.id} ${child.title || ""}`;
+      wrap.append(b);
+    }
+    deps.append(wrap);
   }
 
   // Primary contextual action (Start/Done/Reopen/…) — not the old blind cycle.

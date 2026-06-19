@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-06-19T12:40:38Z
+* updated: 2026-06-19T12:45:15Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -184,15 +184,6 @@ command layer).
   recovers from history.
 - Concurrency: run two `md add` in parallel; confirm CAS retry yields both (no lost update).
 - Speed: confirm git‑mode `md add` stays single‑digit‑ms (the 0.70 ms write path).
-
-## 38. web UI: show dependency titles and status on cards, not just ids
-
-* status: open
-* priority: P2
-* type: feature
-* created: 2026-06-19T11:43:16Z
-
-Cards render each dependency as a bare arrow-and-id (e.g. the link reading just 20) with no title or status, in the taskCard deps loop of pkg/webui/assets/app.js. The editor typeahead already shows id plus title, so cards are inconsistent and force a click to learn what a dependency is. Show the parent title (truncated) and indicate whether each parent is closed (satisfied) or still open (blocking), with a tooltip. Consider also surfacing reverse links: which tasks this one blocks.
 
 ## 39. web UI: display status_reason on blocked and closed cards
 
