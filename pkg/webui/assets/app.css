@@ -177,6 +177,15 @@ main { padding: 0.75rem 1rem 2rem; display: flex; flex-direction: column; gap: 0
 .card footer button:hover { color: var(--fg); background: color-mix(in srgb, var(--fg) 6%, transparent); }
 .card footer button:disabled { opacity: 0.45; cursor: not-allowed; }
 .card footer button:disabled:hover { color: var(--muted); background: transparent; filter: none; }
+.card footer .status-menu {
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
+  padding: 2px 4px;
+  font-size: 0.9em;
+  max-width: 8.5em;
+}
+.card footer .status-menu:hover { color: var(--fg); background: color-mix(in srgb, var(--fg) 6%, transparent); }
 
 .card[data-status="closed"] .title { text-decoration: line-through; opacity: 0.65; }
 .card[data-status="draft"] { opacity: 0.85; border-style: dashed; }

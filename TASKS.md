@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-06-19T12:29:08Z
+* updated: 2026-06-19T12:34:29Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -184,15 +184,6 @@ command layer).
   recovers from history.
 - Concurrency: run two `md add` in parallel; confirm CAS retry yields both (no lost update).
 - Speed: confirm git‑mode `md add` stays single‑digit‑ms (the 0.70 ms write path).
-
-## 37. web UI: make card status controls contextual, not a wrap-around cycle
-
-* status: open
-* priority: P2
-* type: feature
-* created: 2026-06-19T11:43:16Z
-
-The Advance status button (pkg/webui/assets/app.js nextStatus/advanceStatus) cycles draft -> open -> inprogress -> blocked -> closed -> draft. Two bad outcomes: advancing an inprogress task lands on blocked (a regression state nobody wants from an Advance action), and advancing a closed task wraps back to draft. Replace the single cycling button with meaningful actions (e.g. Start / Done plus an explicit status menu) so blocked is only reachable deliberately and closed never wraps. Update the help dialog shortcuts to match.
 
 ## 38. web UI: show dependency titles and status on cards, not just ids
 

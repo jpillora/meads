@@ -118,7 +118,7 @@
     <dt>n</dt><dd>New task</dd>
     <dt>e</dt><dd>Edit focused task</dd>
     <dt>d</dt><dd>Delete focused task (asks first)</dd>
-    <dt>Enter</dt><dd>Advance status of focused task</dd>
+    <dt>Enter</dt><dd>Run the focused task's primary action (Start / Done / Reopen)</dd>
     <dt>/</dt><dd>Focus the filter input</dd>
     <dt>Esc</dt><dd>Clear filter / close dialog</dd>
     <dt>?</dt><dd>Toggle this help</dd>
@@ -139,6 +139,7 @@
     <div class="description"></div>
     <footer>
       <button data-action="status-next">Advance status</button>
+      <select data-action="set-status" class="status-menu" title="Set status" aria-label="Set status"></select>
       <button data-action="edit">Edit</button>
       <button data-action="delete" class="danger">Delete</button>
     </footer>
