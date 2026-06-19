@@ -67,6 +67,11 @@ func (c *autoSaveCmd) runFromHook() error {
 	if _, err := os.Stat(tasksFile); os.IsNotExist(err) {
 		return nil
 	}
+	// During a rebase/merge/cherry-pick the staging "git add" races git for
+	// index.lock and is redundant (the replay rewrites the tree), so skip it.
+	if sequencerInProgress(c.globals) {
+		return nil
+	}
 	if err := c.globals.git().Run("add", tasksFile); err != nil {
 		return fmt.Errorf("staging %s: %w", tasksFile, err)
 	}

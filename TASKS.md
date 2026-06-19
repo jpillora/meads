@@ -3,7 +3,8 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-06-19T13:05:46Z
+* updated: 2026-06-19T13:10:17Z
+* max-id: 54
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -257,12 +258,3 @@ openEditor() calls form.reset(), so a half-written new task is lost if the dialo
 * created: 2026-06-19T12:00:21Z
 
 Add a note to CLAUDE.md explaining that a pre-commit hook auto-stages TASKS.md into every commit, and agents should NOT unstage or remove it. Reduces agents fighting the hook.
-
-## 54. Skip pre-commit TASKS.md staging during rebase/merge/cherry-pick
-
-* status: open
-* priority: P2
-* type: bug
-* created: 2026-06-19T12:00:21Z
-
-The pre-commit hook's 'git add TASKS.md' (auto-save + auto-delete) races git for .git/index.lock during rebase and commit --amend, failing the op (see memory feedback_rebase_hook_deadlock). Detect in-progress sequencer ops — .git/rebase-merge or .git/rebase-apply dirs, or MERGE_HEAD/CHERRY_PICK_HEAD set — and skip staging, which is redundant during replay. Removes the need for the manual 'git -c core.hooksPath=/dev/null' bypass.

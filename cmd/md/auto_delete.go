@@ -50,6 +50,12 @@ func (c *autoDeleteCmd) runFromHook() error {
 		return nil
 	}
 
+	// During a rebase/merge/cherry-pick, skip: staging races index.lock and
+	// rewriting closed tasks while old commits are replayed is wrong anyway.
+	if sequencerInProgress(c.globals) {
+		return nil
+	}
+
 	store := c.globals.store()
 	git := c.globals.git()
 

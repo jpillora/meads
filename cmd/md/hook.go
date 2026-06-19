@@ -128,3 +128,21 @@ func (b hookBlock) installed(g *globals) (bool, error) {
 	}
 	return strings.Contains(string(content), b.marker), nil
 }
+
+// sequencerInProgress reports whether git is mid rebase, merge or cherry-pick.
+// The staging hooks skip in that case: their "git add" would race git for
+// .git/index.lock during the operation, and staging is redundant while a commit
+// is being replayed. This removes the need for a manual core.hooksPath bypass.
+func sequencerInProgress(g *globals) bool {
+	out, err := g.gitCommand("rev-parse", "--absolute-git-dir").Output()
+	if err != nil {
+		return false
+	}
+	gitDir := strings.TrimSpace(string(out))
+	for _, marker := range []string{"rebase-merge", "rebase-apply", "MERGE_HEAD", "CHERRY_PICK_HEAD"} {
+		if _, err := os.Stat(filepath.Join(gitDir, marker)); err == nil {
+			return true
+		}
+	}
+	return false
+}

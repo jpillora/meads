@@ -29,6 +29,40 @@ func TestIntegration_AutoSave_StagesTasksFile(t *testing.T) {
 	}
 }
 
+func TestIntegration_AutoSave_SkipsDuringSequencer(t *testing.T) {
+	h := newHarness(t)
+	h.addTask("Base task")
+	h.commit("add base task")
+
+	h.addTask("New task")
+	if h.tasksFileStaged() {
+		t.Fatal("precondition: tasks file should not be staged yet")
+	}
+
+	// Simulate a merge in progress; the hook must not touch the index.
+	mergeHead := filepath.Join(h.dir, ".git", "MERGE_HEAD")
+	if err := os.WriteFile(mergeHead, []byte("deadbeef\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.runAutoSave(); err != nil {
+		t.Fatalf("runAutoSave: %v", err)
+	}
+	if h.tasksFileStaged() {
+		t.Fatal("auto-save should skip staging during a sequencer op")
+	}
+
+	// Once the merge marker is gone, staging resumes.
+	if err := os.Remove(mergeHead); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.runAutoSave(); err != nil {
+		t.Fatalf("runAutoSave: %v", err)
+	}
+	if !h.tasksFileStaged() {
+		t.Fatal("auto-save should stage once the sequencer op is done")
+	}
+}
+
 func TestIntegration_AutoSave_IncludedInUserCommit(t *testing.T) {
 	h := newHarness(t)
 	id := h.addTask("First task")
