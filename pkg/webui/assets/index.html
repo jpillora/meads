@@ -41,14 +41,14 @@
         <input type="checkbox" id="compact"> compact
       </label>
       <button id="copy-url" title="Copy share URL (with token)">copy URL</button>
-      <button id="help-toggle" title="Keyboard shortcuts (?)">?</button>
+      <button id="help-toggle" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">?</button>
     </div>
     <button id="new-task">+ New task</button>
-    <button id="overflow-toggle" title="More options" aria-expanded="false" aria-haspopup="true">⋮</button>
+    <button id="overflow-toggle" title="More options" aria-label="More options" aria-expanded="false" aria-haspopup="true">⋮</button>
   </div>
 </header>
 
-<main id="list" aria-live="polite"></main>
+<main id="list" aria-live="polite" role="list" aria-label="Tasks"></main>
 
 <dialog id="editor">
   <form method="dialog" id="editor-form">

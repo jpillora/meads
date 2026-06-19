@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-06-19T12:54:29Z
+* updated: 2026-06-19T13:00:39Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -184,15 +184,6 @@ command layer).
   recovers from history.
 - Concurrency: run two `md add` in parallel; confirm CAS retry yields both (no lost update).
 - Speed: confirm git‑mode `md add` stays single‑digit‑ms (the 0.70 ms write path).
-
-## 41. web UI: accessibility pass for keyboard and screen readers
-
-* status: open
-* priority: P2
-* type: task
-* created: 2026-06-19T11:43:30Z
-
-The j/k focus model in pkg/webui/assets/app.js paints a custom data-focused attribute but never moves real DOM focus, so screen readers do not announce the focused card and Tab never reaches cards. Make cards focusable (tabindex/role), move real focus on j/k, and add aria-labels to icon-only controls (the x remove-dep button, the arrow dep links, the advance-status arrow). Verify dialog focus trapping and color contrast for the chips.
 
 ## 42. web UI: replace native prompt/confirm with styled dialogs and add undo on delete
 

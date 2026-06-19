@@ -144,6 +144,9 @@ function taskCard(t) {
   node.dataset.status = status;
   node.dataset.priority = priority;
   node.id = "task-" + t.id;
+  node.tabIndex = 0;
+  node.setAttribute("role", "listitem");
+  node.setAttribute("aria-label", `Task #${t.id}: ${t.title || "untitled"} — ${status}, ${priority}`);
 
   node.querySelector(".id").textContent = "#" + t.id;
   node.querySelector(".title").textContent = t.title || "(no title)";
@@ -186,6 +189,7 @@ function taskCard(t) {
       x.dataset.action = "remove-dep";
       x.dataset.dep = dep;
       x.title = `Remove dependency on #${dep}`;
+      x.setAttribute("aria-label", `Remove dependency on #${dep}`);
       wrap.append(b, x);
       deps.append(wrap);
     }
@@ -201,6 +205,7 @@ function taskCard(t) {
       b.className = "dep-link rev";
       b.dataset.dep = child.id;
       b.title = `Blocks #${child.id} ${child.title || ""}`;
+      b.setAttribute("aria-label", `Blocks #${child.id} ${child.title || ""}`);
       wrap.append(b);
     }
     deps.append(wrap);
@@ -270,6 +275,9 @@ function taskRow(t) {
   row.dataset.id = t.id;
   row.dataset.status = status;
   row.id = "task-" + t.id;
+  row.tabIndex = 0;
+  row.setAttribute("role", "listitem");
+  row.setAttribute("aria-label", `Task #${t.id}: ${t.title || "untitled"} — ${status}, ${priority}`);
 
   const blocking = isDepBlocked(t) ? unmetDeps(t) : [];
   if (blocking.length) row.dataset.depBlocked = "true";
@@ -963,14 +971,28 @@ function updateFocusVisual() {
   }
 }
 
+// Keep keyboard-focus state in sync with real DOM focus: tabbing or clicking
+// into a card/row (or one of its controls) highlights that item.
+document.getElementById("list").addEventListener("focusin", (e) => {
+  const item = e.target.closest("[data-id]");
+  if (!item) return;
+  const id = parseInt(item.dataset.id, 10);
+  if (id === state.focusedId) return;
+  state.focusedId = id;
+  document.querySelectorAll('#list [data-focused]').forEach((c) => c.removeAttribute("data-focused"));
+  item.setAttribute("data-focused", "true");
+});
+
 function moveFocus(delta) {
   const ids = visibleCardIds();
   if (ids.length === 0) return;
   let i = ids.indexOf(state.focusedId);
   if (i === -1) i = delta > 0 ? -1 : ids.length;
   i = Math.max(0, Math.min(ids.length - 1, i + delta));
-  state.focusedId = ids[i];
-  updateFocusVisual();
+  // Move real DOM focus so screen readers announce the card; the focusin
+  // handler above syncs state.focusedId and repaints the visual ring.
+  const node = document.getElementById("task-" + ids[i]);
+  if (node) node.focus();
 }
 
 function focusedTask() {
