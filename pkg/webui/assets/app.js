@@ -386,6 +386,26 @@ function sortTasks(tasks) {
   });
 }
 
+// clampDescription collapses a tall card description to a few lines with a fade
+// and a Show more / Show less toggle, leaving short ones untouched. Markdown
+// stays fully rendered; expanding just lifts the max-height.
+function clampDescription(desc) {
+  if (!desc || !desc.textContent.trim()) return;
+  desc.classList.add("clamped");
+  if (desc.scrollHeight <= desc.clientHeight + 2) {
+    desc.classList.remove("clamped"); // already fits — no toggle needed
+    return;
+  }
+  const btn = el("button", "Show more");
+  btn.type = "button";
+  btn.className = "show-more";
+  btn.addEventListener("click", () => {
+    const nowClamped = desc.classList.toggle("clamped");
+    btn.textContent = nowClamped ? "Show more" : "Show less";
+  });
+  desc.after(btn);
+}
+
 function renderList() {
   const list = document.getElementById("list");
   list.innerHTML = "";
@@ -434,6 +454,10 @@ function renderList() {
     }
   } else {
     for (const t of sorted) list.append(renderTask(t));
+  }
+  // Clamp long card descriptions (compact rows have none).
+  if (!state.compact) {
+    for (const desc of list.querySelectorAll(".card .description")) clampDescription(desc);
   }
   // Drop stale focus, then re-paint the focus attribute on the new DOM.
   if (state.focusedId != null && !visible.some((t) => t.id === state.focusedId)) {

@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-06-19T12:51:08Z
+* updated: 2026-06-19T12:54:29Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -184,15 +184,6 @@ command layer).
   recovers from history.
 - Concurrency: run two `md add` in parallel; confirm CAS retry yields both (no lost update).
 - Speed: confirm git‑mode `md add` stays single‑digit‑ms (the 0.70 ms write path).
-
-## 40. web UI: clamp long task descriptions with a show more toggle
-
-* status: open
-* priority: P2
-* type: feature
-* created: 2026-06-19T11:43:16Z
-
-Descriptions render in full inside every card (.description in app.css / taskCard in app.js), so a long task (around 600 chars was seen live) dominates the list and ruins scannability. Clamp to a few lines with a fade, plus a Show more / Show less toggle that keeps full markdown rendering when expanded.
 
 ## 41. web UI: accessibility pass for keyboard and screen readers
 

@@ -147,6 +147,28 @@ main { padding: 0.75rem 1rem 2rem; display: flex; flex-direction: column; gap: 0
 }
 .card .status-reason::before { content: "reason: "; opacity: 0.75; }
 .card .description p { margin: 0.25rem 0; }
+.card .description.clamped {
+  max-height: 4.5em;
+  overflow: hidden;
+  position: relative;
+}
+.card .description.clamped::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 1.5em;
+  background: linear-gradient(transparent, var(--card));
+  pointer-events: none;
+}
+.card .show-more {
+  background: transparent;
+  border: 0;
+  color: var(--accent);
+  cursor: pointer;
+  padding: 2px 0;
+  font-size: 0.85em;
+}
+.card .show-more:hover { text-decoration: underline; }
 .card .description ul, .card .description ol { margin: 0.25rem 0; padding-left: 1.5rem; }
 .card .description li { margin: 0.1rem 0; }
 .card .description h1, .card .description h2, .card .description h3 { margin: 0.4rem 0 0.2rem; font-size: 1em; }
