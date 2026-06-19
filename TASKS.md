@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-06-19T13:10:17Z
+* updated: 2026-06-19T13:17:39Z
 * max-id: 54
 * next-id: 13
 
@@ -185,15 +185,6 @@ command layer).
   recovers from history.
 - Concurrency: run two `md add` in parallel; confirm CAS retry yields both (no lost update).
 - Speed: confirm git‑mode `md add` stays single‑digit‑ms (the 0.70 ms write path).
-
-## 42. web UI: replace native prompt/confirm with styled dialogs and add undo on delete
-
-* status: open
-* priority: P3
-* type: feature
-* created: 2026-06-19T11:43:30Z
-
-The UI relies on window.prompt (status reason, link URL) and window.confirm (delete) in pkg/webui/assets/app.js: unstyled, single-line, and jarring against the custom dialog styling. Replace them with in-app styled inputs (multiline status reason). Because deleted tasks are recoverable from git history, drop the delete confirm in favour of an immediate delete with an Undo action on the toast.
 
 ## 43. web UI: light theme support for plain-browser users
 

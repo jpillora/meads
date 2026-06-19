@@ -536,3 +536,14 @@ dialog .footer { display: flex; justify-content: flex-end; gap: 0.5rem; margin-t
 }
 .toast.ok { border-color: var(--success); color: var(--success); }
 .toast.err { border-color: var(--danger); color: var(--danger); }
+.toast-action {
+  background: transparent;
+  border: 0;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  padding: 0 4px;
+  text-decoration: underline;
+}
+.prompt-field { width: 100%; box-sizing: border-box; resize: vertical; font-family: inherit; }

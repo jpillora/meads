@@ -24,6 +24,10 @@ let state = {
   compact: localStorage.getItem("meads.compact") === "1",
 };
 
+// pendingDeletes holds task ids in their undo window: hidden from the list, the
+// real DELETE fires only when the window lapses (id -> timeout handle).
+const pendingDeletes = new Map();
+
 // --- API ---------------------------------------------------------------
 
 async function api(method, path, body) {
@@ -419,6 +423,7 @@ function renderList() {
   list.innerHTML = "";
   const filter = state.filter.trim().toLowerCase();
   const visible = state.tasks.filter((t) => {
+    if (pendingDeletes.has(t.id)) return false; // hidden during its undo window
     if (!state.showClosed && (t.status || "open") === "closed") return false;
     if (!filter) return true;
     return (t.title || "").toLowerCase().includes(filter)
@@ -520,10 +525,12 @@ async function applyStatus(task, status) {
   const body = { id: task.id, status };
   if (status === "blocked" || status === "closed") {
     const prior = task.status_reason || "";
-    const reason = window.prompt(
-      `Reason for marking #${task.id} ${status}? (optional, leave blank for none)`,
-      prior,
-    );
+    const reason = await promptDialog({
+      title: `Mark #${task.id} ${status}`,
+      label: "Reason (optional)",
+      value: prior,
+      rows: 3,
+    });
     if (reason === null) return false; // user cancelled
     if (reason.trim() !== "") body.status_reason = reason.trim();
   }
@@ -741,9 +748,12 @@ function applyMarkdownAction(action) {
     case "italic": return wrapSelection(ta, "*", "*", "italic text");
     case "code": return wrapSelection(ta, "`", "`", "code");
     case "link": {
-      const url = window.prompt("Link URL", "https://");
-      if (url == null) return;
-      return wrapSelection(ta, "[", `](${url})`, "link text");
+      promptDialog({ title: "Insert link", label: "Link URL", value: "https://", rows: 1 })
+        .then((url) => {
+          if (url == null) return;
+          wrapSelection(ta, "[", `](${url.trim()})`, "link text");
+        });
+      return;
     }
     case "ul": return prefixLines(ta, "- ");
     case "ol": return prefixLines(ta, "{n}. ");
@@ -804,11 +814,74 @@ async function syncDeps(task, raw) {
   }
 }
 
-function toast(msg, kind) {
+// promptDialog shows the styled in-app prompt and resolves with the entered
+// text (OK / Enter) or null (Cancel / Esc), replacing window.prompt.
+function promptDialog({ title, label, value = "", rows = 3 }) {
+  return new Promise((resolve) => {
+    const dlg = document.getElementById("prompt");
+    const form = document.getElementById("prompt-form");
+    const field = document.getElementById("prompt-field");
+    dlg.querySelector(".prompt-title").textContent = title;
+    dlg.querySelector(".prompt-label").textContent = label;
+    field.value = value;
+    field.rows = rows;
+    const cancelBtn = dlg.querySelector('[data-action="prompt-cancel"]');
+    let settled = false;
+    const finish = (val) => {
+      if (settled) return;
+      settled = true;
+      form.removeEventListener("submit", onSubmit);
+      dlg.removeEventListener("cancel", onCancel);
+      cancelBtn.removeEventListener("click", onCancel);
+      field.removeEventListener("keydown", onKey);
+      dlg.close();
+      resolve(val);
+    };
+    const onSubmit = (e) => { e.preventDefault(); finish(field.value); };
+    const onCancel = (e) => { if (e) e.preventDefault(); finish(null); };
+    // Enter submits single-line prompts; Ctrl/Cmd+Enter submits multiline ones.
+    const onKey = (e) => {
+      if (e.key === "Enter" && (rows === 1 || e.ctrlKey || e.metaKey)) { e.preventDefault(); finish(field.value); }
+    };
+    form.addEventListener("submit", onSubmit);
+    dlg.addEventListener("cancel", onCancel);
+    cancelBtn.addEventListener("click", onCancel);
+    field.addEventListener("keydown", onKey);
+    dlg.showModal();
+    field.focus();
+    field.select();
+  });
+}
+
+function toast(msg, kind, action) {
   const t = el("div", msg);
   t.className = "toast" + (kind === "err" ? " err" : " ok");
+  if (action) {
+    const b = el("button", action.label);
+    b.className = "toast-action";
+    b.addEventListener("click", () => { t.remove(); action.fn(); });
+    t.append(" ", b);
+  }
   document.body.append(t);
-  setTimeout(() => t.remove(), kind === "err" ? 4000 : 2500);
+  setTimeout(() => t.remove(), action ? 6000 : kind === "err" ? 4000 : 2500);
+}
+
+// deleteWithUndo hides the task immediately and shows an Undo toast; the real
+// DELETE only fires once the undo window lapses, so undo needs no server call
+// and the task keeps its id (and inbound dependencies).
+function deleteWithUndo(task) {
+  if (pendingDeletes.has(task.id)) return;
+  const commit = setTimeout(async () => {
+    pendingDeletes.delete(task.id);
+    try { await deleteTask(task.id); await reload(); }
+    catch (err) { toast(err.message, "err"); renderList(); }
+  }, 6000);
+  pendingDeletes.set(task.id, commit);
+  renderList();
+  toast(`Task #${task.id} deleted`, "ok", {
+    label: "Undo",
+    fn: () => { clearTimeout(commit); pendingDeletes.delete(task.id); renderList(); },
+  });
 }
 
 // --- Event delegation --------------------------------------------------
@@ -870,12 +943,7 @@ document.addEventListener("click", async (e) => {
   try {
     if (action === "edit") openEditor(task);
     if (action === "status-next") await advanceStatus(task);
-    if (action === "delete") {
-      if (!confirm(`Delete task #${id} "${task.title}"?`)) return;
-      await deleteTask(id);
-      await reload();
-      toast(`Task #${id} deleted`);
-    }
+    if (action === "delete") deleteWithUndo(task);
   } catch (err) {
     toast(err.message, "err");
   }
@@ -1087,11 +1155,7 @@ document.addEventListener("keydown", (e) => {
       const t = focusedTask();
       if (!t) break;
       e.preventDefault();
-      if (!confirm(`Delete task #${t.id} "${t.title}"?`)) break;
-      deleteTask(t.id)
-        .then(reload)
-        .then(() => toast(`Task #${t.id} deleted`))
-        .catch((err) => toast(err.message, "err"));
+      deleteWithUndo(t);
       break;
     }
     case "Enter": {

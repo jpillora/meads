@@ -120,7 +120,7 @@
     <dt>j / k</dt><dd>Move focus down / up between cards</dd>
     <dt>n</dt><dd>New task</dd>
     <dt>e</dt><dd>Edit focused task</dd>
-    <dt>d</dt><dd>Delete focused task (asks first)</dd>
+    <dt>d</dt><dd>Delete focused task (with undo)</dd>
     <dt>Enter</dt><dd>Run the focused task's primary action (Start / Done / Reopen)</dd>
     <dt>/</dt><dd>Focus the filter input</dd>
     <dt>Esc</dt><dd>Clear filter / close dialog</dd>
@@ -129,6 +129,18 @@
   <div class="footer">
     <button type="button" data-action="close-help">Close</button>
   </div>
+</dialog>
+
+<dialog id="prompt">
+  <form method="dialog" id="prompt-form">
+    <h2 class="prompt-title"></h2>
+    <label class="prompt-label" for="prompt-field"></label>
+    <textarea id="prompt-field" class="prompt-field" rows="3"></textarea>
+    <div class="footer">
+      <button type="button" data-action="prompt-cancel">Cancel</button>
+      <button type="submit" class="primary" data-action="prompt-ok">OK</button>
+    </div>
+  </form>
 </dialog>
 
 <template id="task-card">
