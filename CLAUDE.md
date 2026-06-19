@@ -68,3 +68,20 @@ md set-status <id> closed    # Mark task done
 - Task IDs are auto-assigned integers
 - Git handles versioning and history
 - The file uses optimistic locking for concurrent access
+
+## Git Hooks (auto-save / auto-delete)
+
+A pre-commit hook (installed by `md auto-save`) **auto-stages `TASKS.md` into
+every commit**, printing `md: auto-staged TASKS.md` to stderr. So `TASKS.md` may
+appear in a commit you did not explicitly `git add` — this is expected. **Do NOT
+unstage, `git rm`, or revert it to "tidy" a commit; let the hook include it.**
+
+A companion `md auto-delete` hook prunes closed tasks from `TASKS.md` on commit
+(printing `md: removed closed task N`), so closed tasks drop out of the file
+while staying recoverable from git history (`md get <id>` reads them back).
+
+Both hooks **skip during `git rebase`, `git merge`, and `git cherry-pick`** —
+staging would race git for `.git/index.lock` and is redundant while a commit is
+replayed. If a plain `git commit --amend` ever fails with an index-lock error,
+bypass the hook just for that op with `git -c core.hooksPath=/dev/null commit
+--amend` (this is a targeted override, not `--no-verify`).
