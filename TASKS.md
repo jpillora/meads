@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-06-19T13:00:39Z
+* updated: 2026-06-19T13:05:46Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -248,15 +248,6 @@ The editor dialog (pkg/webui/assets/index.html + app.js) has separate Title and 
 * created: 2026-06-19T11:54:03Z
 
 openEditor() calls form.reset(), so a half-written new task is lost if the dialog is closed or the page reloads. ../rais MeadsTaskDetail autosaves the in-progress add form to localStorage (body/type/priority) and restores it on mount, clearing it on successful create. Add the same draft persistence to the meads new-task form under a single localStorage key so accidental closes do not lose work; clear it on submit and on explicit cancel.
-
-## 52. auto-save: print staged-file notice to stderr
-
-* status: open
-* priority: P2
-* type: task
-* created: 2026-06-19T12:00:21Z
-
-Agents get confused when TASKS.md appears in a commit they did not stage it into, and try to unstage/remove it. auto-delete already prints 'md: removed closed task N' to stderr, but auto-save stages silently (cmd/md/auto_save.go runFromHook). Print a line like 'md: auto-staged TASKS.md' so the inclusion is visible and agents stop fighting the hook.
 
 ## 53. Document auto-save pre-commit hook behavior in CLAUDE.md
 

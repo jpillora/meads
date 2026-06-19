@@ -70,6 +70,12 @@ func (c *autoSaveCmd) runFromHook() error {
 	if err := c.globals.git().Run("add", tasksFile); err != nil {
 		return fmt.Errorf("staging %s: %w", tasksFile, err)
 	}
+	// Announce the staging (mirroring auto-delete's "removed closed task N") but
+	// only when the file actually has changes in this commit, so agents see why
+	// TASKS.md appears and quiet commits that do not touch it stay silent.
+	if out, err := c.globals.git().Output("diff", "--cached", "--name-only", "--", tasksFile); err == nil && out != "" {
+		fmt.Fprintf(os.Stderr, "md: auto-staged %s\n", tasksFile)
+	}
 	return nil
 }
 
