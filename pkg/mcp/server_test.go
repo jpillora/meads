@@ -42,13 +42,14 @@ func TestListTools(t *testing.T) {
 	}
 
 	expected := map[string]bool{
-		"list_tasks":     true,
-		"get_task":       true,
-		"ready_tasks":    true,
-		"add_task":       true,
-		"update_task":    true,
-		"delete_task":    true,
-		"add_dependency": true,
+		"list_tasks":        true,
+		"get_task":          true,
+		"ready_tasks":       true,
+		"add_task":          true,
+		"update_task":       true,
+		"delete_task":       true,
+		"add_dependency":    true,
+		"remove_dependency": true,
 	}
 	if len(res.Tools) != len(expected) {
 		t.Fatalf("expected %d tools, got %d", len(expected), len(res.Tools))
@@ -66,9 +67,9 @@ func TestAddAndGet(t *testing.T) {
 
 	// Add a task
 	addRes := callTool(t, cs, ctx, "add_task", map[string]any{
-		"title":    "Test task",
-		"priority": "P1",
-		"type":     "bug",
+		"title":       "Test task",
+		"priority":    "P1",
+		"type":        "bug",
 		"description": "Some details",
 	})
 	var addOut struct{ ID int }
@@ -82,11 +83,11 @@ func TestAddAndGet(t *testing.T) {
 		"id": addOut.ID,
 	})
 	var task struct {
-		ID       int    `json:"id"`
-		Title    string `json:"title"`
-		Status   string `json:"status"`
-		Priority string `json:"priority"`
-		Type     string `json:"type"`
+		ID          int    `json:"id"`
+		Title       string `json:"title"`
+		Status      string `json:"status"`
+		Priority    string `json:"priority"`
+		Type        string `json:"type"`
 		Description string `json:"description"`
 	}
 	unmarshalContent(t, getRes, &task)
@@ -243,6 +244,40 @@ func TestAddDependency(t *testing.T) {
 	unmarshalContent(t, getRes, &task)
 	if len(task.DependsOn) != 1 || task.DependsOn[0] != out1.ID {
 		t.Errorf("expected depends_on=[%d], got %v", out1.ID, task.DependsOn)
+	}
+}
+
+func TestRemoveDependency(t *testing.T) {
+	cs := setup(t)
+	ctx := context.Background()
+
+	// Add 2 tasks
+	res1 := callTool(t, cs, ctx, "add_task", map[string]any{"title": "Parent"})
+	var out1 struct{ ID int }
+	unmarshalContent(t, res1, &out1)
+
+	res2 := callTool(t, cs, ctx, "add_task", map[string]any{"title": "Child"})
+	var out2 struct{ ID int }
+	unmarshalContent(t, res2, &out2)
+
+	// Add then remove the dependency
+	callTool(t, cs, ctx, "add_dependency", map[string]any{
+		"child_id":  out2.ID,
+		"parent_id": out1.ID,
+	})
+	callTool(t, cs, ctx, "remove_dependency", map[string]any{
+		"child_id":  out2.ID,
+		"parent_id": out1.ID,
+	})
+
+	// Verify DependsOn is now empty
+	getRes := callTool(t, cs, ctx, "get_task", map[string]any{"id": out2.ID})
+	var task struct {
+		DependsOn []int `json:"depends_on"`
+	}
+	unmarshalContent(t, getRes, &task)
+	if len(task.DependsOn) != 0 {
+		t.Errorf("expected depends_on=[], got %v", task.DependsOn)
 	}
 }
 

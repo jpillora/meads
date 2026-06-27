@@ -34,6 +34,7 @@
 
 ### Dependencies
 - `md add-dep <child> <parent>` - Make child depend on parent
+- `md rm-dep <child> <parent>` - Remove child's dependency on parent
 - `md add --depends-on=<id> "Task title"` - Add task with dependency
 - Tasks blocked by unclosed dependencies are excluded from `md ready`
 

@@ -87,6 +87,7 @@ type root struct {
 	Update      updateCmd      `opts:"mode=cmd,group=Basic" help:"Update a task by ID"`
 	SetStatus   setStatusCmd   `opts:"mode=cmd,name=set-status,group=Basic" help:"Set a task's status"`
 	AddDep      addDepCmd      `opts:"mode=cmd,name=add-dep,group=Basic" help:"Add a dependency to a task"`
+	RmDep       rmDepCmd       `opts:"mode=cmd,name=rm-dep,group=Basic" help:"Remove a dependency from a task"`
 	Ready       readyCmd       `opts:"mode=cmd,group=Basic" help:"List open tasks not blocked by dependencies"`
 	Init        initCmd        `opts:"mode=cmd,group=Misc" help:"Initialize a new tasks file"`
 	Convert     convertCmd     `opts:"mode=cmd,group=Misc" help:"Convert between TASKS.md and TASKS.csv formats"`
@@ -114,6 +115,7 @@ func main() {
 	c.Update.globals = g
 	c.SetStatus.globals = g
 	c.AddDep.globals = g
+	c.RmDep.globals = g
 	c.Ready.globals = g
 	c.Init.globals = g
 	c.Convert.globals = g

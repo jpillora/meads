@@ -27,6 +27,7 @@ The `md` MCP server is enabled. **Use MCP tools instead of CLI commands** for al
 
 ### Dependencies
 - `add_dependency(child_id, parent_id)` - Make child depend on parent
+- `remove_dependency(child_id, parent_id)` - Remove child's dependency on parent
 - Tasks blocked by unclosed dependencies are excluded from `ready_tasks`
 
 ## Common Workflows

@@ -166,6 +166,20 @@ func NewServer(store *meads.Store, version string) *mcp.Server {
 		return textResult("dependency added"), nil, nil
 	})
 
+	// remove_dependency - Remove a dependency between tasks
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "remove_dependency",
+		Description: "Remove a child task's dependency on a parent task",
+	}, func(_ context.Context, _ *mcp.CallToolRequest, input meads.AddDependencyInput) (*mcp.CallToolResult, any, error) {
+		err := store.Update(input.ChildID, func(t *meads.Task) {
+			t.RemoveDep(input.ParentID)
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		return textResult("dependency removed"), nil, nil
+	})
+
 	return s
 }
 

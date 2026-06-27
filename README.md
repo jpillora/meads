@@ -90,6 +90,7 @@ md update <id> --priority=P1          Update task fields
 md set-status <id> <status>           Change status (draft|open|inprogress|closed)
 md del <id>                           Delete a task
 md add-dep <child> <parent>           Add a dependency
+md rm-dep <child> <parent>            Remove a dependency
 md init                               Initialize a new tasks file
 md convert TASKS.md                   Convert between Markdown and CSV formats
 md doctor                             Detect and fix duplicate task IDs
