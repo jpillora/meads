@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 
 	"github.com/jpillora/meads/pkg/meads"
 	"github.com/jpillora/opts"
@@ -32,8 +33,22 @@ type globals struct {
 	Store      *meads.Store `opts:"-"`
 	Git        meads.Git    `opts:"-"`
 	TasksFile  string       `help:"the tasks markdown file to manage (env MEADS_TASK_FILE)"`
-	WebhookURI string       `help:"a uri to POST to with {meads:true,action,data}; http(s):// or unix:///path/to/sock or unix://[/path/to/sock]/http/path (env MEADS_WEBHOOK_URI)"`
+	WebhookURI string       `help:"a uri to POST to with {meads:true,action,file,data}; http(s):// or unix:///path/to/sock or unix://[/path/to/sock]/http/path (env MEADS_WEBHOOK_URI)"`
 	Dir        string       `opts:"-"`
+}
+
+// tasksFileAbs resolves TasksFile to an absolute path. It is included in every
+// webhook payload so a consumer receiving events from multiple tasks files can
+// tell them apart. Falls back to the raw path if resolution fails.
+func (g *globals) tasksFileAbs() string {
+	path := g.TasksFile
+	if !filepath.IsAbs(path) && g.Dir != "" {
+		path = filepath.Join(g.Dir, path)
+	}
+	if abs, err := filepath.Abs(path); err == nil {
+		return abs
+	}
+	return path
 }
 
 // gitCommand creates an exec.Command for git with Dir set.

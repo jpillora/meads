@@ -15,6 +15,7 @@ import (
 type webhookPayload struct {
 	Meads  bool   `json:"meads"`
 	Action string `json:"action"`
+	File   string `json:"file"`
 	Data   any    `json:"data"`
 }
 
@@ -27,6 +28,7 @@ func postWebhook(g *globals, action string, data any) {
 	payload := webhookPayload{
 		Meads:  true,
 		Action: action,
+		File:   g.tasksFileAbs(),
 		Data:   data,
 	}
 	body, err := json.Marshal(payload)

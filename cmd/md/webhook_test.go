@@ -58,6 +58,36 @@ func TestPostWebhook_HTTP(t *testing.T) {
 	}
 }
 
+func TestPostWebhook_IncludesFile(t *testing.T) {
+	var received webhookPayload
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		json.Unmarshal(body, &received)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	// A relative tasks file must be resolved to an absolute path so a consumer
+	// watching multiple tasks files can distinguish their events.
+	g := &globals{WebhookURI: ts.URL, TasksFile: "TASKS.md"}
+	postWebhook(g, "add", map[string]int{"id": 1})
+
+	if !filepath.IsAbs(received.File) {
+		t.Errorf("file = %q, want absolute path", received.File)
+	}
+	if filepath.Base(received.File) != "TASKS.md" {
+		t.Errorf("file base = %q, want TASKS.md", filepath.Base(received.File))
+	}
+
+	// An already-absolute tasks file must pass through unchanged.
+	abs := filepath.Join(t.TempDir(), "custom.md")
+	g2 := &globals{WebhookURI: ts.URL, TasksFile: abs}
+	postWebhook(g2, "add", nil)
+	if received.File != abs {
+		t.Errorf("file = %q, want %q", received.File, abs)
+	}
+}
+
 func TestPostWebhook_Unix(t *testing.T) {
 	dir := t.TempDir()
 	socketPath := filepath.Join(dir, "test.sock")

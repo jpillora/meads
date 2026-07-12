@@ -3,7 +3,8 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-06-27T07:42:10Z
+* updated: 2026-07-12T06:07:25Z
+* max-id: 55
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -184,12 +185,3 @@ command layer).
   recovers from history.
 - Concurrency: run two `md add` in parallel; confirm CAS retry yields both (no lost update).
 - Speed: confirm git‑mode `md add` stays single‑digit‑ms (the 0.70 ms write path).
-
-## 55. Add rm-dep command to remove a task dependency
-
-* status: closed
-* type: feature
-* created: 2026-06-27T07:39:50Z
-* updated: 2026-06-27T07:42:10Z
-
-Mirror add-dep in CLI, add remove_dependency MCP tool, update docs (README, prime, CLAUDE.md) and tests
