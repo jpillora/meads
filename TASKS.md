@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-07-12T06:07:25Z
+* updated: 2026-07-12T06:26:08Z
 * max-id: 55
 * next-id: 13
 
@@ -68,40 +68,33 @@ The webview iframe loads md webui over HTTP, but VS Code's web client hosts webv
 * priority: P2
 * type: idea
 * created: 2026-06-06T01:24:43Z
-* updated: 2026-06-06T05:34:55Z
+* updated: 2026-07-12T06:26:08Z
 
-### Git mode for meads (`md` task 30)
+Git mode
+
+### Git mode for meads
 
 #### Context
-Today every task lives in a working‑tree `TASKS.md`/`.csv`, mutated under an
-append‑"lock line" optimistic lock. Task 30 ("Git mode") wants task state to
-live **purely in git** — as JSON in a dedicated ref, *out of the working tree* —
-so there is no tracked file to diff/stage, history is the ref's commit log, and
-`md init` seeds an empty tasks JSON as the first ("virtual") commit. Goal: same
-`md` UX and speed, but the backing store is a git ref instead of a file.
+
+Today every task lives in a working‑tree `TASKS.md`/`.csv`, mutated under an append‑"lock line" optimistic lock. Task 30 ("Git mode") wants task state to live **purely in git** — as JSON in a dedicated ref, *out of the working tree* — so there is no tracked file to diff/stage, history is the ref's commit log, and `md init` seeds an empty tasks JSON as the first ("virtual") commit. Goal: same `md` UX and speed, but the backing store is a git ref instead of a file.
 
 #### Why these choices (measured this session, not assumed)
-- **Remote ref write ≈ 2.5 s** (`ls-remote` to `origin` over SSH; dominated by
-  handshake/RTT, payload‑independent) vs **local git op ≈ 3 ms**. ⇒ tasks must be
-  written to a **local** ref; the remote is sync‑only, never on the command hot path.
-- **go-git in‑process = 0.70 ms/write** for the full `blob→tree→commit→CAS ref`
-  path vs **git‑CLI 4‑spawn = 31 ms/write** → **44× faster** (real on‑disk repo,
-  arm64). ⇒ use **go-git** for all local read/write/history; reserve the network
-  for the user's own `git push`/`fetch`.
+
+- **Remote ref write ≈ 2.5 s** (`ls-remote` to `origin` over SSH; dominated by handshake/RTT, payload‑independent) vs **local git op ≈ 3 ms**. ⇒ tasks must be written to a **local** ref; the remote is sync‑only, never on the command hot path.
+- **go-git in‑process = 0.70 ms/write** for the full `blob→tree→commit→CAS ref`path vs **git‑CLI 4‑spawn = 31 ms/write** → **44× faster** (real on‑disk repo, arm64). ⇒ use **go-git** for all local read/write/history; reserve the network for the user's own `git push`/`fetch`.
 
 #### Storage model
-- Ref `refs/meads/tasks` → commit → tree → single blob `tasks.json`
-  (`{"meta":{…},"tasks":[…]}`).
-- Each mutation = a new commit parented on the prior; the ref is advanced via
-  **CAS** (`CheckAndSetReference(new, old)`) — native optimistic locking that
-  replaces the lock‑line scheme.
+
+- Ref `refs/meads/tasks` → commit → tree → single blob `tasks.json`(`{"meta":{…},"tasks":[…]}`).
+- Each mutation = a new commit parented on the prior; the ref is advanced via **CAS** (`CheckAndSetReference(new, old)`) — native optimistic locking that replaces the lock‑line scheme.
 - History/recovery = walk the ref's commit parents, reading `tasks.json` at each.
 
 #### Design — centralize behind ONE backend (per "centralise the heavy lifting")
-All mutation/format/query logic stays shared; only *read*, *locked‑write*, and
-*history* differ per backend.
+
+All mutation/format/query logic stays shared; only *read*, *locked‑write*, and *history* differ per backend.
 
 New `pkg/meads/backend.go`:
+
 ```go
 type backend interface {
     read() (string, error)                 // current tasks.json (missing => "")
@@ -111,77 +104,50 @@ type backend interface {
     headContent() (string, bool)           // committed HEAD content (for committedIDs)
 }
 ```
-- **`fileBackend`** — wraps today's code unchanged: `util.ReadFile`+`stripLockLines`,
-  `acquireLock`/`releaseLock` (`lock.go`), CLI‑`Git` history (`git log --all -- file`,
-  `git show hash:file`).
-- **`gitBackend`** — go-git `storage/filesystem` storer over `osfs` (already vendored
-  via go-billy) + `plumbing`/`object`/`filemode`: `read` = blob at the ref; `transact`
-  = read ref commit → apply → write blob/tree/commit → `CheckAndSetReference` with a
-  short retry loop on contention; `history` = walk parents.
 
-`Store` keeps its `Format` and gains a `be backend`. Refactor `mutate.go`
-(`Add/AddMany/Delete/DeleteMany/Update/Doctor/AutoClean`) from
-`acquireLock()/releaseLock()` to `be.transact(…)`, and `query.go`
-(`Get/Ready/GetHistory/GetWithHistory/committedIDs`) to read via
-`be.read()/history()/headContent()`. One transaction shape; both backends reuse it.
+- `fileBackend` — wraps today's code unchanged: `util.ReadFile`+`stripLockLines`, `acquireLock`/`releaseLock` (`lock.go`), CLI‑`Git` history (`git log --all -- file`, `git show hash:file`).
+- `gitBackend` — go-git `storage/filesystem` storer over `osfs` (already vendored via go-billy) + `plumbing`/`object`/`filemode`: `read` = blob at the ref; `transact`= read ref commit → apply → write blob/tree/commit → `CheckAndSetReference` with a short retry loop on contention; `history` = walk parents.
+
+`Store` keeps its `Format` and gains a `be backend`. Refactor `mutate.go`(`Add/AddMany/Delete/DeleteMany/Update/Doctor/AutoClean`) from `acquireLock()/releaseLock()` to `be.transact(…)`, and `query.go`(`Get/Ready/GetHistory/GetWithHistory/committedIDs`) to read via `be.read()/history()/headContent()`. One transaction shape; both backends reuse it.
 
 #### New JSON format
-`pkg/meads/json.go`: `jsonFormat` implementing `Format` — `Parse`=`json.Unmarshal`→`File`,
-`Format`=indented `json.Marshal`, `HasPreamble()=true`, `EmptyFile()=` `{"tasks":[]}`.
-Reuses existing `File`/`Task` JSON tags + `Task.MarshalJSON`. Self‑consistent round‑trip:
-all `md` logic reads struct fields (the `t.Meta["status"]` etc. are only *written* by
-setters), and project `File.Meta` (`created`/`updated`/`max-id`) round‑trips as‑is.
+
+`pkg/meads/json.go`: `jsonFormat` implementing `Format` — `Parse`=`json.Unmarshal`→`File`, `Format`=indented `json.Marshal`, `HasPreamble()=true`, `EmptyFile()=` `{"tasks":[]}`. Reuses existing `File`/`Task` JSON tags + `Task.MarshalJSON`. Self‑consistent round‑trip: all `md` logic reads struct fields (the `t.Meta["status"]` etc. are only *written* by setters), and project `File.Meta` (`created`/`updated`/`max-id`) round‑trips as‑is.
 
 #### Wiring / detection (auto‑detect + override)
-- `globals.store()`: `--file` (or no git repo) → fileBackend; `--git`/`MEADS_GIT=1` →
-  gitBackend; else **auto** = gitBackend iff `refs/meads/tasks` exists (one cheap ref
-  lookup). Git mode pins `format=json`, in‑tree name `tasks.json`.
+
+- `globals.store()`: `--file` (or no git repo) → fileBackend; `--git`/`MEADS_GIT=1` → gitBackend; else **auto** = gitBackend iff `refs/meads/tasks` exists (one cheap ref lookup). Git mode pins `format=json`, in‑tree name `tasks.json`.
 - Add `--git`/`--file` globals (+ `MEADS_GIT`) in `cmd/md/main.go`.
 
 #### `md init --git`
+
 - Open repo (go-git); error if `refs/meads/tasks` already exists.
-- Seed empty `{"tasks":[]}` blob→tree→commit (`meads: init`)→`SetReference` — the
-  "first virtual commit."
+- Seed empty `{"tasks":[]}` blob→tree→commit (`meads: init`)→`SetReference` — the "first virtual commit."
 - Configure a **fetch** refspec on `origin`: `+refs/meads/*:refs/meads/*` (additive, safe).
-- Publish on push **without hijacking `push.default`**: install a **pre‑push hook**
-  (reuse the hook plumbing in `cmd/md/auto_delete.go`) that runs
-  `git push origin refs/meads/tasks`. ⚠️ Deliberately do NOT set `remote.origin.push`
-  — configuring any push refspec replaces git's matching/simple default and would
-  break normal branch pushes. Also print the manual push command.
+- Publish on push **without hijacking** `push.default`: install a **pre‑push hook**(reuse the hook plumbing in `cmd/md/auto_delete.go`) that runs `git push origin refs/meads/tasks`. ⚠️ Deliberately do NOT set `remote.origin.push`— configuring any push refspec replaces git's matching/simple default and would break normal branch pushes. Also print the manual push command.
 
 #### Scope — MVP behind the backend (reading the unselected scope + "centralise" as MVP‑first)
-**In:** backend abstraction, `gitBackend` (go-git), `jsonFormat`, detection,
-`md init --git`, full CRUD, history/recovery, webhook (unchanged — it lives at the
-command layer).
 
-**Deferred as new `md` tasks** (file‑assuming integrations + the genuinely hard part):
-- **Multi‑clone sync/merge** — a single shared mutable ref *diverges* across clones,
-  so fetch must MERGE (union by ID + `doctor`‑style dedup/tombstones), not force‑overwrite.
-  This is the real distributed‑hard problem, analogous to today's `md doctor` for file
-  merges. MVP keeps fetch non‑force so divergence fails loudly rather than losing tasks.
-- **webui watch** (`pkg/webui/watch.go`) — fsnotify watches a path; git mode must
-  watch/poll the ref (`.git/refs/meads/tasks` / `packed-refs`).
-- **auto‑delete hook** (`cmd/md/auto_delete.go`) — stages a working‑tree file on
-  pre‑commit; in git mode there is no staged file (each change is already a ref commit)
-  → rework or make it a no‑op.
-- **convert/migrate** `TASKS.md ↔ git`; note md↔json conversion must sync struct
-  fields→`Meta` so the markdown formatter still emits per‑task `* status:` lines.
+**In:** backend abstraction, `gitBackend` (go-git), `jsonFormat`, detection, `md init --git`, full CRUD, history/recovery, webhook (unchanged — it lives at the command layer).
+
+**Deferred as new** `md` **tasks** (file‑assuming integrations + the genuinely hard part):
+
+- **Multi‑clone sync/merge** — a single shared mutable ref *diverges* across clones, so fetch must MERGE (union by ID + `doctor`‑style dedup/tombstones), not force‑overwrite. This is the real distributed‑hard problem, analogous to today's `md doctor` for file merges. MVP keeps fetch non‑force so divergence fails loudly rather than losing tasks.
+- **webui watch** (`pkg/webui/watch.go`) — fsnotify watches a path; git mode must watch/poll the ref (`.git/refs/meads/tasks` / `packed-refs`).
+- **auto‑delete hook** (`cmd/md/auto_delete.go`) — stages a working‑tree file on pre‑commit; in git mode there is no staged file (each change is already a ref commit) → rework or make it a no‑op.
+- **convert/migrate** `TASKS.md ↔ git`; note md↔json conversion must sync struct fields→`Meta` so the markdown formatter still emits per‑task `* status:` lines.
 
 #### Files
+
 - **New:** `pkg/meads/backend.go`, `pkg/meads/git_backend.go`, `pkg/meads/json.go`.
-- **Refactor:** `store.go` (hold `backend`), `mutate.go` + `query.go` + `lock.go`
-  (move file logic into `fileBackend`), `git.go` (keep `Git` for any CLI remote bits).
+- **Refactor:** `store.go` (hold `backend`), `mutate.go` + `query.go` + `lock.go`(move file logic into `fileBackend`), `git.go` (keep `Git` for any CLI remote bits).
 - **CLI:** `cmd/md/main.go` (globals + detection in `store()`), `cmd/md/init.go` (`--git`).
 - **Deps:** add `github.com/go-git/go-git/v5`.
 
 #### Verification
+
 - Build: `go install ./cmd/md` (per project rule, from `cmd/md/`).
-- Tests: parametrize the existing `pkg/meads` + `e2e` suites over both backends — `e2e`
-  already uses `memfs`; add a git‑backed `Store` fixture in a temp repo. Assert
-  CRUD/ready/deps/doctor/tombstone parity between file and git modes.
-- Manual smoke (temp repo): `git init` → `md init --git` → confirm `git status` is
-  clean and `git for-each-ref refs/meads` shows the ref → `md add/update/del/get/ready`
-  → `git log refs/meads/tasks` shows one commit per change → `md get <deleted-id>`
-  recovers from history.
+- Tests: parametrize the existing `pkg/meads` + `e2e` suites over both backends — `e2e`already uses `memfs`; add a git‑backed `Store` fixture in a temp repo. Assert CRUD/ready/deps/doctor/tombstone parity between file and git modes.
+- Manual smoke (temp repo): `git init` → `md init --git` → confirm `git status` is clean and `git for-each-ref refs/meads` shows the ref → `md add/update/del/get/ready`→ `git log refs/meads/tasks` shows one commit per change → `md get <deleted-id>`recovers from history.
 - Concurrency: run two `md add` in parallel; confirm CAS retry yields both (no lost update).
 - Speed: confirm git‑mode `md add` stays single‑digit‑ms (the 0.70 ms write path).
