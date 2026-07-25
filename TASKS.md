@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-07-25T09:52:57Z
+* updated: 2026-07-25T10:04:07Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -490,44 +490,12 @@ optionally deprioritise tasks whose files are already claimed.
    and `md auto-delete` become **no-ops in git mode** — there is no working-tree
    file to stage, and nothing to prune since refs are never removed.
 
-## 61. Git mode phase 4: config ref + oid-keyed cache
-
-* status: open
-* priority: P2
-* type: task
-* depends-on: 
-* created: 2026-07-25T08:19:07Z
-* updated: 2026-07-25T08:19:16Z
-
-Global config at `refs/meads/config`. Design of record: task 57.
-
-### Goal
-
-Shared, versioned configuration with a cheap cache.
-
-### Build
-
-- `config.json`: `{"remoteLocking": false, "pushInterval": "1m"}` — both optional, those are the defaults, and the ref may be absent entirely
-- Read = one ref lookup + one blob read (~2 ms)
-- Write via the phase 1 CAS path, same as any other ref
-- **Cache keyed by the config ref's oid.** The oid changes if and only if config changed, so a cheap ref lookup validates the cache without re-parsing the blob
-
-### Constraint
-
-`remoteLocking` MUST live in this shared ref — not in local git config, not an env var. A lock protocol only works if every participant follows it. A per-clone setting lets one misconfigured agent void mutual exclusion for everyone, with no error surfacing anywhere.
-
-### Acceptance
-
-- Defaults apply when the ref is absent
-- Cache invalidates when the oid changes; no re-parse when it has not
-- Round-trip write/read preserves unknown fields (forward compatibility)
-
 ## 62. Git mode phase 5: init --git, fetch refspec, mode detection
 
 * status: open
 * priority: P2
 * type: task
-* depends-on: 61
+* depends-on: 
 * created: 2026-07-25T08:19:07Z
 * updated: 2026-07-25T08:19:16Z
 
@@ -587,7 +555,7 @@ A non-fast-forward rejection means another clone has diverged. Surface it clearl
 * status: open
 * priority: P2
 * type: task
-* depends-on: 61
+* depends-on: 
 * created: 2026-07-25T08:19:07Z
 * updated: 2026-07-25T08:19:16Z
 

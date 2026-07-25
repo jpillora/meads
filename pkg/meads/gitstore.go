@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // TasksRefPrefix is the ref namespace holding one ref per task:
@@ -22,6 +23,18 @@ const TaskFileName = "task.json"
 type GitStore struct {
 	refs *RefStore
 	git  Git
+
+	// configMu guards configOID/configCache - the Config() cache (see
+	// gitconfig.go). GitStore is used from multiple goroutines (gitmutate.go's
+	// Create/Update/Claim races already exercise that), so every access to
+	// these two fields goes through the mutex.
+	configMu sync.RWMutex
+	// configOID is the ConfigRef oid configCache was parsed from. The zero
+	// value "" means "never populated" - distinct from ZeroOID, which means
+	// "populated, and the ref was confirmed absent" - so a fresh GitStore
+	// always misses the cache on its first Config() call.
+	configOID   OID
+	configCache Config
 }
 
 // NewGitStore creates a GitStore backed by git.
