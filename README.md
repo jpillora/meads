@@ -1,6 +1,6 @@
 # meads
 
-Task tracking in a single file. No database, no server, no dependencies — just `TASKS.md` and git. Inspired by [beads](https://github.com/steveyegge/beads), but **much** simpler.
+Task tracking that lives entirely in git. No database, no server, no dependencies — a Markdown/CSV file, or (in git mode) nothing but git refs. Inspired by [beads](https://github.com/steveyegge/beads), but **much** simpler.
 
 [![GoDev](https://img.shields.io/static/v1?label=godoc&message=reference&color=00add8)](https://pkg.go.dev/github.com/jpillora/meads/pkg/meads)
 [![CI](https://github.com/jpillora/meads/workflows/CI/badge.svg)](https://github.com/jpillora/meads/actions?workflow=CI)
@@ -8,11 +8,12 @@ Task tracking in a single file. No database, no server, no dependencies — just
 ### Features
 
 - All state lives in git — full audit trail, easy to revert, works with branches
-- No server or database to maintain — just a single Markdown (or CSV) file
+- No server or database to maintain — a single Markdown/CSV file, or (in git mode) nothing but git refs
 - Works offline, works in any terminal, works with diffs
 - AI-friendly — agents can read and write tasks through the CLI or MCP server
 - **Markdown** format (`TASKS.md`) for human-readable diffs
 - **CSV** format (`TASKS.csv`) for spreadsheets and tooling, and clean git merges
+- **Git mode** — skip the tasks file entirely: tasks live as git refs (`refs/meads/tasks/<id>`), each with its own version history (see [Git mode](#git-mode))
 - Simple field extraction from input. Title is first sentense. Description is the rest. Type prefixes (`bug:`, `task:`, `feature:`, `idea:`), Priority (`P0`-`P5`).
 - Task dependencies with automatic blocking detection
 - Concurrent-write safe via optimistic locking — multiple processes or AI agents can write simultaneously
@@ -92,11 +93,13 @@ md del <id>                           Delete a task
 md add-dep <child> <parent>           Add a dependency
 md rm-dep <child> <parent>            Remove a dependency
 md init                               Initialize a new tasks file
+md init --git                         Initialize git mode (refs/meads/*) instead
 md convert TASKS.md                   Convert between Markdown and CSV formats
+md convert TASKS.md --to-git          Migrate a tasks file into git mode
 md doctor                             Detect and fix duplicate task IDs
 md prime                              Print LLM context for using md
 md mcp                                Start MCP server over stdio
-md webui                              Launch web UI for this TASKS file
+md webui                              Launch web UI for the current task store
 ```
 
 ### Web UI
@@ -113,6 +116,63 @@ md webui
 Pass `--open` to launch the browser automatically, or `--port 3000` for a
 fixed port. All routes require the bearer token; change events are
 streamed over Server-Sent Events at `/api/events`.
+
+### Git mode
+
+Git mode skips the tasks file entirely: every task lives at its own ref
+(`refs/meads/tasks/<id>`, a small commit chain giving that one task its own
+version history), and repo-wide settings live at `refs/meads/config`. There
+is no `TASKS.md`/`TASKS.csv` in the working tree at all. Every linked
+worktree of the same repo automatically shares the same task list — they
+already share one `.git`, and therefore one set of refs.
+
+**Enable it:**
+
+```bash
+md init --git
+```
+
+Detection after that is automatic: any `md` command finds git mode active
+whenever `refs/meads/*` is non-empty, no flag required. Override either way
+with `--git`/`--file`, or set `MEADS_GIT=1` to default a whole shell to git
+mode.
+
+**Migrate an existing tasks file:**
+
+```bash
+md convert TASKS.md --to-git      # file → git mode; refuses if git mode already has tasks
+md convert TASKS.md --from-git    # git mode → file; refuses if the file already exists
+```
+
+Both directions preserve task ids exactly, including soft-deleted
+(tombstone) tasks — `--to-git` also recovers any id already pruned from the
+working file by `md auto-delete`, straight from git history, so nothing
+gets silently reassigned.
+
+**Sharing across clones:** `md init --git` adds a fetch refspec so `git
+fetch`/`git clone` also download `refs/meads/*` — into a separate
+`refs/meads-remote/*` namespace, never overwriting your own unsynced work.
+meads also pushes `refs/meads/*` to `origin` automatically whenever a
+remote is configured, so you don't need to `git push` for task changes to
+reach it. The push runs at most once per `pushInterval` (default `1m`), so
+roughly one command per interval waits for it; it is bounded by a timeout
+and never fails your command if the remote is unreachable.
+
+Run `md doctor` after fetching: it renumbers a duplicate id left behind when
+two clones each created a task offline at the same id, and reports (but does
+not yet auto-resolve) a genuine divergence — the same task edited
+differently by two clones since they last shared a common ancestor. meads
+never force-pushes or guesses at a merge; resolving a real divergence today
+is manual.
+
+**Caveats, honestly:**
+
+- `md beads-import` only knows how to import into a tasks file — not
+  supported in git mode.
+- `md auto-save`/`md auto-delete` (pre-commit hooks that stage the tasks
+  file into every commit, and prune closed tasks out of it) no-op in git
+  mode: there is no working-tree file to stage or prune.
+- Cross-clone divergence resolution is manual, as described above.
 
 ### Examples
 
@@ -156,10 +216,11 @@ md doctor
 
 ### Notes
 
-- **Format** — Two storage backends, auto-detected by file extension:
+- **Format** — Three storage backends, auto-detected (by file extension, or by the presence of git-mode refs — see [Git mode](#git-mode)):
   - `TASKS.md` — Markdown headings (`## 1. Title`) with `* key: value` metadata. Human-readable diffs.
   - `TASKS.csv` — Standard CSV with soft-delete and computed next-id. Easy to import into spreadsheets and other tools.
+  - **Git mode** — no file at all; each task is its own git ref (`refs/meads/tasks/<id>`).
 - **Metadata** — Built-in keys are `status`, `priority`, `type`, `depends-on`, `tags`, `close-reason`, `created`, and `updated`.
-- **Concurrency** — Concurrent writes are safe via optimistic file locking, so multiple processes (or AI agents) can write to the task file simultaneously without corruption.
-- **AI-friendly** — Both formats are designed to be readable and writable by LLMs. Use `md prime` to print context for an AI agent, or `md mcp` to run an MCP server over stdio.
+- **Concurrency** — Concurrent writes are always safe: file mode via optimistic file locking, git mode via compare-and-swap on each task's own ref — either way, multiple processes (or AI agents) can write simultaneously without corruption.
+- **AI-friendly** — Every backend is designed to be readable and writable by LLMs. Use `md prime` to print context for an AI agent (it describes whichever mode is actually active), or `md mcp` to run an MCP server over stdio.
 - **Minimal** — Single static binary, no config files.

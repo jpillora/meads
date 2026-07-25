@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-07-25T14:06:09Z
+* updated: 2026-07-25T22:16:30Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -665,3 +665,82 @@ and friends, which pass cleanly under `-race`.
 - `go test ./pkg/meads/ -race` passes
 - The question above is answered explicitly, and if it is (2), the README claim is
   corrected or the lock is fixed
+
+## 69. Help text does not cover git mode (prime, README, per-command)
+
+* status: closed
+* priority: P1
+* type: task
+* created: 2026-07-25T21:29:50Z
+* updated: 2026-07-25T22:16:30Z
+
+Git mode shipped (tasks 58-66) but the help surface still describes a file-only tool.
+
+Measured gaps:
+- `md prime` — **0** mentions of git mode in 66 lines. This is the worst one: prime
+  is what LLM agents read to learn how to drive md. In a git-mode repo it currently
+  tells an agent to use TASKS.md, which does not exist there.
+- `README.md` — 0 mentions.
+- Per-command help mentioning git mode: only `init` and `convert`. Zero for
+  `doctor`, `webui`, `mcp`, `auto-save`, `auto-delete`, `list`, `get`, `add`.
+- Top-level summary is "Git-native task tracking in a single Markdown file",
+  which is inaccurate in git mode (no file involved).
+
+Needs: prime to describe whichever mode is active, README to document git mode,
+and per-command help to note git-mode behaviour where it differs (especially the
+commands that no-op or are unsupported).
+
+## 70. convert --to-git must recover pruned tasks from git history
+
+* status: closed
+* priority: P1
+* type: bug
+* created: 2026-07-25T21:29:50Z
+* updated: 2026-07-25T22:16:30Z
+
+`md convert --to-git` migrates only what is currently in TASKS.md. Because
+`md auto-delete` prunes closed tasks on every commit, those tasks exist ONLY in
+git history — so they are silently left behind.
+
+Verified against the real repo: tasks 58-66 (all closed and pruned) do not
+migrate. Before: `md get 58` recovers it from history. After migrating to git
+mode: `task 58 not found`.
+
+Fix: `--to-git` should walk `git log --all -- <tasks file>` (the same mechanism
+`Store.GetWithHistory` / `recoverFromHistory` in pkg/meads/query.go already uses),
+recover every task that ever existed, and import the ones missing from the working
+file as soft-deleted refs so their ids stay reserved and `md get <id>` keeps
+working after migration.
+
+Ids must be preserved exactly and never reused. A task present in both the file
+and history should use the working file's version (it is newer).
+
+## 71. Show/hide commands by applicability, with a fast stat-based mode check
+
+* status: closed
+* priority: P2
+* type: task
+* created: 2026-07-25T21:29:50Z
+* updated: 2026-07-25T22:16:30Z
+
+Commands should be shown or hidden based on whether they apply to the current repo.
+
+- In git mode, `auto-save` and `auto-delete` are no-ops (there is no working-tree
+  tasks file to stage and nothing to prune) — they should not be advertised.
+- File-mode-only commands should not be advertised in a git-mode repo, and vice versa.
+
+**The mode check driving this must be FAST** — it runs on every invocation including
+plain `md --help`, so it must not shell out to git. Use filesystem stats:
+(a) does `.git` exist, and (b) does TASKS.md / TASKS.csv exist. Show the commands
+that apply.
+
+### CRITICAL constraint
+
+Hiding must NOT unregister. The installed pre-commit hook runs `GITHOOK=1 md auto-save`
+and `GITHOOK=1 md auto-delete` unconditionally. If those become unknown commands in
+git mode, md exits non-zero and **aborts the user's commit**. They must still be
+invokable and still no-op — only their help visibility changes.
+
+Note github.com/jpillora/opts v1.4.0 has no hidden-command support, so this needs
+either conditional struct assembly (careful: see the constraint above) or filtering
+of the rendered help.

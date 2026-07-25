@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/jpillora/meads/pkg/meads"
@@ -60,6 +61,27 @@ func (c *convertCmd) runFileToFile() error {
 // current repo, preserving ids exactly via GitStore.ImportTask rather than
 // reassigning them. Refuses to run if git mode already has any tasks, so a
 // migration never silently interleaves with (or clobbers) existing refs.
+//
+// The working file alone is not the whole picture: `md auto-delete` prunes
+// closed tasks out of it entirely once committed (cmd/md/auto_delete.go), so
+// they survive only in git history - `md get <id>` already recovers them from
+// there (Store.GetWithHistory). Reading just the file here would silently
+// free their ids for reuse and leave `md get <id>` unable to find them once
+// the file-mode history is abandoned post-migration (TASKS #70). So every id
+// ever committed is also recovered, via Store.AllHistoricalTasks - reusing
+// GetWithHistory's own history-walking machinery rather than a second
+// implementation - and imported too, soft-deleted, for any id the working
+// file doesn't already hold a (newer) version of.
+//
+// This history walk always runs; there is no flag to skip it. It is one `git
+// log` plus one `git show` per commit that ever touched File - the same
+// per-commit cost `md get`/`md list --history` already pay on demand today -
+// and on this repo's own ~100-commit TASKS.md history the whole walk took
+// well under a second. --to-git is a rare, explicit, one-time migration, not
+// a hot path, so trading a little more time for never silently losing a task
+// id is the right default; an opt-out flag would also risk reintroducing
+// exactly the bug this fixes, for a command that only ever runs once per
+// repo.
 func (c *convertCmd) runToGit() error {
 	if !c.globals.inGitRepo() {
 		return fmt.Errorf("--to-git requires a git repository")
@@ -78,13 +100,36 @@ func (c *convertCmd) runToGit() error {
 	if err != nil {
 		return err
 	}
+	present := make(map[int]bool, len(tasks))
+	for _, t := range tasks {
+		present[t.ID] = true
+	}
+	// Ids pruned from the working file but still present in git history:
+	// recovered and imported soft-deleted, in ascending order purely for
+	// deterministic output (ImportTask itself doesn't care - see its doc
+	// comment). An id present in both is skipped here: the working file's
+	// version was already collected above and is the newer of the two.
+	historical := src.AllHistoricalTasks(c.globals.git())
+	recoveredIDs := make([]int, 0, len(historical))
+	for id := range historical {
+		if !present[id] {
+			recoveredIDs = append(recoveredIDs, id)
+		}
+	}
+	sort.Ints(recoveredIDs)
+	for _, id := range recoveredIDs {
+		t := historical[id]
+		t.Deleted = true // pruned because it was closed/deleted; must not resurrect as live work
+		tasks = append(tasks, t)
+	}
+
 	gs := c.globals.gitStore()
 	for _, t := range tasks {
 		if err := gs.ImportTask(t); err != nil {
 			return fmt.Errorf("importing task %d: %w", t.ID, err)
 		}
 	}
-	fmt.Printf("converted %d tasks: %s → %s*\n", len(tasks), c.File, meads.TasksRefPrefix)
+	fmt.Printf("converted %d tasks (%d recovered from git history): %s → %s*\n", len(tasks), len(recoveredIDs), c.File, meads.TasksRefPrefix)
 	return nil
 }
 

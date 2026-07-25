@@ -159,20 +159,7 @@ func (s *Store) GetHistory(git Git) ([]Task, error) {
 	if out == "" {
 		return nil, nil
 	}
-	commits := strings.Split(out, "\n")
-	// Iterate from most recent to oldest; keep first seen version of each task.
-	byID := make(map[int]Task)
-	for _, hash := range commits {
-		content, err := git.Output("show", hash+":"+s.file)
-		if err != nil {
-			continue // file may not exist in this commit
-		}
-		for _, t := range s.parseHistorical(content).Tasks {
-			if _, exists := byID[t.ID]; !exists {
-				byID[t.ID] = t
-			}
-		}
-	}
+	byID := s.collectFirstSeen(git, strings.Split(out, "\n"), nil)
 	tasks := make([]Task, 0, len(byID))
 	for _, t := range byID {
 		if !t.Deleted {
@@ -183,6 +170,40 @@ func (s *Store) GetHistory(git Git) ([]Task, error) {
 		return tasks[i].ID < tasks[j].ID
 	})
 	return tasks, nil
+}
+
+// collectFirstSeen walks commits (as returned by `git log --all --format=%H`,
+// newest first) and returns the most-recently committed version of every
+// task id seen in the tasks file's content at each commit, keyed by id. It is
+// the shared inner loop behind GetHistory, recoverFromHistory, and
+// AllHistoricalTasks - one implementation of "walk history, keep the first
+// (i.e. newest) version of each id" rather than three (TASKS #70).
+//
+// When want is non-nil, only ids in want are collected and the walk stops
+// early once every wanted id is found (recoverFromHistory's shape); want ==
+// nil collects every id seen, with no early stop (GetHistory/
+// AllHistoricalTasks's shape). A commit where `git show` fails (the file
+// didn't exist yet at that commit) is skipped, not an error.
+func (s *Store) collectFirstSeen(git Git, commits []string, want map[int]bool) map[int]Task {
+	found := make(map[int]Task)
+	for _, hash := range commits {
+		if want != nil && len(found) == len(want) {
+			break
+		}
+		content, err := git.Output("show", hash+":"+s.file)
+		if err != nil {
+			continue // file may not exist in this commit
+		}
+		for _, t := range s.parseHistorical(content).Tasks {
+			if want != nil && !want[t.ID] {
+				continue
+			}
+			if _, seen := found[t.ID]; !seen {
+				found[t.ID] = t
+			}
+		}
+	}
+	return found
 }
 
 // parseHistorical parses file content from a historical commit, trying the
@@ -221,32 +242,15 @@ func (s *Store) activeByID() (map[int]Task, error) {
 
 // recoverFromHistory walks the tasks file's git history newest→oldest and
 // returns the most-recent committed version of each wanted ID, stopping once
-// all are found. git errors are swallowed so a non-git directory simply yields
-// no recoveries.
+// all are found. want == nil collects every id in history instead, with no
+// early stop (see AllHistoricalTasks). git errors are swallowed so a non-git
+// directory simply yields no recoveries.
 func (s *Store) recoverFromHistory(git Git, want map[int]bool) map[int]Task {
-	found := make(map[int]Task)
 	out, err := git.Output("log", "--all", "--format=%H", "--", s.file)
 	if err != nil || out == "" {
-		return found
+		return map[int]Task{}
 	}
-	for _, hash := range strings.Split(out, "\n") {
-		if len(found) == len(want) {
-			break
-		}
-		content, err := git.Output("show", hash+":"+s.file)
-		if err != nil {
-			continue // file may not exist in this commit
-		}
-		for _, t := range s.parseHistorical(content).Tasks {
-			if !want[t.ID] {
-				continue
-			}
-			if _, seen := found[t.ID]; !seen {
-				found[t.ID] = t
-			}
-		}
-	}
-	return found
+	return s.collectFirstSeen(git, strings.Split(out, "\n"), want)
 }
 
 // committedIDs returns the set of task IDs present in the committed (HEAD)
@@ -308,4 +312,34 @@ func (s *Store) GetWithHistory(git Git, ids []int) ([]Task, error) {
 		return nil, fmt.Errorf("task %d not found", id)
 	}
 	return out, nil
+}
+
+// AllHistoricalTasks returns the most-recently committed version of every
+// task id that has ever appeared in the tasks file's git history, keyed by
+// id - including ids whose last committed appearance was already marked
+// deleted (e.g. a retained CSV tombstone row, see pruneTombstones). Unlike
+// GetHistory, nothing here is filtered by Deleted status and the result is an
+// unordered map, not a sorted slice: callers wanting a plain "what has ever
+// existed" listing should use GetHistory instead.
+//
+// This exists for `md convert --to-git` (cmd/md/convert.go): `md auto-delete`
+// prunes closed tasks out of the working file entirely (cmd/md/auto_delete.go),
+// so a migration reading only the working file would silently free their ids
+// for reuse and leave `md get <id>` unable to recover them once the file-mode
+// history is abandoned post-migration (TASKS #70). The caller is expected to
+// treat every id here that is missing from the working file as soft-deleted
+// on import - this method has no notion of what the working file currently
+// holds, so it does not force Deleted itself.
+//
+// git errors (not a repository, or the tasks file was never committed)
+// degrade to an empty map, matching recoverFromHistory - never an error, so a
+// migration in a history-less repo (e.g. a fresh `git init` with zero
+// commits) still proceeds using just the working file. A nil git also yields
+// an empty map, the same guard GetWithHistory applies before calling
+// recoverFromHistory.
+func (s *Store) AllHistoricalTasks(git Git) map[int]Task {
+	if git == nil {
+		return map[int]Task{}
+	}
+	return s.recoverFromHistory(git, nil)
 }

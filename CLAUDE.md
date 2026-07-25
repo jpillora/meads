@@ -8,7 +8,15 @@
 
 ## Overview
 
-`md` is a git-native task tracker that stores all tasks in a single `TASKS.md` file. No database, no config files - just Markdown and git.
+`md` is a git-native task tracker. It supports two storage modes: a single
+tasks file (`TASKS.md` or `TASKS.csv`) or, alternatively, git mode (tasks
+stored directly as git refs, no working-tree file at all - see `md prime`'s
+own "Overview" for how to tell which one is active). **This repo currently
+uses file mode** - the tracked `TASKS.md` you see in `git status` is real,
+and every rule below assumes it. If that ever changes (e.g. after `md
+convert --to-git`), re-run `md prime` for instructions that match whichever
+mode is actually active - it always describes the real thing, not a
+hardcoded assumption the way this file's hand-written rules below do.
 
 ## Essential Commands
 

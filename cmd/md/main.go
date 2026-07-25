@@ -273,13 +273,13 @@ type root struct {
 	Ready       readyCmd       `opts:"mode=cmd,group=Basic" help:"List open tasks not blocked by dependencies"`
 	Init        initCmd        `opts:"mode=cmd,group=Misc" help:"Initialize a new tasks file, or git mode with --git"`
 	Convert     convertCmd     `opts:"mode=cmd,group=Misc" help:"Convert between TASKS.md/TASKS.csv formats, or migrate to/from git mode with --to-git/--from-git"`
-	Prime       primeCmd       `opts:"mode=cmd,group=Misc" help:"Print LLM context for using md"`
-	Mcp         mcpCmd         `opts:"mode=cmd,group=Misc" help:"Start MCP server over stdio"`
-	Webui       webuiCmd       `opts:"mode=cmd,group=Misc" help:"Launch web UI for this TASKS file"`
-	Doctor      doctorCmd      `opts:"mode=cmd,group=Misc" help:"Detect and fix duplicate task IDs"`
-	AutoDelete  autoDeleteCmd  `opts:"mode=cmd,name=auto-delete,group=Misc" help:"Auto-delete closed tasks via git hook"`
-	AutoSave    autoSaveCmd    `opts:"mode=cmd,name=auto-save,group=Misc" help:"Auto-stage the tasks file in every commit via git hook"`
-	BeadsImport beadsImportCmd `opts:"mode=cmd,name=beads-import,group=Beads" help:"Import tasks from beads"`
+	Prime       primeCmd       `opts:"mode=cmd,group=Misc" help:"Print LLM context for using md (describes whichever mode is active)"`
+	Mcp         mcpCmd         `opts:"mode=cmd,group=Misc" help:"Start MCP server over stdio (file or git mode)"`
+	Webui       webuiCmd       `opts:"mode=cmd,group=Misc" help:"Launch web UI for the current task store (file or git mode)"`
+	Doctor      doctorCmd      `opts:"mode=cmd,group=Misc" help:"Detect and fix duplicate task IDs (in git mode, also reports diverged tasks)"`
+	AutoDelete  autoDeleteCmd  `opts:"mode=cmd,name=auto-delete,group=Misc" help:"Auto-delete closed tasks via git hook (no-op in git mode: nothing to prune)"`
+	AutoSave    autoSaveCmd    `opts:"mode=cmd,name=auto-save,group=Misc" help:"Auto-stage the tasks file in every commit via git hook (no-op in git mode: no tasks file)"`
+	BeadsImport beadsImportCmd `opts:"mode=cmd,name=beads-import,group=Beads" help:"Import tasks from beads (file mode only)"`
 	BeadsNuke   nukeCmd        `opts:"mode=cmd,name=beads-nuke,group=Beads" help:"Completely remove beads from the current repository"`
 }
 
@@ -302,6 +302,7 @@ func main() {
 	c.Ready.globals = g
 	c.Init.globals = g
 	c.Convert.globals = g
+	c.Prime.globals = g
 	c.BeadsImport.globals = g
 	c.Mcp.globals = g
 	c.Webui.globals = g
@@ -310,15 +311,68 @@ func main() {
 	c.AutoSave.globals = g
 	c.BeadsNuke.globals = g
 
-	p := opts.New(&c).
+	// Which commands to hide from rendered help - see help_visibility.go.
+	// Computed once, up front, from the fast filesystem-only check (never
+	// globals.mode(), which is subprocess-backed and reserved for actually
+	// picking a backend) so it costs nothing extra even when help is never
+	// rendered at all (the ordinary "a real command ran" path below).
+	hidden := hiddenCommands(detectHelpMode(""))
+
+	// ParseArgsError, not Parse/ParseArgs: opts' own auto-exiting variants
+	// print help text and os.Exit(1) INSIDE the library, before md ever
+	// gets a chance to filter hidden commands out of it (confirmed against
+	// opts v1.4.0's source - see optsFailureText's doc comment for exactly
+	// what each variant prints and why). Using the Error-returning form
+	// instead means every exit path is reproduced here, in md, where the
+	// rendered text can be filtered first.
+	p, err := opts.New(&c).
 		Name("md").
 		Version(version).
-		Summary("Git-native task tracking in a single Markdown file").
+		Summary("Git-native task tracking — a Markdown/CSV file, or git refs in git mode").
 		Repo("https://github.com/jpillora/meads").
-		Parse()
+		ParseArgsError(os.Args)
+	if err != nil {
+		fmt.Fprint(os.Stderr, filterHelp(optsFailureText(p, err), hidden))
+		os.Exit(1)
+	}
 	if !p.IsRunnable() {
-		fmt.Println(p.Help())
+		fmt.Println(filterHelp(p.Help(), hidden))
 		return
 	}
 	p.RunFatal()
+}
+
+// optsFailureText reproduces exactly what opts v1.4.0's own auto-exiting
+// Parse()/ParseArgs() would print for a parse failure, given the (p, err)
+// ParseArgsError returns instead - so main can filter it (see filterHelp)
+// before printing it itself. Verified against opts' actual source and
+// behaviour (github.com/jpillora/opts@v1.4.0's node_parse.go/node_commands.go):
+//
+//   - "-h"/"--help" (on any node - root or a subcommand), and any flag-parse
+//     error (e.g. an unknown flag), all internally set opts' internalOpts.Help
+//     and return their own unexported "exitError" type, whose Error() IS
+//     already the exact text to print verbatim: the resolved node's full
+//     rendered Help() (with the error embedded too, for a flag-parse
+//     error) - always starting with "Usage:".
+//   - "--version"/"-v" also returns that same unexported exitError type, but
+//     with just the bare version string as its content (never "Usage:").
+//   - Any OTHER error (e.g. an unknown top-level command, "unexpected
+//     arguments: ...") is a plain error whose message alone is not the full
+//     picture: opts' own fallback there is to print root's Help() with the
+//     message embedded in its "Error:" section (n.Help(), called on the
+//     same node ParseArgsError returns as p - see its ParseArgs).
+//
+// exitError is unexported, so it cannot be type-switched on from outside
+// the opts package. This reproduces the same three-way split by content
+// instead: err.Error() is used verbatim when it is either exactly version
+// (the --version/-v case) or already looks like a rendered help document
+// (contains "Usage:" - the -h/--help and flag-parse-error cases); anything
+// else falls back to p.Help(), matching opts' own generic-error fallback
+// exactly. See TestOptsFailureText for every case this covers.
+func optsFailureText(p opts.ParsedOpts, err error) string {
+	text := err.Error()
+	if text == version || strings.Contains(text, "Usage:") {
+		return text
+	}
+	return p.Help()
 }

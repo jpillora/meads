@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -142,6 +143,154 @@ func TestConvert_FileToGit_FromCSV_PreservesIDsIncludingDeleted(t *testing.T) {
 	}
 	if !byID[id2].Deleted {
 		t.Errorf("task %d = %+v, want deleted", id2, byID[id2])
+	}
+}
+
+// --- file -> git: recovering tasks pruned from the file by auto-delete (TASKS #70) ---
+
+// TestConvert_FileToGit_RecoversTaskPrunedFromHistory is task 70's core
+// regression test. `md auto-delete` prunes closed tasks out of TASKS.md
+// entirely once committed (see cmd/md/auto_delete.go, pkg/meads/mutate.go's
+// AutoClean) - they survive only in git history. A migration that only reads
+// the working file would silently drop such a task and free its id for
+// reuse. --to-git must recover it from history and import it soft-deleted:
+// its ref must exist (so the id stays reserved) but it must not resurrect as
+// live work.
+func TestConvert_FileToGit_RecoversTaskPrunedFromHistory(t *testing.T) {
+	h := newHarness(t)
+	keep := h.addTask("Keep me")
+	prune := h.addTask("Prune me")
+	h.closeTask(prune)
+	h.commit("add tasks") // both ids committed at HEAD
+
+	// Simulate what the auto-delete pre-commit hook does on the next commit:
+	// AutoClean prunes any closed task already committed at HEAD out of the
+	// working file entirely.
+	if _, err := h.store.AutoClean(h.globals.git()); err != nil {
+		t.Fatalf("AutoClean: %v", err)
+	}
+	h.assertTaskNotExists(prune) // precondition: gone from the working file
+
+	if err := (&convertCmd{globals: h.globals, File: h.globals.TasksFile, ToGit: true}).Run(); err != nil {
+		t.Fatalf("convert --to-git: %v", err)
+	}
+
+	gs := meads.NewGitStore(h.globals.git())
+	all, err := gs.LoadAll()
+	if err != nil || len(all) != 2 {
+		t.Fatalf("GitStore.LoadAll() = %v, err=%v, want 2 tasks (the pruned id must still be there)", all, err)
+	}
+	byID := map[int]meads.Task{}
+	for _, task := range all {
+		byID[task.ID] = task
+	}
+	if byID[keep].Deleted || byID[keep].Title != "Keep me" {
+		t.Errorf("task %d = %+v, want live \"Keep me\"", keep, byID[keep])
+	}
+	if !byID[prune].Deleted || byID[prune].Title != "Prune me" {
+		t.Errorf("task %d = %+v, want deleted \"Prune me\" (recovered from history)", prune, byID[prune])
+	}
+
+	// `md get <prune>` (GetWithHistory) must still resolve it post-migration.
+	got, err := gs.GetWithHistory([]int{prune})
+	if err != nil || len(got) != 1 || got[0].ID != prune {
+		t.Fatalf("GetWithHistory(%d) = %+v, err=%v, want the recovered task to resolve", prune, got, err)
+	}
+	// Get (active-only) must still exclude it.
+	active, err := gs.Get(nil)
+	if err != nil || len(active) != 1 || active[0].ID != keep {
+		t.Fatalf("GitStore.Get(nil) = %v, err=%v, want only the live task %d", active, err, keep)
+	}
+
+	// The id must be reserved: a fresh Create must not reuse it.
+	created, err := gs.Create(meads.Task{Title: "next"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if created.ID <= prune {
+		t.Errorf("Create after migration = id %d, want an id greater than the reserved/pruned id %d", created.ID, prune)
+	}
+}
+
+// TestConvert_FileToGit_FileVersionWinsOverHistory locks in TASKS #70's
+// merge rule: when an id is present in BOTH the working file and history
+// (its committed version has since been edited, not deleted/pruned), the
+// working file's version - the newer one - must win.
+func TestConvert_FileToGit_FileVersionWinsOverHistory(t *testing.T) {
+	h := newHarness(t)
+	id := h.addTask("Old title")
+	h.commit("add task") // history now has "Old title"
+
+	if err := h.store.Update(id, func(t *meads.Task) { t.Title = "New title" }); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	// The working file now differs from history but the change is uncommitted.
+
+	if err := (&convertCmd{globals: h.globals, File: h.globals.TasksFile, ToGit: true}).Run(); err != nil {
+		t.Fatalf("convert --to-git: %v", err)
+	}
+
+	gs := meads.NewGitStore(h.globals.git())
+	got, err := gs.Get([]int{id})
+	if err != nil || len(got) != 1 {
+		t.Fatalf("GitStore.Get(%d) = %v, err=%v", id, got, err)
+	}
+	if got[0].Title != "New title" {
+		t.Errorf("task %d title = %q, want %q (the working file's newer version, not history's)", id, got[0].Title, "New title")
+	}
+	if got[0].Deleted {
+		t.Errorf("task %d = %+v, want not deleted", id, got[0])
+	}
+}
+
+// TestConvert_FileToGit_TasksFileNeverCommitted_DegradesGracefully: the repo
+// has commits (so --to-git's own git-repo precondition passes, and there is
+// real history for the history walk to traverse), but the tasks file itself
+// was never committed. `git log --all -- <file>` for an uncommitted path
+// simply returns nothing (not an error, see collectFirstSeen/
+// recoverFromHistory), so the walk must find zero recoveries and migration
+// proceeds using only the working file, exactly as before this fix.
+func TestConvert_FileToGit_TasksFileNeverCommitted_DegradesGracefully(t *testing.T) {
+	h := newHarness(t) // has one commit ("initial"), but never for TASKS.md
+	h.addTask("Only task")
+
+	if err := (&convertCmd{globals: h.globals, File: h.globals.TasksFile, ToGit: true}).Run(); err != nil {
+		t.Fatalf("convert --to-git with an uncommitted tasks file: %v", err)
+	}
+
+	gs := meads.NewGitStore(h.globals.git())
+	all, err := gs.LoadAll()
+	if err != nil || len(all) != 1 {
+		t.Fatalf("GitStore.LoadAll() = %v, err=%v, want exactly the 1 working-file task, nothing recovered", all, err)
+	}
+}
+
+// TestConvert_FileToGit_FreshRepoNoCommits_NoCrash: a git repository that
+// exists (so it passes --to-git's own git-repo precondition) but has made
+// zero commits yet - not even the harness's usual "initial" commit - must
+// not crash the history walk.
+func TestConvert_FileToGit_FreshRepoNoCommits_NoCrash(t *testing.T) {
+	dir := t.TempDir()
+	initCmd := exec.Command("git", "init", "-q", "-b", "main")
+	initCmd.Dir = dir
+	if out, err := initCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+	g := &globals{Git: &meads.ExecGit{Dir: dir}, Dir: dir, TasksFile: filepath.Join(dir, "TASKS.md")}
+	seed := fixtureTask(1, "Only task", "open")
+	raw := meads.FormatFile(meads.File{Tasks: []meads.Task{seed}})
+	if err := os.WriteFile(g.TasksFile, []byte(raw), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := (&convertCmd{globals: g, File: g.TasksFile, ToGit: true}).Run(); err != nil {
+		t.Fatalf("convert --to-git in a commit-less repo: %v", err)
+	}
+
+	gs := meads.NewGitStore(g.git())
+	got, err := gs.Get([]int{1})
+	if err != nil || len(got) != 1 || got[0].Title != "Only task" {
+		t.Fatalf("GitStore.Get(1) = %+v, err=%v", got, err)
 	}
 }
 
