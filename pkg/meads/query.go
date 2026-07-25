@@ -9,25 +9,9 @@ import (
 	"github.com/go-git/go-billy/v5/util"
 )
 
-// Get returns tasks from the file. If ids is non-empty only the matching
-// tasks are returned (in the order given). An error is returned for any
-// id that does not exist. If ids is empty all tasks are returned.
-// Deleted (tombstone) tasks are always excluded.
-func (s *Store) Get(ids []int) ([]Task, error) {
-	data, err := util.ReadFile(s.fs, s.file)
-	if err != nil {
-		if os.IsNotExist(err) {
-			if len(ids) > 0 {
-				return nil, fmt.Errorf("task %d not found", ids[0])
-			}
-			return nil, nil
-		}
-		return nil, fmt.Errorf("reading %s: %w", s.file, err)
-	}
-	content := stripLockLines(string(data))
-	f := s.fmt.Parse(content)
-	// Filter out deleted tasks.
-	active := filterDeleted(f.Tasks)
+// selectByIDs returns the tasks in active matching ids, in the order given.
+// Empty ids returns all of active. Missing id -> error "task %d not found".
+func selectByIDs(active []Task, ids []int) ([]Task, error) {
 	if len(ids) == 0 {
 		return active, nil
 	}
@@ -46,19 +30,9 @@ func (s *Store) Get(ids []int) ([]Task, error) {
 	return out, nil
 }
 
-// Ready returns open tasks not blocked by unclosed dependencies, sorted by priority descending.
-// Deleted tasks are excluded.
-func (s *Store) Ready() ([]Task, error) {
-	data, err := util.ReadFile(s.fs, s.file)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("reading %s: %w", s.file, err)
-	}
-	content := stripLockLines(string(data))
-	f := s.fmt.Parse(content)
-	active := filterDeleted(f.Tasks)
+// readyTasks returns open, unblocked tasks sorted by priority ascending
+// (P0 first), treating empty priority as "P2".
+func readyTasks(active []Task) []Task {
 	statusByID := make(map[int]string, len(active))
 	for _, t := range active {
 		statusByID[t.ID] = t.Status
@@ -91,7 +65,44 @@ func (s *Store) Ready() ([]Task, error) {
 		}
 		return pi < pj
 	})
-	return ready, nil
+	return ready
+}
+
+// Get returns tasks from the file. If ids is non-empty only the matching
+// tasks are returned (in the order given). An error is returned for any
+// id that does not exist. If ids is empty all tasks are returned.
+// Deleted (tombstone) tasks are always excluded.
+func (s *Store) Get(ids []int) ([]Task, error) {
+	data, err := util.ReadFile(s.fs, s.file)
+	if err != nil {
+		if os.IsNotExist(err) {
+			if len(ids) > 0 {
+				return nil, fmt.Errorf("task %d not found", ids[0])
+			}
+			return nil, nil
+		}
+		return nil, fmt.Errorf("reading %s: %w", s.file, err)
+	}
+	content := stripLockLines(string(data))
+	f := s.fmt.Parse(content)
+	active := filterDeleted(f.Tasks)
+	return selectByIDs(active, ids)
+}
+
+// Ready returns open tasks not blocked by unclosed dependencies, sorted by priority descending.
+// Deleted tasks are excluded.
+func (s *Store) Ready() ([]Task, error) {
+	data, err := util.ReadFile(s.fs, s.file)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("reading %s: %w", s.file, err)
+	}
+	content := stripLockLines(string(data))
+	f := s.fmt.Parse(content)
+	active := filterDeleted(f.Tasks)
+	return readyTasks(active), nil
 }
 
 // FindCycles returns every circular dependency in the active (non-deleted)

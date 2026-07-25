@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-07-25T08:51:34Z
+* updated: 2026-07-25T09:13:06Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -490,54 +490,12 @@ optionally deprioritise tasks whose files are already claimed.
    and `md auto-delete` become **no-ops in git mode** — there is no working-tree
    file to stage, and nothing to prune since refs are never removed.
 
-## 59. Git mode phase 2: read path (list/get/ready, history, computed next-id)
-
-* status: open
-* priority: P1
-* type: task
-* depends-on: 
-* created: 2026-07-25T08:19:07Z
-* updated: 2026-07-25T08:19:16Z
-
-Read commands over `refs/meads/tasks/*`. Design of record: task 57.
-
-### Goal
-
-`list`, `get`, `ready`, history walking, and computed next-id — all fast.
-
-### Build
-
-- Enumerate `refs/meads/tasks/` and parse ids from ref names
-- Per task: ref -> commit -> tree -> `task.json` -> `Task` struct
-- Filter soft-deleted tasks from list/ready; reuse existing `filterDeleted()` (pkg/meads/tombstone.go:115)
-- `md get <id>` — single ref lookup, no enumeration
-- **History** — walk commit parents. Version N is `refs/meads/tasks/<id>~N`. Timestamps come from commit metadata, so the `updated` field is not load-bearing for ordering.
-- **Computed next-id** — `max(id parsed from ref names) + 1`. Ref names only, no blob reads.
-
-### Do NOT
-
-- **Do not port `f.Meta["max-id"]`** (pkg/meads/tombstone.go:54-98). That high-water mark exists only because the file format compacts tombstone rows away. Git mode never removes refs, so the max is always directly observable.
-- **Do not build an index or cache ref** for list. It would be a global contention point on every mutation, and the measurements below say it is unnecessary.
-
-### Measured targets (git CLI; in-process should beat these)
-
-- list 500 tasks (enumerate + read all blobs): 22 ms
-- single ref lookup: 2 ms
-- next-id from names only: 15 ms at 500 tasks, 39 ms at 5,000, 389 ms at 50,000 (linear, ~8 us/ref)
-- All flat at 100,500 total refs, because reads prefix-scan `refs/meads/tasks/` only
-
-### Acceptance
-
-- list/get/ready parity with the file backend on a shared fixture
-- soft-deleted tasks hidden from list/ready but still returned by `get`
-- next-id is correct when the highest-numbered task is deleted (must not reuse it)
-
 ## 60. Git mode phase 3: write path (create, update, soft delete)
 
 * status: open
 * priority: P1
 * type: task
-* depends-on: 59
+* depends-on: 
 * created: 2026-07-25T08:19:07Z
 * updated: 2026-07-25T08:19:16Z
 
@@ -770,3 +728,69 @@ Make the rest of the toolchain git-mode aware. Design of record: task 57.
 - both hooks detect git mode and no-op cleanly, without erroring or printing noise
 - migration round-trips a fixture file -> git mode -> file with no data loss
 - webhook still fires with correct payloads in git mode
+
+## 67. auto-delete hook git add fails with exit 128, aborting commit
+
+* status: open
+* priority: P1
+* type: bug
+* created: 2026-07-25T08:55:24Z
+
+The `md auto-delete` pre-commit hook can fail with `staging TASKS.md: exit status 128`, which aborts the user's `git commit`.
+
+### Symptom
+
+Observed 2026-07-25 while committing phase 1 of git mode. Hook output was:
+
+```
+md: auto-staged TASKS.md          <- auto-save's git add succeeded
+md: removed closed task 58        <- auto-delete rewrote TASKS.md
+staging TASKS.md: exit status 128 <- auto-delete's git add FAILED
+```
+
+The commit was aborted. **Not data-destructive**: `runFromHook` in
+cmd/md/auto_delete.go correctly restored its backup on the failed `git add`
+(the closed task reappeared in TASKS.md), and all staged changes survived.
+Retrying the commit succeeded once TASKS.md had already been cleaned.
+
+### What has been ruled out
+
+- **Not `.git/index.lock` contention.** Verified empirically in a scratch repo:
+  a pre-commit hook that probes for `.git/index.lock` finds it *absent*, and two
+  consecutive `git add` calls from within the hook both succeed — under both
+  `git commit -m` and `git commit -F -` (message on stdin).
+- **Not a sequencer state.** No rebase/merge/cherry-pick was in progress;
+  `sequencerInProgress()` would have skipped the hook entirely.
+- **Not a standalone failure.** Running `GITHOOK=1 md auto-delete` directly, with
+  a closed task present, succeeds: it removes the task, stages the file, exits 0.
+
+So the failure appears specific to running inside `git commit`, and only on
+auto-delete's `git add` — auto-save's identical `git add` in the same hook run
+had already succeeded moments earlier. That asymmetry is the key clue: the
+difference between the two call sites is that auto-delete first runs
+`store.AutoClean(git)`, which itself shells out to git (`git log --all -- <file>`
+and `git show <hash>:<file>` per commit, via committedIDs in pkg/meads/query.go).
+
+### Why it is hard to diagnose
+
+`ExecGit.Run` (pkg/meads/git.go) uses `cmd.Run()`, which discards stderr, so the
+failure surfaces only as a bare `exit status 128`. Git's actual fatal message —
+which would almost certainly name the cause — is thrown away.
+
+### Suggested approach
+
+1. **First, make it diagnosable.** Give `ExecGit.Run` the same stderr capture
+   that `outputRaw` already has, folding git's message into the returned error.
+   This is worth doing regardless of this bug. Note `ExecGit` now has an
+   `outputRaw` helper (added in phase 1) that does exactly this and can be reused.
+2. Reproduce: close a task, then commit any change, and capture the real stderr.
+3. Consider whether auto-save and auto-delete should be a single hook invocation
+   rather than two separate `md` processes both staging the same file. The double
+   staging is redundant work and doubles the exposure to whatever this is.
+
+### Acceptance
+
+- The real git error is surfaced in the message, not just an exit code
+- A reproduction exists as a test (or the root cause is documented as
+  environmental and the hook is made resilient to it)
+- Closing a task and committing does not abort the commit
