@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-07-25T09:13:06Z
+* updated: 2026-07-25T09:52:57Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -490,51 +490,6 @@ optionally deprioritise tasks whose files are already claimed.
    and `md auto-delete` become **no-ops in git mode** — there is no working-tree
    file to stage, and nothing to prune since refs are never removed.
 
-## 60. Git mode phase 3: write path (create, update, soft delete)
-
-* status: open
-* priority: P1
-* type: task
-* depends-on: 
-* created: 2026-07-25T08:19:07Z
-* updated: 2026-07-25T08:19:16Z
-
-Create, update, and soft delete. Design of record: task 57.
-
-### Goal
-
-All mutations as single-ref compare-and-swap operations.
-
-### Build
-
-- **Create** — compute next id N (phase 2), build the commit, then `updateRef(refs/meads/tasks/N, commit, ZERO_OID)` create-only. On rejection, recompute and retry.
-  - **No shared counter ref and no atomic batch.** The create-only CAS is itself the uniqueness guarantee: if two agents both compute 58, exactly one wins; the loser recomputes, gets 59, succeeds. A counter ref would add a global contention point every create must queue behind.
-- **Update** — read `(oid, task)`, mutate, build a commit parented on the old one, CAS against `oid`.
-- **Soft delete** — set the `deleted` boolean true and CAS like any other update. **Never remove the ref.**
-  - Rationale: hard delete is correct in file mode precisely because tasks are rows in a committed file that git history recovers. Refs void that assumption — removing a task ref orphans its whole chain.
-  - Use the existing `Task.Deleted` boolean. Do NOT add `deleted` as a `status` value: status is draft/open/inprogress/closed, and folding deletion in destroys the record of what the status was at deletion and forces status-validation changes.
-
-### CRITICAL — the retry trap
-
-A CAS retry must re-evaluate the **decision**, not replay the **write**. The naive loop ("CAS failed -> re-read oid -> push again") succeeds on attempt 2 and silently stomps the winner's claim.
-
-```
-loop:
-  oid, task = read(refs/meads/tasks/42)
-  if task.status != open: return ErrAlreadyClaimed   <- re-checked EVERY iteration
-  cas(oid -> newCommit)
-  if ok: return
-```
-
-This is the single easiest way to get git mode wrong, and it is invisible until two agents actually race.
-
-### Acceptance
-
-- **Concurrent claim test**: two processes race to claim one task; exactly one wins, the loser observes `inprogress` and does not overwrite it
-- Two concurrent creates receive distinct ids
-- Soft delete leaves the ref present and the commit chain intact
-- Retry loop provably re-checks the precondition (test that a claim on an already-claimed task fails even under forced CAS contention)
-
 ## 61. Git mode phase 4: config ref + oid-keyed cache
 
 * status: open
@@ -572,7 +527,7 @@ Shared, versioned configuration with a cheap cache.
 * status: open
 * priority: P2
 * type: task
-* depends-on: 60,61
+* depends-on: 61
 * created: 2026-07-25T08:19:07Z
 * updated: 2026-07-25T08:19:16Z
 
@@ -632,7 +587,7 @@ A non-fast-forward rejection means another clone has diverged. Surface it clearl
 * status: open
 * priority: P2
 * type: task
-* depends-on: 60,61
+* depends-on: 61
 * created: 2026-07-25T08:19:07Z
 * updated: 2026-07-25T08:19:16Z
 
@@ -794,3 +749,56 @@ which would almost certainly name the cause — is thrown away.
 - A reproduction exists as a test (or the root cause is documented as
   environmental and the hook is made resilient to it)
 - Closing a task and committing does not abort the commit
+
+## 68. pkg/meads -race fails on TestConcurrentWriters_OneWins (pre-existing)
+
+* status: open
+* priority: P2
+* type: bug
+* created: 2026-07-25T09:32:33Z
+
+`go test ./pkg/meads/ -race` fails on `TestConcurrentWriters_OneWins`
+(pkg/meads/lock_test.go:132) with "race detected during execution of test".
+
+### Pre-existing, not caused by git mode
+
+Verified by checking out commit 69581ab (the state before any git-mode work) into
+a scratch worktree under /tmp — none of refstore.go / gitstore.go / gitmutate.go
+present — and running the same test under `-race`. It fails identically there.
+
+Also reported as functionally flaky without `-race`: "expected exactly 1 winner,
+got 2" under `-count=5`.
+
+### What to determine
+
+The test drives concurrent `acquireLock` calls against a shared in-memory billy
+filesystem. The key question is whether this is:
+
+1. **A test artifact.** Real concurrency in meads is across *processes*, which do
+   not share memory — they contend through the actual file via O_APPEND. An
+   in-process test sharing one memfs may simply be racing on memfs internals that
+   are not safe for concurrent use, in which case the lock design is fine and the
+   test needs a process-level or lock-protected fixture.
+2. **A real defect.** The README advertises "Concurrent-write safe via optimistic
+   locking — multiple processes or AI agents can write simultaneously". If the
+   "got 2 winners" outcome can occur across processes on a real filesystem, the
+   optimistic lock has a genuine hole and that claim is wrong.
+
+Distinguishing these matters: (1) is a test fix, (2) is a correctness bug in a
+headline feature.
+
+Suggested: write a process-level reproduction (spawn N `md` processes against one
+real TASKS.md in a temp dir under /tmp and count winners) to settle which it is
+before touching the lock code.
+
+### Note
+
+Git mode does not inherit this. Its concurrency is server/filesystem-enforced
+compare-and-swap on refs, covered by TestGitStore_Claim_ConcurrentRaceExactlyOneWinner
+and friends, which pass cleanly under `-race`.
+
+### Acceptance
+
+- `go test ./pkg/meads/ -race` passes
+- The question above is answered explicitly, and if it is (2), the README claim is
+  corrected or the lock is fixed

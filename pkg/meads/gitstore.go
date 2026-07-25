@@ -97,6 +97,24 @@ func (g *GitStore) Ready() ([]Task, error) {
 	return readyTasks(filterDeleted(all)), nil
 }
 
+// taskIDFromRef extracts the numeric task id from a ref name under
+// TasksRefPrefix, e.g. "refs/meads/tasks/12" -> (12, true). It reports false
+// for anything that isn't a plain integer directly under the prefix - a
+// nested ref (an extra "/" segment) or a non-numeric suffix - so callers
+// enumerating ListRefs(TasksRefPrefix) can skip junk without parsing it as
+// an id or crashing on it (see NextID and loadAllWithOIDs).
+func taskIDFromRef(name string) (int, bool) {
+	suffix := strings.TrimPrefix(name, TasksRefPrefix)
+	if strings.Contains(suffix, "/") {
+		return 0, false // nested deeper than one segment below the prefix
+	}
+	id, err := strconv.Atoi(suffix)
+	if err != nil {
+		return 0, false // not a plain integer
+	}
+	return id, true
+}
+
 // NextID returns max(existing task id) + 1, or 1 when there are no tasks.
 //
 // It reads ref NAMES ONLY, never blob contents: parsing the trailing id off
@@ -115,13 +133,9 @@ func (g *GitStore) NextID() (int, error) {
 	}
 	next := 1
 	for name := range refs {
-		suffix := strings.TrimPrefix(name, TasksRefPrefix)
-		if strings.Contains(suffix, "/") {
-			continue // nested deeper than one segment below the prefix
-		}
-		id, err := strconv.Atoi(suffix)
-		if err != nil {
-			continue // not a plain integer
+		id, ok := taskIDFromRef(name)
+		if !ok {
+			continue
 		}
 		if id >= next {
 			next = id + 1

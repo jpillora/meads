@@ -25,6 +25,8 @@ type Task struct {
 	Tags         []string          `json:"tags,omitempty"`
 	Deleted      bool              `json:"deleted,omitempty"`
 	StatusReason string            `json:"status_reason,omitempty"`
+	AgentID      string            `json:"agent_id,omitempty"`
+	FilesInScope []string          `json:"files_in_scope,omitempty"`
 	Meta         map[string]string `json:"meta,omitempty"`
 	Description  string            `json:"description,omitempty"`
 }
