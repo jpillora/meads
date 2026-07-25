@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-07-25T23:19:06Z
+* updated: 2026-07-25T23:37:59Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -784,3 +784,69 @@ A file the tool itself never leaves clean is a bad default.
 
 - `md add`/`md update --description-file` then commit leaves a clean tree
 - A test asserts TASKS.md is byte-identical to the index after the hook runs
+
+## 75. Help visibility misdetects git mode inside a linked worktree
+
+* status: open
+* priority: P3
+* type: bug
+* created: 2026-07-25T23:37:59Z
+
+`fastGitModeLikely` (cmd/md/help_visibility.go) reports file mode in a linked
+worktree of a git-mode repo, so `md --help` advertises the file-mode-only
+commands (auto-save/auto-delete/beads-import) there.
+
+### Reproduce
+
+```
+$ git init -q -b main . && md init --git && md add "task: one"
+$ git worktree add /tmp/wt -b side
+$ md --help | grep -c auto-save          # main checkout
+0                                        # correct: hidden, git mode
+$ cd /tmp/wt && md list
+1. [P2] one                              # authoritative check: git mode
+$ md --help | grep -c auto-save
+1                                        # WRONG: shown, i.e. detected file mode
+```
+
+### Cause
+
+`fastGitDir` correctly resolves a worktree's `.git` *file* (`gitdir: <path>`)
+to the per-worktree git directory. But shared refs do not live there:
+
+```
+$ ls /repo/.git/worktrees/wt/refs
+ls: cannot access ...: No such file or directory
+$ cat /repo/.git/worktrees/wt/commondir
+../..
+```
+
+`refs/meads/*` is an ordinary shared ref, so it lives in the **common** dir.
+`fastGitModeLikely` joins `refs/meads` onto the per-worktree gitdir and finds
+nothing, then reads a `packed-refs` that also is not there, and returns false.
+The missing step is resolving `<gitdir>/commondir` (git-worktree(1)) before
+looking for refs.
+
+### Scope of the damage
+
+Cosmetic, and only because the probe is confined to help visibility - its own
+doc comment says so, deferring to `globals.inGitRepo` as "the authoritative,
+subprocess-based check every other command uses." `md list` in the same
+worktree is correct, because mode() goes through git.
+
+That containment is the point: this is the concrete argument against promoting
+the disk probe to decide `globals.mode()`. The same false negative that costs a
+line of help text today would, as a mode decision, make `md add` write TASKS.md
+into the working tree of a git-mode worktree.
+
+### Fix
+
+Resolve `commondir` in `fastGitDir` (or a sibling), relative to the gitdir when
+not absolute, and look for refs there. Everything else stays as is.
+
+### Acceptance
+
+- `md --help` in a linked worktree of a git-mode repo hides the file-mode
+  commands, matching the main checkout
+- A test covers the worktree layout
+
