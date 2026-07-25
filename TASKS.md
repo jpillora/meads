@@ -625,4 +625,3 @@ including exactly the final write-up a closing commit is most likely to add.
 - Editing a task's description and closing it in the same commit preserves the
   edit somewhere in git history
 - A regression test covers edit-then-close-in-one-commit
-
