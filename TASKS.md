@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-07-25T11:30:31Z
+* updated: 2026-07-25T11:56:46Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -509,48 +509,6 @@ optionally deprioritise tasks whose files are already claimed.
 9. Integrations: webui watch (poll refs, not fsnotify on a file); `md auto-save`
    and `md auto-delete` become **no-ops in git mode** — there is no working-tree
    file to stage, and nothing to prune since refs are never removed.
-
-## 64. Git mode phase 7: two-stage lock + opt-in remoteLocking
-
-* status: open
-* priority: P2
-* type: task
-* depends-on: 
-* created: 2026-07-25T08:19:07Z
-* updated: 2026-07-25T08:19:16Z
-
-Opt-in global lock for rare multi-step operations. Design of record: task 57.
-
-### Why this is small
-
-Per-ref CAS already prevents lost updates, so this lock exists only for operations that cannot be expressed as one batch (format migration, long maintenance). It is **off by default**, which is also what preserves offline operation.
-
-### Build — two stages
-
-1. **Local** — `flock` on `$GIT_COMMON_DIR/meads.lock`
-   - flock specifically, because the kernel releases it on process death (clean exit, crash, `kill -9`, OOM), so it cannot leak. A lock stored as data can.
-   - The common git dir means it is automatically shared by every linked worktree.
-   - Needs build-tagged implementations: unix `flock`, Windows `LockFileEx`.
-   - Guard self-deadlock with an in-process mutex + refcount — two `flock` calls on separate fds in one process block each other.
-2. **Read config** (phase 4)
-3. **Remote** — only if `remoteLocking` is true
-   - Acquire = CAS `refs/meads/lock` from the 40-zero oid (create-if-absent)
-   - Release = CAS delete against your own oid, which makes releasing someone else's lock impossible
-   - Lease `{holder, expires}`; an expired lock is stolen via CAS, so exactly one thief wins
-
-### Ordering and failure
-
-- Acquire local, then remote. Release remote **after** the data write — the remote lock brackets the whole critical section.
-- If remote acquisition fails, release the local lock before returning, or it leaks.
-- **Fail closed**: `remoteLocking` on + network unavailable = error. Silently proceeding is the one outcome that loses mutual exclusion invisibly.
-- Detect "lock is held" by re-reading the ref, never by matching rejection text.
-
-### Acceptance
-
-- Local lock is released after the holder is SIGKILLed
-- A second local holder blocks while the first holds
-- N racers against one expired remote lock: exactly one steals it
-- Remote acquisition failure releases the local lock
 
 ## 65. Git mode phase 8: divergence reconcile + doctor for git mode
 
