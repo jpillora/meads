@@ -3,8 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-07-25T22:32:27Z
-* max-id: 71
+* updated: 2026-07-25T22:33:45Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -563,3 +562,67 @@ and friends, which pass cleanly under `-race`.
 - `go test ./pkg/meads/ -race` passes
 - The question above is answered explicitly, and if it is (2), the README claim is
   corrected or the lock is fixed
+
+## 72. Task edits made in the same commit that closes them are lost
+
+* status: open
+* priority: P2
+* type: bug
+* created: 2026-07-25T22:33:45Z
+
+Editing a task and closing it before the next commit silently discards the edit.
+
+### What happens
+
+`AutoClean` (pkg/meads/mutate.go) prunes a closed task from TASKS.md if its ID
+is in `committedIDs`, i.e. present in `HEAD:TASKS.md`. It does not compare the
+working-tree row against the committed one. So for a task that already exists at
+HEAD:
+
+1. `md update <id> --description-file=...` writes the new text to TASKS.md
+2. `md set-status <id> closed`
+3. `git commit` — the pre-commit hook prunes the row and stages the removal
+
+The commit therefore contains TASKS.md *without* the task. The newest committed
+version of that task is the one from the previous commit, carrying the **old**
+description and `status: open`. `md get <id>` recovers that stale version, so
+the task looks recoverable while the edit is gone.
+
+### Observed
+
+Hit while closing #67 on 2026-07-26. A ~60-line root-cause write-up was added to
+the task description, the task was closed, and both landed in one commit:
+
+```
+$ git show HEAD~1:TASKS.md | grep -c "RESOLVED 2026-07-26"   # 0
+$ git show HEAD:TASKS.md   | grep -c "RESOLVED 2026-07-26"   # 0
+```
+
+The write-up was preserved out-of-band in doc/INDEX_LOCK.md and the commit
+message, but only because the loss was noticed. This is the common shape of a
+"do the task, document it, close it" workflow, so it is likely to have eaten
+earlier notes too.
+
+### Why it matters
+
+The whole premise of auto-delete is that pruning is safe because git history
+retains the task. That holds only for the *last committed* version. Any edit
+made after that commit and before the closing one is lost with no warning —
+including exactly the final write-up a closing commit is most likely to add.
+
+### Possible approaches
+
+- Prune only when the working-tree row is byte-identical to the committed one;
+  otherwise let the edited row ride along in this commit and prune it in the
+  next. Costs one extra commit per closed-and-edited task, and is simple.
+- Or have the hook stage the edited row first, then prune, so a single commit
+  carries both. Needs two index writes and is harder to make atomic.
+- Either way `md get <id>` should be able to tell that the recovered version is
+  older than the row that was pruned, rather than presenting it as the truth.
+
+### Acceptance
+
+- Editing a task's description and closing it in the same commit preserves the
+  edit somewhere in git history
+- A regression test covers edit-then-close-in-one-commit
+
