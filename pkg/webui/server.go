@@ -18,12 +18,20 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-git/go-billy/v5"
 	"github.com/jpillora/meads/pkg/meads"
 )
 
 // Config controls a Server.
 type Config struct {
-	Store *meads.Store
+	// Store is the task backend to serve. *meads.Store (file mode) and the
+	// git-mode adapter cmd/md/webui.go constructs both satisfy it - see
+	// meads.TaskStore's doc comment. Richer capabilities that only one
+	// backend can offer - a file to fsnotify, or ref oids to poll for
+	// changes - are discovered through the optional fileLocator/
+	// refSnapshotter interfaces (see watch.go and storeLocation) rather
+	// than required by this field's type.
+	Store meads.TaskStore
 	// Host to bind, e.g. "127.0.0.1". Defaults to 127.0.0.1.
 	Host string
 	// Port to listen on. 0 = pick a random free port.
@@ -44,14 +52,20 @@ type Config struct {
 
 // Server is an HTTP server exposing the webui API.
 type Server struct {
-	cfg       Config
-	listener  net.Listener
-	http      *http.Server
-	events    *eventBus
-	bind      *bindHub
-	watcher   *watcher
-	startOnce sync.Once
-	shutdown  context.CancelFunc
+	cfg Config
+	// listenerMu guards listener: Run() assigns it from its own goroutine
+	// once the port is bound, while Addr()/URL() are meant to be polled from
+	// a caller's separate goroutine until that happens (see cmd/md/webui.go's
+	// waitAndOpen, and TestIntegration_GitMode_Webui_EndToEnd) - without a
+	// lock that's an unsynchronized read/write on the same field.
+	listenerMu sync.RWMutex
+	listener   net.Listener
+	http       *http.Server
+	events     *eventBus
+	bind       *bindHub
+	watcher    *watcher
+	startOnce  sync.Once
+	shutdown   context.CancelFunc
 }
 
 // New builds a Server from cfg. Call Run to start.
@@ -88,20 +102,36 @@ func New(cfg Config) (*Server, error) {
 
 // Addr returns the final listen address. Only valid after Run returns a non-blocking URL.
 func (s *Server) Addr() string {
-	if s.listener == nil {
+	lis := s.getListener()
+	if lis == nil {
 		return ""
 	}
-	return s.listener.Addr().String()
+	return lis.Addr().String()
 }
 
 // URL returns the base URL clients should use. Only valid after the listener is bound.
 func (s *Server) URL() string {
-	if s.listener == nil {
+	lis := s.getListener()
+	if lis == nil {
 		return ""
 	}
 	host := s.cfg.Host
-	port := s.listener.Addr().(*net.TCPAddr).Port
+	port := lis.Addr().(*net.TCPAddr).Port
 	return fmt.Sprintf("http://%s:%d", host, port)
+}
+
+// getListener and setListener guard concurrent access to listener - see its
+// field doc comment on Server.
+func (s *Server) getListener() net.Listener {
+	s.listenerMu.RLock()
+	defer s.listenerMu.RUnlock()
+	return s.listener
+}
+
+func (s *Server) setListener(lis net.Listener) {
+	s.listenerMu.Lock()
+	s.listener = lis
+	s.listenerMu.Unlock()
 }
 
 // Token returns the bearer token required by all HTTP routes.
@@ -116,7 +146,7 @@ func (s *Server) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("listen: %w", err)
 	}
-	s.listener = lis
+	s.setListener(lis)
 
 	mux := s.routes()
 	s.http = &http.Server{Handler: withMiddleware(mux, s.cfg.Token)}
@@ -173,11 +203,12 @@ func (s *Server) printStartLine() error {
 	if s.cfg.Print == "none" {
 		return nil
 	}
+	path, format := storeLocation(s.cfg.Store)
 	info := startInfo{
 		URL:    s.URL(),
 		Token:  s.cfg.Token,
-		File:   filepath.Join(s.cfg.Store.FS().Root(), s.cfg.Store.Path()),
-		Format: storeFormat(s.cfg.Store),
+		File:   path,
+		Format: format,
 	}
 	switch s.cfg.Print {
 	case "json":
@@ -201,11 +232,30 @@ type startInfo struct {
 	Format string `json:"format"`
 }
 
-func storeFormat(s *meads.Store) string {
-	if strings.HasSuffix(s.Path(), ".csv") {
-		return "csv"
+// fileLocator is implemented by file-mode stores (namely *meads.Store) to
+// describe the on-disk file backing them. storeLocation and the fsnotify
+// watcher (startFileWatcher, in watch.go) both use it. Git mode has no
+// single file and does not implement it; storeLocation falls back to a
+// fixed description in that case, and startWatcher falls back to
+// refSnapshotter instead (see watch.go).
+type fileLocator interface {
+	FS() billy.Filesystem
+	Path() string
+}
+
+// storeLocation returns a display path and a short format label ("md",
+// "csv", or "git") for store, for the startup banner (printStartLine) and
+// GET /api/file (handleFileInfo).
+func storeLocation(store meads.TaskStore) (path, format string) {
+	fl, ok := store.(fileLocator)
+	if !ok {
+		return meads.TasksRefPrefix + "*", "git"
 	}
-	return "md"
+	path = filepath.Join(fl.FS().Root(), fl.Path())
+	if strings.HasSuffix(fl.Path(), ".csv") {
+		return path, "csv"
+	}
+	return path, "md"
 }
 
 func randomToken() (string, error) {

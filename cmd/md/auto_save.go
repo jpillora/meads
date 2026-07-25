@@ -63,6 +63,14 @@ func (c *autoSaveCmd) Run() error {
 // latest task changes. Unlike auto-delete it runs on every branch — staging is
 // always safe — and never modifies file content, so there is nothing to back up.
 func (c *autoSaveCmd) runFromHook() error {
+	// In git mode there is no working-tree tasks file to stage: every
+	// mutating command commits straight to refs/meads/tasks/* as it runs,
+	// not into the user's next commit. Checked before the file-existence
+	// check below so a stray/leftover TASKS.md in a git-mode repo (e.g. from
+	// before migrating - see `md convert --to-git`) is never staged either.
+	if c.globals.mode() == modeGit {
+		return nil
+	}
 	tasksFile := c.globals.TasksFile
 	if _, err := os.Stat(tasksFile); os.IsNotExist(err) {
 		return nil

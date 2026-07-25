@@ -15,13 +15,19 @@ type csvFormat struct{}
 func (csvFormat) Parse(content string) File { return ParseCSV(content) }
 func (csvFormat) Format(f File) string      { return FormatCSV(f) }
 func (csvFormat) HasPreamble() bool         { return false }
-func (csvFormat) EmptyFile() string          { return csvHeaderRow() }
+func (csvFormat) EmptyFile() string         { return csvHeaderRow() }
 
-// CSV column order — header row is static.
+// CSV column order — header row is static. New columns are always appended
+// at the end (never inserted earlier) so an older file's existing columns
+// keep their exact index: ParseCSV looks columns up by name via the header
+// row's own position, and a short/older row simply reads as "" for any
+// column past its own length (see get's idx >= len(row) check) - see
+// agent-id/files-in-scope below, added in git-mode migration phase 9.
 var csvColumns = []string{
 	"id", "title", "status", "priority", "type",
 	"depends-on", "tags", "description", "close-reason",
 	"status-reason", "created", "updated", "deleted", "meta",
+	"agent-id", "files-in-scope",
 }
 
 // ParseCSV parses CSV content into a File. Deleted rows are included.
@@ -69,12 +75,16 @@ func ParseCSV(content string) File {
 			StatusReason: get(row, "status-reason"),
 			Deleted:      get(row, "deleted") == "true",
 			Description:  unescapeNewlines(get(row, "description")),
+			AgentID:      get(row, "agent-id"),
 		}
 		if depsStr := get(row, "depends-on"); depsStr != "" {
 			t.DependsOn = parseIntSlice(depsStr)
 		}
 		if tagsStr := get(row, "tags"); tagsStr != "" {
 			t.Tags = splitTags(tagsStr)
+		}
+		if filesStr := get(row, "files-in-scope"); filesStr != "" {
+			t.FilesInScope = splitTags(filesStr)
 		}
 		// Parse meta JSON column.
 		meta := make(map[string]string)
@@ -107,6 +117,12 @@ func ParseCSV(content string) File {
 		}
 		if v := get(row, "updated"); v != "" {
 			meta["updated"] = v
+		}
+		if t.AgentID != "" {
+			meta["agent-id"] = t.AgentID
+		}
+		if len(t.FilesInScope) > 0 {
+			meta["files-in-scope"] = strings.Join(t.FilesInScope, ",")
 		}
 		t.Meta = meta
 		f.Tasks = append(f.Tasks, t)
@@ -166,6 +182,8 @@ func FormatCSV(f File) string {
 			updated,
 			deletedStr,
 			metaJSON,
+			t.AgentID,
+			strings.Join(t.FilesInScope, ","),
 		}
 		w.Write(row)
 	}

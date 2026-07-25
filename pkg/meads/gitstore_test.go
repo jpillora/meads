@@ -548,3 +548,71 @@ func TestGitStore_FindCycles_NoneIsNilNotError(t *testing.T) {
 		t.Errorf("FindCycles() = %v, want none", cycles)
 	}
 }
+
+// TestGitStore_TaskRefOIDs backs pkg/webui's poll-based watcher (task 66
+// phase 9): it must return exactly the task refs (never ConfigRef or
+// anything else under RefNamespace), and the oid for a given ref name must
+// actually change when that task is mutated, so a caller diffing successive
+// snapshots reliably detects the change.
+func TestGitStore_TaskRefOIDs(t *testing.T) {
+	gs, rs, _ := newGitStoreRepo(t)
+
+	oids, err := gs.TaskRefOIDs()
+	if err != nil {
+		t.Fatalf("TaskRefOIDs on an empty repo: %v", err)
+	}
+	if len(oids) != 0 {
+		t.Fatalf("TaskRefOIDs on an empty repo = %v, want none", oids)
+	}
+
+	seedTask(t, rs, gs, Task{ID: 1, Title: "one", Status: "open"})
+	seedTask(t, rs, gs, Task{ID: 2, Title: "two", Status: "open"})
+	// A config-ref write must never appear in TaskRefOIDs' result.
+	if err := gs.SetConfig(Config{RemoteLocking: true}); err != nil {
+		t.Fatalf("SetConfig: %v", err)
+	}
+
+	oids, err = gs.TaskRefOIDs()
+	if err != nil {
+		t.Fatalf("TaskRefOIDs: %v", err)
+	}
+	if len(oids) != 2 {
+		t.Fatalf("TaskRefOIDs() = %v, want exactly 2 task refs", oids)
+	}
+	before, ok := oids[gs.TaskRef(1)]
+	if !ok || before == "" {
+		t.Fatalf("TaskRefOIDs() missing %s: %v", gs.TaskRef(1), oids)
+	}
+	if _, ok := oids[ConfigRef]; ok {
+		t.Errorf("TaskRefOIDs() must not include %s, got %v", ConfigRef, oids)
+	}
+
+	// Mutating task 1 must change its oid...
+	if _, err := gs.Update(1, func(task *Task) (bool, error) {
+		task.Title = "one, renamed"
+		return true, nil
+	}); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	oids, err = gs.TaskRefOIDs()
+	if err != nil {
+		t.Fatalf("TaskRefOIDs after Update: %v", err)
+	}
+	after, ok := oids[gs.TaskRef(1)]
+	if !ok {
+		t.Fatalf("TaskRefOIDs() after Update missing %s: %v", gs.TaskRef(1), oids)
+	}
+	if after == before {
+		t.Errorf("oid for %s did not change after Update: %s", gs.TaskRef(1), after)
+	}
+
+	// ...and a third task must add a third entry, task 2's oid unaffected.
+	seedTask(t, rs, gs, Task{ID: 3, Title: "three", Status: "open"})
+	oids, err = gs.TaskRefOIDs()
+	if err != nil {
+		t.Fatalf("TaskRefOIDs after a third task: %v", err)
+	}
+	if len(oids) != 3 {
+		t.Fatalf("TaskRefOIDs() after a third task = %v, want 3 entries", oids)
+	}
+}

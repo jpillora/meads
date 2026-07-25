@@ -343,6 +343,66 @@ func TestCSV_StatusReasonRoundTrip(t *testing.T) {
 	}
 }
 
+// TestCSV_AgentIDFilesInScopeRoundTrip covers the CSV formatter's git-mode
+// migration support (task 66 phase 9): AgentID/FilesInScope are set only by
+// GitStore.Claim (gitmutate.go) and, unlike status/priority/etc, are never
+// synced into Task.Meta by a Set* method - FormatCSV writes them from the
+// struct fields directly into their own trailing columns, so `md convert
+// --from-git` can carry a claimed task's fields into a fresh TASKS.csv.
+func TestCSV_AgentIDFilesInScopeRoundTrip(t *testing.T) {
+	f := meads.File{
+		Tasks: []meads.Task{
+			{
+				ID: 1, Title: "Claimed task", Status: "inprogress",
+				AgentID:      "agent-42",
+				FilesInScope: []string{"a.go", "b.go"},
+				Meta:         map[string]string{"status": "inprogress"},
+			},
+		},
+	}
+	csv := meads.FormatCSV(f)
+	parsed := meads.ParseCSV(csv)
+	if len(parsed.Tasks) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(parsed.Tasks))
+	}
+	got := parsed.Tasks[0]
+	if got.AgentID != "agent-42" {
+		t.Errorf("AgentID = %q, want %q", got.AgentID, "agent-42")
+	}
+	if len(got.FilesInScope) != 2 || got.FilesInScope[0] != "a.go" || got.FilesInScope[1] != "b.go" {
+		t.Errorf("FilesInScope = %v", got.FilesInScope)
+	}
+}
+
+// TestCSV_AgentIDFilesInScope_OldHeaderStillParses proves an older CSV file
+// written before agent-id/files-in-scope existed (14 columns, no trailing
+// two) still parses cleanly: the new columns were appended at the very end
+// of csvColumns specifically so an old header's existing column positions -
+// including "meta", the last of the original 14 - never shift. Every
+// existing field must resolve exactly as before, and the two new fields
+// must read back empty rather than erroring or misreading a neighbour.
+func TestCSV_AgentIDFilesInScope_OldHeaderStillParses(t *testing.T) {
+	const oldHeader = "id,title,status,priority,type,depends-on,tags,description,close-reason,status-reason,created,updated,deleted,meta\n"
+	input := oldHeader + "1,Pre-existing task,open,P1,bug,,,a description,,,,,,{}\n"
+	f := meads.ParseCSV(input)
+	if len(f.Tasks) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(f.Tasks))
+	}
+	got := f.Tasks[0]
+	if got.Title != "Pre-existing task" || got.Status != "open" || got.Priority != "P1" || got.Type != "bug" {
+		t.Errorf("old-format fields mismatch: %+v", got)
+	}
+	if got.Description != "a description" {
+		t.Errorf("Description = %q, want %q", got.Description, "a description")
+	}
+	if got.AgentID != "" {
+		t.Errorf("AgentID = %q, want empty for a pre-migration row", got.AgentID)
+	}
+	if len(got.FilesInScope) != 0 {
+		t.Errorf("FilesInScope = %v, want empty for a pre-migration row", got.FilesInScope)
+	}
+}
+
 func TestCSV_DeletedRoundTrip(t *testing.T) {
 	f := meads.File{
 		Tasks: []meads.Task{

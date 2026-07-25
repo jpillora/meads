@@ -178,3 +178,58 @@ func TestNewFields_RoundTrip(t *testing.T) {
 		t.Errorf("Tags = %v", got.Tags)
 	}
 }
+
+// TestAgentIDFilesInScope_RoundTrip covers the markdown formatter's git-mode
+// migration support (task 66 phase 9): AgentID/FilesInScope are set only by
+// GitStore.Claim (gitmutate.go) and, unlike status/priority/etc, are never
+// synced into Task.Meta by a Set* method - FormatTask synthesizes them into
+// the meta block directly from the struct fields (mirroring how it already
+// handles Deleted/StatusReason), so `md convert --from-git` can carry a
+// claimed task's fields into a fresh TASKS.md.
+func TestAgentIDFilesInScope_RoundTrip(t *testing.T) {
+	task := Task{
+		ID: 1, Title: "Claimed task", Status: "inprogress",
+		AgentID:      "agent-42",
+		FilesInScope: []string{"pkg/meads/gitstore.go", "cmd/md/webui.go"},
+	}
+
+	formatted := FormatTask(task)
+	if !strings.Contains(formatted, "* agent-id: agent-42") {
+		t.Errorf("FormatTask missing agent-id line:\n%s", formatted)
+	}
+	if !strings.Contains(formatted, "* files-in-scope: pkg/meads/gitstore.go,cmd/md/webui.go") {
+		t.Errorf("FormatTask missing files-in-scope line:\n%s", formatted)
+	}
+
+	f := ParseFile(formatted)
+	if len(f.Tasks) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(f.Tasks))
+	}
+	got := f.Tasks[0]
+	if got.AgentID != "agent-42" {
+		t.Errorf("AgentID = %q, want %q", got.AgentID, "agent-42")
+	}
+	if len(got.FilesInScope) != 2 || got.FilesInScope[0] != "pkg/meads/gitstore.go" || got.FilesInScope[1] != "cmd/md/webui.go" {
+		t.Errorf("FilesInScope = %v", got.FilesInScope)
+	}
+	// agent-id/files-in-scope must not ALSO linger in the generic Meta map -
+	// they have dedicated struct fields, exactly like status-reason/deleted.
+	if _, ok := got.Meta["agent-id"]; ok {
+		t.Error("agent-id should be removed from Meta once parsed into the AgentID field")
+	}
+	if _, ok := got.Meta["files-in-scope"]; ok {
+		t.Error("files-in-scope should be removed from Meta once parsed into the FilesInScope field")
+	}
+}
+
+// TestFormatTask_NoAgentFields_OmitsMetaLines guards against a regression
+// where an ordinary (non-git-mode) task would grow spurious empty
+// "* agent-id:"/"* files-in-scope:" lines it never had before this field
+// was added.
+func TestFormatTask_NoAgentFields_OmitsMetaLines(t *testing.T) {
+	task := Task{ID: 1, Title: "Ordinary task", Status: "open"}
+	formatted := FormatTask(task)
+	if strings.Contains(formatted, "agent-id") || strings.Contains(formatted, "files-in-scope") {
+		t.Errorf("FormatTask for a task with no AgentID/FilesInScope should omit both keys:\n%s", formatted)
+	}
+}

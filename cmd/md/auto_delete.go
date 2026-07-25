@@ -40,6 +40,16 @@ func (c *autoDeleteCmd) Run() error {
 }
 
 func (c *autoDeleteCmd) runFromHook() error {
+	// In git mode there is nothing to prune: soft-deleted tasks keep their
+	// ref forever (GitStore.SoftDelete never removes a ref), and there is no
+	// working-tree tasks file to rewrite. Checked first, before even the
+	// default-branch check below, so a stray/leftover TASKS.md in a
+	// git-mode repo (e.g. from before migrating - see `md convert --to-git`)
+	// is never touched either.
+	if c.globals.mode() == modeGit {
+		return nil
+	}
+
 	// Safety check: Must be on default branch
 	if !c.isOnDefaultBranch() {
 		return nil

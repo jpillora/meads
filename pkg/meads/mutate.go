@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/go-git/go-billy/v5/util"
 )
 
 func validateTitle(title string) error {
@@ -392,6 +394,42 @@ func (s *Store) Update(id int, fn func(*Task)) error {
 		f.Meta["updated"] = now
 	}
 	if err := s.releaseLock(s.fmt.Format(f)); err != nil {
+		return fmt.Errorf("writing %s: %w", s.file, err)
+	}
+	return nil
+}
+
+// ImportAll writes tasks verbatim into a brand-new tasks file, preserving
+// every id exactly (including soft-deleted ones) rather than reassigning
+// ids the way Add/AddMany do - used by `md convert`'s git->file migration,
+// where refs/meads/tasks/* ids must carry over unchanged (see
+// cmd/md/convert.go and GitStore.LoadAll, its source of tasks).
+//
+// The target file must not already exist: ids from the source are meant to
+// be authoritative for a fresh file, so this refuses to merge into or
+// overwrite existing data rather than guessing how to reconcile the two id
+// spaces (mirrors `md init`'s plain file mode, and initCmd.runGit's refusal
+// to initialize over existing git-mode refs).
+//
+// No pruning runs here (unlike Add/Update/Delete, which always call
+// pruneTombstones): a soft-deleted task is written as an ordinary tombstone
+// row/section, exactly like Get sees deleted rows a file happens to already
+// contain. The very next mutation through the normal Store API prunes it
+// down to the format's usual steady state (dropped for markdown, collapsed
+// to the single highest tombstone for CSV) the same way it always does; see
+// pruneTombstones. nextID also scans every row regardless of Deleted, so
+// future ID allocation is already correct even before that first prune.
+func (s *Store) ImportAll(tasks []Task) error {
+	if _, err := s.fs.Stat(s.file); err == nil {
+		return fmt.Errorf("%s already exists", s.file)
+	}
+	f := File{Tasks: tasks}
+	if s.fmt.HasPreamble() {
+		now := time.Now().UTC().Format(time.RFC3339)
+		ensureProjectMeta(&f, now)
+		f.Meta["updated"] = now
+	}
+	if err := util.WriteFile(s.fs, s.file, []byte(s.fmt.Format(f)), 0644); err != nil {
 		return fmt.Errorf("writing %s: %w", s.file, err)
 	}
 	return nil

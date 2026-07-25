@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -9,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jpillora/meads/pkg/meads"
 	"github.com/jpillora/meads/pkg/webui"
 )
 
@@ -25,11 +27,12 @@ func (c *webuiCmd) Run() error {
 	if err := c.globals.modeConflictErr(); err != nil {
 		return err
 	}
-	if c.globals.mode() == modeGit {
-		return errGitModeUnsupported("webui")
+	store, err := c.store()
+	if err != nil {
+		return err
 	}
 	srv, err := webui.New(webui.Config{
-		Store: c.globals.store(),
+		Store: store,
 		Host:  c.Host,
 		Port:  c.Port,
 		Token: c.Token,
@@ -52,6 +55,38 @@ func (c *webuiCmd) Run() error {
 	}
 
 	return <-done
+}
+
+// store resolves the meads.TaskStore to serve over the web UI. File mode
+// passes *meads.Store directly, unchanged, so the fsnotify watcher and
+// startup banner can use its FS()/Path() (see pkg/webui's fileLocator). Git
+// mode wraps gitTaskStore (taskstore.go) in gitWatchStore so the
+// ref-polling watcher can use GitStore.TaskRefOIDs (see pkg/webui's
+// refSnapshotter) - a bare gitTaskStore has no such method, since no CLI
+// command needs it.
+func (c *webuiCmd) store() (meads.TaskStore, error) {
+	if c.globals.mode() != modeGit {
+		return c.globals.store(), nil
+	}
+	if !c.globals.inGitRepo() {
+		return nil, fmt.Errorf("--git requires a git repository")
+	}
+	return gitWatchStore{gitTaskStore{gs: c.globals.gitStore()}}, nil
+}
+
+// gitWatchStore adds pkg/webui's ref-polling watch support on top of
+// gitTaskStore's CRUD methods, which already satisfy meads.TaskStore
+// structurally (see taskstore.go's doc comment on gitTaskStore - Go
+// interfaces are matched by method set, not by declared type, so embedding
+// is enough). TaskRefOIDs is not part of taskStore itself: no CLI command
+// needs it, only the web UI's change-detection watcher (see
+// pkg/webui/watch.go's refSnapshotter).
+type gitWatchStore struct {
+	gitTaskStore
+}
+
+func (g gitWatchStore) TaskRefOIDs() (map[string]meads.OID, error) {
+	return g.gs.TaskRefOIDs()
 }
 
 // waitAndOpen polls until the server has an address, then opens it in the browser.

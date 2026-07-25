@@ -879,3 +879,91 @@ func TestGitStore_SoftDelete_DependsOnMatchesFileBackendSetDependsOnForm(t *test
 		t.Errorf("cleaned DependsOn serialized form = %q, want empty after removing task 2's only dependency", wantMeta)
 	}
 }
+
+// --- ImportTask (git mode phase 9, TASKS #66: `md convert`'s file->git
+// migration) ---
+
+func TestGitStore_ImportTask_PreservesID(t *testing.T) {
+	gs, _, _ := newGitStoreRepo(t)
+	if err := gs.ImportTask(Task{ID: 42, Title: "imported", Status: "open"}); err != nil {
+		t.Fatalf("ImportTask: %v", err)
+	}
+	got, err := gs.Get([]int{42})
+	if err != nil {
+		t.Fatalf("Get(42) after ImportTask: %v", err)
+	}
+	if got[0].Title != "imported" {
+		t.Errorf("imported task = %+v, want title %q", got[0], "imported")
+	}
+	// NextID must account for the imported id, not restart from 1.
+	next, err := gs.NextID()
+	if err != nil {
+		t.Fatalf("NextID: %v", err)
+	}
+	if next != 43 {
+		t.Errorf("NextID() after importing id 42 = %d, want 43", next)
+	}
+}
+
+func TestGitStore_ImportTask_PreservesDeletedFlag(t *testing.T) {
+	gs, _, _ := newGitStoreRepo(t)
+	if err := gs.ImportTask(Task{ID: 3, Title: "already deleted", Status: "closed", Deleted: true}); err != nil {
+		t.Fatalf("ImportTask: %v", err)
+	}
+	// Get (active-only) must exclude it, exactly like any other soft-deleted task.
+	if _, err := gs.Get([]int{3}); err == nil {
+		t.Fatal("Get(3) should error for an imported task that is already Deleted")
+	}
+	// LoadAll (used by `md convert --from-git`) must still see it.
+	all, err := gs.LoadAll()
+	if err != nil || len(all) != 1 || !all[0].Deleted {
+		t.Fatalf("LoadAll() = %v, err=%v, want one deleted task", all, err)
+	}
+}
+
+func TestGitStore_ImportTask_RejectsNonPositiveID(t *testing.T) {
+	gs, _, _ := newGitStoreRepo(t)
+	for _, id := range []int{0, -1} {
+		if err := gs.ImportTask(Task{ID: id, Title: "bad id"}); err == nil {
+			t.Errorf("ImportTask with id=%d should error, got nil", id)
+		}
+	}
+}
+
+func TestGitStore_ImportTask_ConflictsIfRefAlreadyExists(t *testing.T) {
+	gs, _, _ := newGitStoreRepo(t)
+	if err := gs.ImportTask(Task{ID: 1, Title: "first"}); err != nil {
+		t.Fatalf("ImportTask (1st): %v", err)
+	}
+	err := gs.ImportTask(Task{ID: 1, Title: "second"})
+	if err == nil {
+		t.Fatal("ImportTask into an id that already has a ref should error, got nil")
+	}
+	if !errors.Is(err, ErrCASConflict) {
+		t.Errorf("error = %v, want it to wrap ErrCASConflict", err)
+	}
+	// The original must survive untouched.
+	got, err := gs.Get([]int{1})
+	if err != nil || got[0].Title != "first" {
+		t.Fatalf("task 1 = %v, err=%v, want the original \"first\" untouched", got, err)
+	}
+}
+
+// A whole-file import calls ImportTask once per task, typically in ascending
+// id order, so a lower id legitimately depending on one not yet imported is
+// ordinary valid data - ImportTask must not validate deps per call the way
+// Create/Update do (validateTaskDeps), or this would spuriously fail against
+// an incomplete ref set.
+func TestGitStore_ImportTask_SkipsDepValidation_ForwardReference(t *testing.T) {
+	gs, _, _ := newGitStoreRepo(t)
+	if err := gs.ImportTask(Task{ID: 1, Title: "depends on not-yet-imported 2", Status: "open", DependsOn: []int{2}}); err != nil {
+		t.Fatalf("ImportTask with a forward dependency reference should succeed, got: %v", err)
+	}
+	if err := gs.ImportTask(Task{ID: 2, Title: "imported after 1", Status: "open"}); err != nil {
+		t.Fatalf("ImportTask: %v", err)
+	}
+	got, err := gs.Get([]int{1})
+	if err != nil || len(got[0].DependsOn) != 1 || got[0].DependsOn[0] != 2 {
+		t.Fatalf("task 1 DependsOn = %v, err=%v, want [2]", got, err)
+	}
+}

@@ -51,14 +51,16 @@ func (s *Server) handleFileInfo(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	path := filepath.Join(s.cfg.Store.FS().Root(), s.cfg.Store.Path())
+	path, format := storeLocation(s.cfg.Store)
 	updated := ""
-	if fi, err := os.Stat(path); err == nil {
-		updated = fi.ModTime().UTC().Format(time.RFC3339)
+	if fl, ok := s.cfg.Store.(fileLocator); ok {
+		if fi, err := os.Stat(filepath.Join(fl.FS().Root(), fl.Path())); err == nil {
+			updated = fi.ModTime().UTC().Format(time.RFC3339)
+		}
 	}
 	writeJSON(w, http.StatusOK, fileInfo{
 		Path:      path,
-		Format:    storeFormat(s.cfg.Store),
+		Format:    format,
 		TaskCount: len(tasks),
 		UpdatedAt: updated,
 	})

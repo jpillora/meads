@@ -1,13 +1,18 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jpillora/meads/pkg/meads"
+	"github.com/jpillora/meads/pkg/webui"
 )
 
 // Tests proving the taskStore seam (cmd/md/taskstore.go) actually wires the
@@ -181,16 +186,153 @@ func TestIntegration_GitMode_BeadsImportUnsupported(t *testing.T) {
 	assertGitModeUnsupported(t, err, "beads-import")
 }
 
-func TestIntegration_GitMode_McpUnsupported(t *testing.T) {
+// TestIntegration_GitMode_Mcp_NoLongerGated is mcp's un-gating regression
+// guard (task 66 phase 9): unlike beads-import above, mcp now wires
+// gitTaskStore directly (mcpCmd.store), so it must resolve to that adapter
+// rather than erroring with "not supported in git mode yet" - and, more
+// than just being the right TYPE, actually read and write through to the
+// real GitStore behind h.globals.
+func TestIntegration_GitMode_Mcp_NoLongerGated(t *testing.T) {
 	h := gitModeHarness(t)
-	err := (&mcpCmd{globals: h.globals}).Run()
-	assertGitModeUnsupported(t, err, "mcp")
+	store, err := (&mcpCmd{globals: h.globals}).store()
+	if err != nil {
+		t.Fatalf("mcpCmd.store() in git mode: %v", err)
+	}
+	if _, ok := store.(gitTaskStore); !ok {
+		t.Fatalf("mcpCmd.store() in git mode = %T, want gitTaskStore", store)
+	}
+	id, err := store.Add(meads.Task{Title: "via mcp store"})
+	if err != nil {
+		t.Fatalf("Add via mcpCmd.store(): %v", err)
+	}
+	gs := meads.NewGitStore(h.globals.git())
+	got, err := gs.Get([]int{id})
+	if err != nil || len(got) != 1 || got[0].Title != "via mcp store" {
+		t.Fatalf("task added via mcpCmd.store() not visible in GitStore: got=%v err=%v", got, err)
+	}
 }
 
-func TestIntegration_GitMode_WebuiUnsupported(t *testing.T) {
+func TestIntegration_GitMode_Mcp_OutsideGitRepo_ErrorsClearly(t *testing.T) {
+	dir := t.TempDir() // not a git repo
+	g := &globals{
+		Git:       &meads.ExecGit{Dir: dir},
+		Dir:       dir,
+		TasksFile: "TASKS.md",
+		GitMode:   true,
+	}
+	_, err := (&mcpCmd{globals: g}).store()
+	if err == nil {
+		t.Fatal("mcpCmd.store() with --git forced outside a git repository should error, got nil")
+	}
+	if got := err.Error(); got != "--git requires a git repository" {
+		t.Errorf("error = %q, want a clear \"--git requires a git repository\" message", got)
+	}
+}
+
+// TestIntegration_GitMode_Webui_NoLongerGated is webui's un-gating
+// regression guard (task 66 phase 9): unlike beads-import above, webui now
+// wires gitWatchStore (which embeds gitTaskStore, so it satisfies
+// meads.TaskStore the same way), so it must resolve to that adapter rather
+// than erroring - and, more than just being the right type, actually read
+// and write through to the real GitStore, with a working TaskRefOIDs on top
+// for pkg/webui's watcher.
+func TestIntegration_GitMode_Webui_NoLongerGated(t *testing.T) {
 	h := gitModeHarness(t)
-	err := (&webuiCmd{globals: h.globals}).Run()
-	assertGitModeUnsupported(t, err, "webui")
+	store, err := (&webuiCmd{globals: h.globals}).store()
+	if err != nil {
+		t.Fatalf("webuiCmd.store() in git mode: %v", err)
+	}
+	gws, ok := store.(gitWatchStore)
+	if !ok {
+		t.Fatalf("webuiCmd.store() in git mode = %T, want gitWatchStore", store)
+	}
+	id, err := store.Add(meads.Task{Title: "via webui store"})
+	if err != nil {
+		t.Fatalf("Add via webuiCmd.store(): %v", err)
+	}
+	gs := meads.NewGitStore(h.globals.git())
+	got, err := gs.Get([]int{id})
+	if err != nil || len(got) != 1 || got[0].Title != "via webui store" {
+		t.Fatalf("task added via webuiCmd.store() not visible in GitStore: got=%v err=%v", got, err)
+	}
+	oids, err := gws.TaskRefOIDs()
+	if err != nil || len(oids) != 1 {
+		t.Fatalf("gitWatchStore.TaskRefOIDs() = %v, err=%v, want exactly 1 ref", oids, err)
+	}
+}
+
+func TestIntegration_GitMode_Webui_OutsideGitRepo_ErrorsClearly(t *testing.T) {
+	dir := t.TempDir() // not a git repo
+	g := &globals{
+		Git:       &meads.ExecGit{Dir: dir},
+		Dir:       dir,
+		TasksFile: "TASKS.md",
+		GitMode:   true,
+	}
+	_, err := (&webuiCmd{globals: g}).store()
+	if err == nil {
+		t.Fatal("webuiCmd.store() with --git forced outside a git repository should error, got nil")
+	}
+	if got := err.Error(); got != "--git requires a git repository" {
+		t.Errorf("error = %q, want a clear \"--git requires a git repository\" message", got)
+	}
+}
+
+// TestIntegration_GitMode_Webui_EndToEnd drives the whole stack - the real
+// webui.Server, started in-process against the store webuiCmd.Run() would
+// build - to prove the wiring works past the type-level checks above:
+// GET /api/tasks over HTTP must actually see a task created in git mode.
+// Unlike webuiCmd.Run() itself (which blocks on an OS-signal context, not
+// something a test can cleanly cancel), this constructs webui.Server
+// directly with its own cancellable context, the same way cmd/md/webui.go's
+// waitAndOpen polls for the listener to bind.
+func TestIntegration_GitMode_Webui_EndToEnd(t *testing.T) {
+	h := gitModeHarness(t)
+	if err := (&addCmd{globals: h.globals, Args: []string{"seen via webui"}}).Run(); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+
+	store, err := (&webuiCmd{globals: h.globals}).store()
+	if err != nil {
+		t.Fatalf("webuiCmd.store(): %v", err)
+	}
+	srv, err := webui.New(webui.Config{Store: store, Print: "none"})
+	if err != nil {
+		t.Fatalf("webui.New: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- srv.Run(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+
+	deadline := time.Now().Add(5 * time.Second)
+	for srv.URL() == "" {
+		if time.Now().After(deadline) {
+			t.Fatal("webui server never bound a listener")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	req, _ := http.NewRequest(http.MethodGet, srv.URL()+"/api/tasks", nil)
+	req.Header.Set("Authorization", "Bearer "+srv.Token())
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /api/tasks: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d", resp.StatusCode)
+	}
+	var tasks []map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&tasks); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(tasks) != 1 || tasks[0]["title"] != "seen via webui" {
+		t.Fatalf("GET /api/tasks = %v, want exactly the git-mode task", tasks)
+	}
 }
 
 func assertGitModeUnsupported(t *testing.T, err error, cmd string) {

@@ -221,6 +221,37 @@ func (g *GitStore) Create(t Task) (Task, error) {
 	return Task{}, fmt.Errorf("create task: exhausted %d attempts: %w", maxCASRetries, lastErr)
 }
 
+// ImportTask writes t verbatim as a brand-new task ref (TaskRef(t.ID)),
+// preserving t.ID exactly rather than allocating a fresh one via NextID -
+// used by `md convert`'s file->git migration, where task ids must carry
+// over unchanged (see cmd/md/convert.go). t.Deleted is preserved as given,
+// so a soft-deleted source task lands already-deleted rather than being
+// resurrected as active, matching git mode's "refs are never removed"
+// model (GitStore.SoftDelete's doc comment).
+//
+// Fails with ErrCASConflict if a ref already exists at t.ID (create-only
+// CAS against ZeroOID, exactly like Create) - a caller migrating into git
+// mode is expected to check the whole namespace is empty first (see
+// initCmd.runGit's identical precondition), not rely on this to skip
+// collisions task by task.
+//
+// Unlike Create, this deliberately skips validateTaskDeps: a whole-file
+// import calls ImportTask once per task, typically in ascending id order,
+// while a forward reference (a lower id depending on one not yet imported)
+// is entirely valid data that would spuriously fail per-call validation
+// against an incomplete ref set. The caller is responsible for validating
+// the batch as a whole once every task has been imported, e.g. via
+// FindCycles.
+func (g *GitStore) ImportTask(t Task) error {
+	if t.ID <= 0 {
+		return fmt.Errorf("import task: id must be positive (got %d)", t.ID)
+	}
+	if err := validateTitle(t.Title); err != nil {
+		return err
+	}
+	return g.commitTaskCAS(t.ID, t, ZeroOID, fmt.Sprintf("import task %d", t.ID))
+}
+
 // Update applies mutate to the current version of task id and commits the
 // result; mutate may return false to abort with no write. Matches the file
 // backend's Store.Update (mutate.go): a soft-deleted task reads as not

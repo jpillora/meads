@@ -33,13 +33,21 @@ type Task struct {
 
 // knownMetaKeys are metadata keys that have dedicated struct fields.
 // These are excluded from the "meta" JSON field to avoid duplication.
+//
+// "agent-id" and "files-in-scope" mirror AgentID/FilesInScope (set only by
+// GitStore.Claim today - see gitmutate.go), included here so the markdown/
+// CSV formatters (markdown.go, csv.go) can round-trip them the same way as
+// every other optional field: read into the dedicated struct field, kept
+// out of the catch-all "meta" JSON object.
 var knownMetaKeys = map[string]bool{
-	"status":       true,
-	"priority":     true,
-	"type":         true,
-	"depends-on":   true,
-	"close-reason": true,
-	"tags":         true,
+	"status":         true,
+	"priority":       true,
+	"type":           true,
+	"depends-on":     true,
+	"close-reason":   true,
+	"tags":           true,
+	"agent-id":       true,
+	"files-in-scope": true,
 }
 
 // MarshalJSON implements custom JSON marshaling to exclude known keys from meta.
@@ -247,4 +255,3 @@ func splitTags(s string) []string {
 	}
 	return tags
 }
-

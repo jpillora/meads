@@ -159,6 +159,19 @@ func taskIDFromRef(prefix, name string) (int, bool) {
 	return id, true
 }
 
+// TaskRefOIDs returns the current commit oid of every task ref
+// (TasksRefPrefix), keyed by full ref name. Used by pkg/webui's watcher to
+// detect task changes by polling rather than fsnotify: a ref moves between
+// a loose file under .git/refs/meads/tasks/** and .git/packed-refs (git
+// pack-refs, git gc), so it can change with no loose-file event at all once
+// packed - no single file or directory can be watched reliably for git-mode
+// changes the way fsnotify watches a single tasks file (see
+// pkg/webui/watch.go's refSnapshotter). A plain wrapper over
+// RefStore.ListRefs, exported here since RefStore itself is not.
+func (g *GitStore) TaskRefOIDs() (map[string]OID, error) {
+	return g.refs.ListRefs(TasksRefPrefix)
+}
+
 // NextID returns max(existing task id) + 1, or 1 when there are no tasks.
 //
 // It reads ref NAMES ONLY, never blob contents: parsing the trailing id off

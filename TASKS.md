@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-07-25T13:12:43Z
+* updated: 2026-07-25T14:05:11Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -509,32 +509,6 @@ optionally deprioritise tasks whose files are already claimed.
 9. Integrations: webui watch (poll refs, not fsnotify on a file); `md auto-save`
    and `md auto-delete` become **no-ops in git mode** — there is no working-tree
    file to stage, and nothing to prune since refs are never removed.
-
-## 66. Git mode phase 9: integrations (webui watch, hooks, migration)
-
-* status: open
-* priority: P3
-* type: task
-* depends-on: 
-* created: 2026-07-25T08:19:07Z
-* updated: 2026-07-25T08:19:16Z
-
-Make the rest of the toolchain git-mode aware. Design of record: task 57.
-
-### Build
-
-- **webui watch** (pkg/webui) — currently fsnotify on a single file. Git mode must observe refs instead. Note that refs move between loose files and `packed-refs`, so file watching alone is unreliable; polling the ref oids is simpler and more robust. Feeds the existing SSE `/api/events` stream.
-- **`md auto-save`** (cmd/md/auto_save.go) — **no-op in git mode.** It stages `TASKS.md` into commits; there is no working-tree file to stage.
-- **`md auto-delete`** (cmd/md/auto_delete.go) — **no-op in git mode.** It prunes closed tasks from the file to keep it small; there is no file to shrink, and refs are never removed.
-- **Migration** — `md convert` between `TASKS.md`/`.csv` and git mode, both directions.
-- **webhook** — lives at the command layer and should be unaffected; verify rather than assume.
-
-### Acceptance
-
-- webui live-updates when a task ref changes, including when refs are packed
-- both hooks detect git mode and no-op cleanly, without erroring or printing noise
-- migration round-trips a fixture file -> git mode -> file with no data loss
-- webhook still fires with correct payloads in git mode
 
 ## 67. auto-delete hook git add fails with exit 128, aborting commit
 

@@ -9,8 +9,11 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// NewServer creates an MCP server exposing task management tools.
-func NewServer(store *meads.Store, version string) *mcp.Server {
+// NewServer creates an MCP server exposing task management tools over
+// store, which may be file-backed (*meads.Store) or a git-mode adapter -
+// every tool here maps cleanly onto meads.TaskStore's five methods, so
+// nothing about this server is gated by which backend store is.
+func NewServer(store meads.TaskStore, version string) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{
 		Name:    "meads",
 		Version: version,

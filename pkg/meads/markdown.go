@@ -13,7 +13,7 @@ type markdownFormat struct{}
 func (markdownFormat) Parse(content string) File { return ParseFile(content) }
 func (markdownFormat) Format(f File) string      { return FormatFile(f) }
 func (markdownFormat) HasPreamble() bool         { return true }
-func (markdownFormat) EmptyFile() string          { return "" }
+func (markdownFormat) EmptyFile() string         { return "" }
 
 // --- Parsing ---
 
@@ -146,6 +146,14 @@ func parseTask(section string) (Task, bool) {
 		t.StatusReason = v
 		delete(meta, "status-reason")
 	}
+	if v, ok := meta["agent-id"]; ok {
+		t.AgentID = v
+		delete(meta, "agent-id")
+	}
+	if v, ok := meta["files-in-scope"]; ok {
+		t.FilesInScope = splitTags(v) // reuse: a plain comma-separated list, same shape as tags
+		delete(meta, "files-in-scope")
+	}
 	return t, true
 }
 
@@ -201,7 +209,7 @@ func parseMetaLine(line string) (string, string, bool) {
 
 var (
 	projectMetaOrder = []string{"created", "updated", "max-id"}
-	taskMetaOrder    = []string{"status", "priority", "type", "depends-on", "close-reason", "status-reason", "tags", "created", "updated", "deleted"}
+	taskMetaOrder    = []string{"status", "priority", "type", "depends-on", "close-reason", "status-reason", "tags", "agent-id", "files-in-scope", "created", "updated", "deleted"}
 )
 
 const fileHeader = "# TASKS\n\na [meads](https://github.com/jpillora/meads) (`md`) managed task log\n"
@@ -230,10 +238,14 @@ func FormatTask(t Task) string {
 	} else {
 		fmt.Fprintf(&sb, "## %d.\n", t.ID)
 	}
-	// Build meta map including struct-only fields for formatting.
+	// Build meta map including struct-only fields for formatting. AgentID/
+	// FilesInScope are set only by GitStore.Claim (git mode) - they are
+	// never synced into t.Meta the way Set* methods sync e.g. status, so
+	// they are synthesized here exactly like Deleted/StatusReason, letting
+	// a git-mode task round-trip through `md convert --from-git`.
 	meta := t.Meta
-	if t.Deleted || t.StatusReason != "" {
-		meta = make(map[string]string, len(t.Meta)+2)
+	if t.Deleted || t.StatusReason != "" || t.AgentID != "" || len(t.FilesInScope) > 0 {
+		meta = make(map[string]string, len(t.Meta)+4)
 		for k, v := range t.Meta {
 			meta[k] = v
 		}
@@ -242,6 +254,12 @@ func FormatTask(t Task) string {
 		}
 		if t.StatusReason != "" {
 			meta["status-reason"] = t.StatusReason
+		}
+		if t.AgentID != "" {
+			meta["agent-id"] = t.AgentID
+		}
+		if len(t.FilesInScope) > 0 {
+			meta["files-in-scope"] = strings.Join(t.FilesInScope, ",")
 		}
 	}
 	if metaBlock := formatMetaBlock(meta, taskMetaOrder); metaBlock != "" {

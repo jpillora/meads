@@ -89,6 +89,28 @@ func (s *Store) Get(ids []int) ([]Task, error) {
 	return selectByIDs(active, ids)
 }
 
+// GetAll returns every task currently in the file, ascending by id and with
+// deleted (tombstone) rows included - unlike Get, which always filters them
+// out. In practice a live file rarely holds a tombstone row at all
+// (pruneTombstones drops markdown ones on every mutation, and keeps at most
+// the single highest-id one for CSV - see tombstone.go), so this mainly
+// exists for `md convert`'s file->git migration, where whatever
+// soft-deleted rows a file DOES currently hold must be preserved rather than
+// silently dropped (see cmd/md/convert.go and GitStore.ImportTask). A
+// missing file yields no tasks, matching Get.
+func (s *Store) GetAll() ([]Task, error) {
+	data, err := util.ReadFile(s.fs, s.file)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("reading %s: %w", s.file, err)
+	}
+	content := stripLockLines(string(data))
+	f := s.fmt.Parse(content)
+	return f.Tasks, nil
+}
+
 // Ready returns open tasks not blocked by unclosed dependencies, sorted by priority descending.
 // Deleted tasks are excluded.
 func (s *Store) Ready() ([]Task, error) {
