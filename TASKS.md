@@ -784,4 +784,3 @@ A file the tool itself never leaves clean is a bad default.
 
 - `md add`/`md update --description-file` then commit leaves a clean tree
 - A test asserts TASKS.md is byte-identical to the index after the hook runs
-
