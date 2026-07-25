@@ -132,11 +132,11 @@ func (a gitTaskStore) Delete(id int) error {
 }
 
 // errGitModeUnsupported reports that cmd's file-backend implementation has
-// no GitStore equivalent yet (e.g. Store.Doctor, Store.RunImport, or the
-// long-running MCP/webui servers), so running it against a git-mode repo
-// would silently operate on an unrelated or nonexistent TasksFile rather
-// than the active refs/meads/* store. Commands not wired to the taskStore
-// seam above call this instead of guessing.
+// no GitStore equivalent yet (e.g. Store.RunImport, or the long-running
+// MCP/webui servers), so running it against a git-mode repo would silently
+// operate on an unrelated or nonexistent TasksFile rather than the active
+// refs/meads/* store. Commands not wired to the taskStore seam above call
+// this instead of guessing.
 func errGitModeUnsupported(cmd string) error {
 	return fmt.Errorf("%s: not supported in git mode yet", cmd)
 }

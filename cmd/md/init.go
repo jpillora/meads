@@ -43,7 +43,22 @@ func (c *initCmd) Run() error {
 // downloads them (verified against GitHub and Gitea; see task 57's design
 // doc). It is purely additive (git config --add, never a plain set) and
 // deliberately says nothing about pushing: see ensureFetchRefspec.
-const meadsFetchRefspec = "+refs/meads/*:refs/meads/*"
+//
+// It lands in meads.RemoteRefNamespace, NEVER directly in meads.RefNamespace
+// (task 65 phase 8's fetch-safety fix). The leading "+" makes this a
+// force-updating refspec, so a naive "+refs/meads/*:refs/meads/*" would
+// forcibly overwrite refs/meads/tasks/<id> on every fetch - silently
+// discarding any local commit on that ref the moment it hadn't been pushed
+// yet, with no error and no trace beyond git's own reflog. This is exactly
+// git's own convention for ordinary branches
+// ("+refs/heads/*:refs/remotes/origin/*", landing in refs/remotes/origin/*
+// rather than overwriting refs/heads/* directly) applied to the custom
+// refs/meads/* namespace: force-update is fine for a namespace nothing
+// local depends on, so fetching into a separate remote-tracking namespace
+// lets local and fetched-remote state be compared (GitStore.Diverged,
+// GitStore.Doctor) without ever clobbering local work. See
+// meads.RemoteRefNamespace's doc comment.
+const meadsFetchRefspec = "+" + meads.RefNamespace + "*:" + meads.RemoteRefNamespace + "*"
 
 // runGit initializes git mode in the current repo: it errors clearly if not
 // inside a git repo or if git mode is already initialized, otherwise writes

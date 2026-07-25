@@ -20,6 +20,24 @@ const RefNamespace = "refs/meads/"
 // refs/meads/tasks/<id>.
 const TasksRefPrefix = "refs/meads/tasks/"
 
+// RemoteRefNamespace is where a plain `git fetch` lands the remote's whole
+// refs/meads/* namespace - see cmd/md/init.go's meadsFetchRefspec - rather
+// than refs/meads/* itself. This mirrors git's own convention for ordinary
+// branches (a fetch refspec of "+refs/heads/*:refs/remotes/origin/*" lands
+// in refs/remotes/origin/*, never overwriting refs/heads/* directly): a
+// fetch must never force-update the namespace this package treats as
+// local, authoritative state, or a plain `git fetch` could silently
+// discard a not-yet-pushed local commit the instant it runs (see
+// GitStore.Diverged's doc comment, and task 65's phase 8 notes).
+const RemoteRefNamespace = "refs/meads-remote/"
+
+// RemoteTasksRefPrefix is RemoteRefNamespace's analogue of TasksRefPrefix:
+// where a fetched-but-not-yet-integrated task ref lands, read by
+// GitStore.Doctor (cross-clone duplicate ids) and GitStore.Diverged
+// (edit/edit conflicts) but never written by this package - it is entirely
+// owned by `git fetch`.
+const RemoteTasksRefPrefix = RemoteRefNamespace + "tasks/"
+
 // TaskFileName is the path of the task JSON blob within each task ref's tree.
 const TaskFileName = "task.json"
 
@@ -117,14 +135,20 @@ func (g *GitStore) Ready() ([]Task, error) {
 	return readyTasks(filterDeleted(all)), nil
 }
 
-// taskIDFromRef extracts the numeric task id from a ref name under
-// TasksRefPrefix, e.g. "refs/meads/tasks/12" -> (12, true). It reports false
-// for anything that isn't a plain integer directly under the prefix - a
-// nested ref (an extra "/" segment) or a non-numeric suffix - so callers
-// enumerating ListRefs(TasksRefPrefix) can skip junk without parsing it as
-// an id or crashing on it (see NextID and loadAllWithOIDs).
-func taskIDFromRef(name string) (int, bool) {
-	suffix := strings.TrimPrefix(name, TasksRefPrefix)
+// taskIDFromRef extracts the numeric task id from a ref name under prefix
+// (TasksRefPrefix for local refs, RemoteTasksRefPrefix for fetched
+// remote-tracking refs - see loadAllWithOIDs), e.g. taskIDFromRef(
+// TasksRefPrefix, "refs/meads/tasks/12") -> (12, true). It reports false
+// for anything that isn't a plain integer directly under prefix - a name
+// not actually under prefix at all, a nested ref (an extra "/" segment), or
+// a non-numeric suffix - so callers enumerating ListRefs(prefix) can skip
+// junk without parsing it as an id or crashing on it (see NextID and
+// loadAllWithOIDs).
+func taskIDFromRef(prefix, name string) (int, bool) {
+	suffix := strings.TrimPrefix(name, prefix)
+	if suffix == name {
+		return 0, false // name wasn't actually under prefix
+	}
 	if strings.Contains(suffix, "/") {
 		return 0, false // nested deeper than one segment below the prefix
 	}
@@ -153,7 +177,7 @@ func (g *GitStore) NextID() (int, error) {
 	}
 	next := 1
 	for name := range refs {
-		id, ok := taskIDFromRef(name)
+		id, ok := taskIDFromRef(TasksRefPrefix, name)
 		if !ok {
 			continue
 		}

@@ -3,6 +3,7 @@ package meads
 import (
 	"errors"
 	"fmt"
+	"os/exec"
 	"strings"
 )
 
@@ -19,6 +20,19 @@ var ErrRefNotFound = errors.New("ref not found")
 // ErrCASConflict is returned when a ref's current value does not match the
 // expected previous value supplied to a compare-and-swap operation.
 var ErrCASConflict = errors.New("ref compare-and-swap conflict")
+
+// ErrUnrelatedHistories is returned by MergeBase when a and b share no
+// common ancestor at all - two independently created root histories, e.g.
+// two clones' Create calls that happened to land on the same task id while
+// partitioned (see GitStore.Doctor). "git merge-base a b" exits 1 with no
+// output for exactly this case, which is documented, stable behaviour
+// (confirmed experimentally too) - distinct from any other git failure
+// (an unknown/malformed oid, a corrupt object), which exits with a
+// different, non-1 status and a stderr message; see MergeBase's exit-code
+// check for how the two are told apart. Never returned for a valid oid
+// pair that simply happens to be identical or fast-forward-related - those
+// have a real merge base (themselves, in the identical case).
+var ErrUnrelatedHistories = errors.New("no common ancestor")
 
 // commitIdentity pins a deterministic author/committer so WriteCommit works
 // even in a repo with no user.name/user.email configured. Passed as -c
@@ -282,4 +296,30 @@ func (r *RefStore) History(ref string) ([]OID, error) {
 		hist[i] = OID(l)
 	}
 	return hist, nil
+}
+
+// MergeBase returns the best common ancestor commit of a and b, or
+// ErrUnrelatedHistories if they share none - see that error's doc comment.
+// Used by GitStore.Doctor to tell a true cross-clone duplicate id (no
+// common ancestor: two independently created tasks) apart from an
+// edit/edit conflict on one task (a common ancestor exists: GitStore.
+// Diverged's job instead), and by Diverged itself to find the pre-
+// divergence state and to recognise a plain fast-forward (base equals one
+// of the two inputs) as "not diverged".
+//
+// "git merge-base a b" exits 0 with the ancestor's oid on stdout when one
+// exists, and 1 with empty stdout when it does not (see ErrUnrelatedHistories);
+// any other exit (e.g. an unresolvable oid) is a genuine plumbing failure,
+// told apart here by exit code alone, NEVER by matching stderr text - same
+// discipline as CompareAndSwap's conflictError.
+func (r *RefStore) MergeBase(a, b OID) (OID, error) {
+	out, err := r.git.OutputWithInput("", "merge-base", string(a), string(b))
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+			return "", ErrUnrelatedHistories
+		}
+		return "", fmt.Errorf("merge-base %s %s: %w", a, b, err)
+	}
+	return OID(out), nil
 }

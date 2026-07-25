@@ -41,23 +41,26 @@ func (g *GitStore) readTaskAndOID(id int) (Task, OID, error) {
 }
 
 // loadAllWithOIDs reads every task ref's current task and commit oid via a
-// single ListRefs call, keyed by id - the batch analogue of readTaskAndOID.
-// SoftDelete's dependency cleanup needs the (task, oid) pair for id AND for
-// every other task (to find which ones depend on it), then must CAS-write
-// all the changed ones together. Re-resolving each ref individually the way
-// readTaskAndOID/ReadFileAtRef does would cost an extra round trip per task
-// for no benefit, since ListRefs already returns every oid up front; reading
-// each blob directly at its already-known oid (readTaskAtCommit) skips that
-// second resolve.
-func (g *GitStore) loadAllWithOIDs() (map[int]Task, map[int]OID, error) {
-	refs, err := g.refs.ListRefs(TasksRefPrefix)
+// single ListRefs call under prefix, keyed by id - the batch analogue of
+// readTaskAndOID. SoftDelete's dependency cleanup needs the (task, oid) pair
+// for id AND for every other task (to find which ones depend on it), then
+// must CAS-write all the changed ones together; GitStore.Doctor and
+// GitStore.Diverged need the same batch shape for BOTH TasksRefPrefix
+// (local) and RemoteTasksRefPrefix (fetched remote-tracking), which is why
+// prefix is a parameter rather than hardcoded. Re-resolving each ref
+// individually the way readTaskAndOID/ReadFileAtRef does would cost an
+// extra round trip per task for no benefit, since ListRefs already returns
+// every oid up front; reading each blob directly at its already-known oid
+// (readTaskAtCommit) skips that second resolve.
+func (g *GitStore) loadAllWithOIDs(prefix string) (map[int]Task, map[int]OID, error) {
+	refs, err := g.refs.ListRefs(prefix)
 	if err != nil {
 		return nil, nil, fmt.Errorf("listing task refs: %w", err)
 	}
 	tasks := make(map[int]Task, len(refs))
 	oids := make(map[int]OID, len(refs))
 	for name, oid := range refs {
-		id, ok := taskIDFromRef(name)
+		id, ok := taskIDFromRef(prefix, name)
 		if !ok {
 			continue
 		}
@@ -280,7 +283,7 @@ func (g *GitStore) Update(id int, mutate func(*Task) (bool, error)) (Task, error
 func (g *GitStore) SoftDelete(id int) (Task, error) {
 	var lastErr error
 	for attempt := 0; attempt < maxCASRetries; attempt++ {
-		tasks, oids, err := g.loadAllWithOIDs()
+		tasks, oids, err := g.loadAllWithOIDs(TasksRefPrefix)
 		if err != nil {
 			return Task{}, err
 		}

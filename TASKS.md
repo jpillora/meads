@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-07-25T11:56:46Z
+* updated: 2026-07-25T13:12:43Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -509,40 +509,6 @@ optionally deprioritise tasks whose files are already claimed.
 9. Integrations: webui watch (poll refs, not fsnotify on a file); `md auto-save`
    and `md auto-delete` become **no-ops in git mode** — there is no working-tree
    file to stage, and nothing to prune since refs are never removed.
-
-## 65. Git mode phase 8: divergence reconcile + doctor for git mode
-
-* status: open
-* priority: P3
-* type: task
-* depends-on: 
-* created: 2026-07-25T08:19:07Z
-* updated: 2026-07-25T08:19:16Z
-
-The hardest phase, deliberately deferred from MVP. Design of record: task 57.
-
-### Problem 1 — offline divergence
-
-Two clones both mutate task 42 while disconnected. Each builds a commit chain from a common ancestor. The second push is correctly rejected as non-fast-forward.
-
-Resolving this means genuinely merging two versions of one task. Options to evaluate: field-level merge, last-writer-wins by commit timestamp, or interactive resolution.
-
-**MVP requirement: fail loudly rather than lose data.** A wrong automatic merge is worse than a clear error.
-
-### Problem 2 — duplicate ids across clones
-
-Two disconnected clones both create task 58. Create-if-absent cannot coordinate across a network partition — and note a shared counter ref would not have helped either, so this is not a consequence of dropping it.
-
-Port `md doctor` renumbering to git mode:
-- One atomic batch (phase 1) over every affected ref, each carrying its expected old-oid
-- Renumbering MUST also rewrite `dependsOn` references that point at moved ids
-- Soft-deleted refs participate: their ids are still allocated and must not be reused
-
-### Acceptance
-
-- Simulate divergence with two clones; MVP surfaces it without data loss
-- `doctor` renumbers duplicates and fixes all `dependsOn` edges
-- `doctor` is atomic: an aborted run leaves no partial renumbering
 
 ## 66. Git mode phase 9: integrations (webui watch, hooks, migration)
 

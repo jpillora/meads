@@ -156,10 +156,23 @@ func readyContains(tasks []meads.Task, id int) bool {
 // --- deferred commands: clear "not supported" errors in git mode, not
 // silent misbehaviour against an unrelated/nonexistent TasksFile ---
 
-func TestIntegration_GitMode_DoctorUnsupported(t *testing.T) {
+// TestIntegration_GitMode_DoctorSupported is doctor's un-gating regression
+// guard (task 65 phase 8): unlike beads-import/mcp/webui below, doctor now
+// has a real GitStore-backed implementation, so it must run cleanly through
+// its actual Run() method rather than erroring with "not supported in git
+// mode yet".
+func TestIntegration_GitMode_DoctorSupported(t *testing.T) {
 	h := gitModeHarness(t)
-	err := (&doctorCmd{globals: h.globals}).Run()
-	assertGitModeUnsupported(t, err, "doctor")
+	if err := (&addCmd{globals: h.globals, Args: []string{"a clean git-mode task"}}).Run(); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	out, err := captureStdout(t, (&doctorCmd{globals: h.globals}).Run)
+	if err != nil {
+		t.Fatalf("doctor in git mode on a clean repo should succeed, got: %v", err)
+	}
+	if !strings.Contains(out, "no issues found") {
+		t.Errorf("doctor output = %q, want it to report no issues found", out)
+	}
 }
 
 func TestIntegration_GitMode_BeadsImportUnsupported(t *testing.T) {
@@ -206,12 +219,15 @@ func TestIntegration_GitMode_DeferredCommand_FlagConflictErrors(t *testing.T) {
 }
 
 // doctor's file-backend Doctor() calls ensureFile(), which would create a
-// spurious TASKS.md in a git-mode repo if the guard above ever regressed.
-// Confirm the guard actually prevents that side effect, not just that some
-// error is returned.
+// spurious TASKS.md in a git-mode repo if the mode dispatch in doctorCmd.Run
+// ever regressed and fell through to runFile. Confirm the git-mode path
+// actually prevents that side effect, not just that doctor happens to
+// succeed.
 func TestIntegration_GitMode_DoctorDoesNotCreateTasksFile(t *testing.T) {
 	h := gitModeHarness(t)
-	_ = (&doctorCmd{globals: h.globals}).Run()
+	if err := (&doctorCmd{globals: h.globals}).Run(); err != nil {
+		t.Fatalf("doctor in git mode: %v", err)
+	}
 	if _, err := os.Stat(filepath.Join(h.dir, "TASKS.md")); err == nil {
 		t.Fatal("doctor must not create TASKS.md in git mode")
 	}
