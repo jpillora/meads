@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-07-25T14:05:11Z
+* updated: 2026-07-25T14:06:09Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -513,9 +513,10 @@ optionally deprioritise tasks whose files are already claimed.
 ## 67. auto-delete hook git add fails with exit 128, aborting commit
 
 * status: open
-* priority: P1
+* priority: P0
 * type: bug
 * created: 2026-07-25T08:55:24Z
+* updated: 2026-07-25T14:06:09Z
 
 The `md auto-delete` pre-commit hook can fail with `staging TASKS.md: exit status 128`, which aborts the user's `git commit`.
 
@@ -575,6 +576,42 @@ which would almost certainly name the cause — is thrown away.
 - A reproduction exists as a test (or the root cause is documented as
   environmental and the hook is made resilient to it)
 - Closing a task and committing does not abort the commit
+### UPDATE 2026-07-26 — second occurrence disproves the original diagnosis
+
+It failed again, this time from a **plain standalone `GITHOOK=1 md auto-delete`
+run from an interactive shell, with no `git commit` anywhere in the picture**:
+
+```
+md: removed closed task 66
+staging TASKS.md: exit status 128
+```
+
+That contradicts this task's original "appears specific to running inside
+`git commit`" framing — **delete that hypothesis.** The failure is intermittent
+and reproduces outside a commit entirely.
+
+Further evidence narrowing it:
+- Immediately re-running `GITHOOK=1 md auto-delete` returned exit 0.
+- The first occurrence (task 58) and this one (task 66) both happened when
+  auto-delete had something to remove, i.e. the `git add` follows a rewrite of
+  TASKS.md. A run with nothing to remove returns early and never reaches the
+  `git add`, so those runs prove nothing either way.
+- The backup/restore path worked correctly both times: nothing was lost, and
+  the surrounding commit still succeeded on the second occurrence.
+
+Revised hypothesis worth testing: a race between the file rewrite
+(`store.AutoClean` -> write) and the immediately-following `git add` on the same
+path — e.g. git observing the file mid-write, or an mtime/stat-cache
+interaction. Note git's "racy git" behaviour is already known to touch
+`.git/index` when operations land within the same filesystem mtime tick, which
+is exactly this window.
+
+**The first fix is still the same and still blocking**: `ExecGit.Run` uses
+`cmd.Run()` and discards stderr, so both occurrences reported only a bare
+`exit status 128` and git's actual fatal message was thrown away. Until that is
+fixed this cannot be diagnosed properly — `ExecGit` already has an `outputRaw`
+helper (added in phase 1 of git mode) that captures stderr and can be reused
+directly.
 
 ## 68. pkg/meads -race fails on TestConcurrentWriters_OneWins (pre-existing)
 
