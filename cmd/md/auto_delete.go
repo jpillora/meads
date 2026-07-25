@@ -90,9 +90,9 @@ func (c *autoDeleteCmd) runFromHook() error {
 	}
 
 	// Stage the changes to be included in the current commit
-	if err := git.Run("add", c.globals.TasksFile); err != nil {
+	if err := stageFile(git, c.globals.TasksFile); err != nil {
 		util.WriteFile(store.FS(), store.Path(), backup, 0644)
-		return fmt.Errorf("staging %s: %w", store.Path(), err)
+		return err
 	}
 
 	return nil

@@ -80,8 +80,8 @@ func (c *autoSaveCmd) runFromHook() error {
 	if sequencerInProgress(c.globals) {
 		return nil
 	}
-	if err := c.globals.git().Run("add", tasksFile); err != nil {
-		return fmt.Errorf("staging %s: %w", tasksFile, err)
+	if err := stageFile(c.globals.git(), tasksFile); err != nil {
+		return err
 	}
 	// Announce the staging (mirroring auto-delete's "removed closed task N") but
 	// only when the file actually has changes in this commit, so agents see why

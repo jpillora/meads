@@ -267,6 +267,7 @@ func TestIntegration_AutoDelete_CleansDanglingDeps(t *testing.T) {
 }
 
 func TestIntegration_AutoDelete_RestoresOnGitAddFailure(t *testing.T) {
+	shortenStageBackoff(t) // the lock is never released; skip the real waits
 	h := newHarness(t)
 
 	id1 := h.addTask("Open task")

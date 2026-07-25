@@ -9,7 +9,9 @@ import (
 
 // Git abstracts git CLI operations for testability.
 type Git interface {
-	// Run executes a git command and returns an error if it fails.
+	// Run executes a git command and returns an error if it fails. stderr is
+	// captured and folded into the returned error, so a failure is
+	// diagnosable rather than a bare exit status.
 	Run(args ...string) error
 	// Output executes a git command and returns its stdout.
 	Output(args ...string) (string, error)
@@ -34,7 +36,31 @@ func (g *ExecGit) Run(args ...string) error {
 	if g.Dir != "" {
 		cmd.Dir = g.Dir
 	}
-	return cmd.Run()
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		// cmd.Run() alone discards stderr, leaving callers with a bare
+		// "exit status 128" — git's fatal message is the only thing that
+		// says *why*, so fold it into the error (same as outputRaw).
+		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+			return fmt.Errorf("%w: %s", err, msg)
+		}
+		return err
+	}
+	return nil
+}
+
+// IsIndexLocked reports whether err is git failing to take .git/index.lock
+// because another git process holds it ("fatal: Unable to create
+// '<dir>/.git/index.lock': File exists."). Any index-writing command — add,
+// but also the diff/status refreshes a shell prompt or editor runs constantly —
+// contends for that lock, so a lone `git add` can lose the race and exit 128
+// through no fault of the caller. Callers that can afford to wait should retry.
+//
+// Matching is on the "index.lock" path fragment rather than the prose, which
+// git translates when the environment has a message catalogue.
+func IsIndexLocked(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "index.lock")
 }
 
 func (g *ExecGit) Output(args ...string) (string, error) {
