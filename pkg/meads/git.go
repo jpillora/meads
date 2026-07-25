@@ -1,6 +1,8 @@
 package meads
 
 import (
+	"bytes"
+	"fmt"
 	"os/exec"
 	"strings"
 )
@@ -11,6 +13,15 @@ type Git interface {
 	Run(args ...string) error
 	// Output executes a git command and returns its stdout.
 	Output(args ...string) (string, error)
+	// OutputWithInput executes a git command with stdin piped from the given
+	// string and returns trimmed stdout. Unlike Output, stderr is captured
+	// and folded into the returned error, so plumbing failures (e.g. a
+	// rejected update-ref) are diagnosable rather than a bare exit status.
+	OutputWithInput(stdin string, args ...string) (string, error)
+	// OutputRaw executes a git command and returns stdout exactly as
+	// written, with no trimming. Use this for binary-safe reads (e.g. blob
+	// contents) where trimming could silently corrupt the result.
+	OutputRaw(args ...string) ([]byte, error)
 }
 
 // ExecGit implements Git by shelling out to the git CLI.
@@ -36,4 +47,37 @@ func (g *ExecGit) Output(args ...string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+func (g *ExecGit) OutputWithInput(stdin string, args ...string) (string, error) {
+	out, err := g.outputRaw(stdin, args...)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+func (g *ExecGit) OutputRaw(args ...string) ([]byte, error) {
+	return g.outputRaw("", args...)
+}
+
+// outputRaw runs git with stdin piped from the given string and returns
+// stdout unmodified. cmd.Output() alone discards stderr; capturing it here
+// and folding it into the error keeps plumbing failures diagnosable.
+func (g *ExecGit) outputRaw(stdin string, args ...string) ([]byte, error) {
+	cmd := exec.Command("git", args...)
+	if g.Dir != "" {
+		cmd.Dir = g.Dir
+	}
+	cmd.Stdin = strings.NewReader(stdin)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+			return nil, fmt.Errorf("%w: %s", err, msg)
+		}
+		return nil, err
+	}
+	return out, nil
 }

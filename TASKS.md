@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-07-25T08:19:16Z
+* updated: 2026-07-25T08:51:34Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -490,46 +490,12 @@ optionally deprioritise tasks whose files are already claimed.
    and `md auto-delete` become **no-ops in git mode** — there is no working-tree
    file to stage, and nothing to prune since refs are never removed.
 
-## 58. Git mode phase 1: ref storage layer (objects, CAS, atomic batch)
-
-* status: open
-* priority: P1
-* type: task
-* created: 2026-07-25T08:19:07Z
-
-Foundation for git mode. Every other phase builds on this. Design of record: task 57. Verified primitives + probe script: doc/GIT_REF_TESTS.md.
-
-### Goal
-
-Read and write git objects and refs with compare-and-swap, entirely in the object database, never touching the working tree or index.
-
-### Build
-
-- **Object writers** — blob from bytes; tree holding one entry (`task.json`); commit with parent(s). Equivalent of `hash-object` -> `mktree` -> `commit-tree`. Use go-git in-process: task 30 measured 0.70 ms/write in-process vs 31 ms shelling out (44x).
-- **Readers** — resolve ref -> oid; commit -> tree -> blob content; walk parents for history.
-- **CAS wrapper** — `updateRef(name, next, prev)` where `prev` is a REQUIRED parameter. Also create-only (`prev` = 40-zero oid) and CAS delete.
-- **Atomic batch helper** — N ref updates, all-or-nothing. Local form is `git update-ref --stdin` with start/prepare/commit. Only phase 8 (doctor) needs it, but it belongs in this layer.
-
-### Constraints from research
-
-- **MUST NOT touch the working tree or `.git/index`.** Verified: building objects via plumbing left two linked worktrees with clean `git status` throughout, and the index unmodified. This is what makes worktree sharing work.
-- **Never expose an unconditional ref update.** Omitting the expected old value does not error — it silently disables CAS and clobbers. Making `prev` mandatory kills this bug class at the type level.
-- **Argument order is reversed between layers**: local `update-ref <ref> <NEW> <OLD>` vs wire `<OLD> <NEW> <ref>`. Encode it in the API so callers cannot get it wrong.
-- **Never branch on rejection message text.** GitHub says `cannot lock ref: is at X but expected Y`; Gitea says `failed to update ref`. Detect conflict from the operation status, then re-read the current value.
-
-### Acceptance
-
-- Build a commit chain and CAS-update a ref; assert `git status` clean and `.git/index` mtime unchanged
-- CAS with a stale old-oid is rejected and the ref does not move
-- Create-only against an existing ref is rejected
-- Atomic batch with one bad old-oid aborts entirely; no ref moves
-
 ## 59. Git mode phase 2: read path (list/get/ready, history, computed next-id)
 
 * status: open
 * priority: P1
 * type: task
-* depends-on: 58
+* depends-on: 
 * created: 2026-07-25T08:19:07Z
 * updated: 2026-07-25T08:19:16Z
 
@@ -616,7 +582,7 @@ This is the single easiest way to get git mode wrong, and it is invisible until 
 * status: open
 * priority: P2
 * type: task
-* depends-on: 58
+* depends-on: 
 * created: 2026-07-25T08:19:07Z
 * updated: 2026-07-25T08:19:16Z
 

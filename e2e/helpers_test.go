@@ -46,8 +46,21 @@ func (g *fakeGit) Output(args ...string) (string, error) {
 	return "", fmt.Errorf("fakeGit: unsupported command: %v", args)
 }
 
+func (g *fakeGit) OutputWithInput(stdin string, args ...string) (string, error) {
+	return g.Output(args...)
+}
+
+func (g *fakeGit) OutputRaw(args ...string) ([]byte, error) {
+	out, err := g.Output(args...)
+	return []byte(out), err
+}
+
 // fakeGitError always returns errors.
 type fakeGitError struct{}
 
-func (g *fakeGitError) Run(args ...string) error                { return fmt.Errorf("git error") }
+func (g *fakeGitError) Run(args ...string) error              { return fmt.Errorf("git error") }
 func (g *fakeGitError) Output(args ...string) (string, error) { return "", fmt.Errorf("git error") }
+func (g *fakeGitError) OutputWithInput(stdin string, args ...string) (string, error) {
+	return "", fmt.Errorf("git error")
+}
+func (g *fakeGitError) OutputRaw(args ...string) ([]byte, error) { return nil, fmt.Errorf("git error") }
