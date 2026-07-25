@@ -9,6 +9,13 @@ import (
 	"sync"
 )
 
+// RefNamespace is the root of every ref meads ever writes in git mode:
+// TasksRefPrefix, ConfigRef (gitconfig.go), and later a lock ref (task 57's
+// phase 7). `md init --git` checks this whole namespace - not just
+// TasksRefPrefix - so it refuses to clobber state a task-only check would
+// miss, e.g. a config ref written by init with zero tasks created yet.
+const RefNamespace = "refs/meads/"
+
 // TasksRefPrefix is the ref namespace holding one ref per task:
 // refs/meads/tasks/<id>.
 const TasksRefPrefix = "refs/meads/tasks/"
@@ -180,6 +187,21 @@ func (g *GitStore) History(id int) ([]Task, error) {
 		tasks = append(tasks, t)
 	}
 	return tasks, nil
+}
+
+// FindCycles returns every circular dependency among active (non-deleted)
+// tasks - the git-mode analogue of Store.FindCycles (mutate.go's file-backed
+// sibling). It reuses the same unexported depGraph/findCycles helpers
+// cycles.go already provides for the file backend, wrapping the active task
+// list in a File{} since that's the shape those helpers expect - so the two
+// backends can never disagree on what counts as a cycle.
+func (g *GitStore) FindCycles() ([][]int, error) {
+	active, err := g.Get(nil)
+	if err != nil {
+		return nil, err
+	}
+	ids, adj := depGraph(&File{Tasks: active})
+	return findCycles(ids, adj), nil
 }
 
 // readTaskAtCommit reads and parses task.json from commit's tree, addressed

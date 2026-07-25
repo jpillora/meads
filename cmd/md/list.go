@@ -19,12 +19,15 @@ type listCmd struct {
 }
 
 func (c *listCmd) Run() error {
+	ts, err := c.globals.tasks()
+	if err != nil {
+		return err
+	}
 	var tasks []meads.Task
-	var err error
 	if c.History {
-		tasks, err = c.globals.store().GetHistory(c.globals.git())
+		tasks, err = ts.GetHistory()
 	} else {
-		tasks, err = c.globals.store().Get(nil)
+		tasks, err = ts.Get(nil)
 	}
 	if err != nil {
 		return err

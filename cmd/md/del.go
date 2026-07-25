@@ -15,11 +15,15 @@ func (c *delCmd) Run() error {
 	if err != nil {
 		return fmt.Errorf("invalid task ID: %s", c.ID)
 	}
-	tasks, err := c.globals.store().Get([]int{id})
+	ts, err := c.globals.tasks()
 	if err != nil {
 		return err
 	}
-	if err := c.globals.store().Delete(id); err != nil {
+	tasks, err := ts.Get([]int{id})
+	if err != nil {
+		return err
+	}
+	if err := ts.Delete(id); err != nil {
 		return err
 	}
 	deleted := tasks[0]

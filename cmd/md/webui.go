@@ -22,6 +22,12 @@ type webuiCmd struct {
 }
 
 func (c *webuiCmd) Run() error {
+	if err := c.globals.modeConflictErr(); err != nil {
+		return err
+	}
+	if c.globals.mode() == modeGit {
+		return errGitModeUnsupported("webui")
+	}
 	srv, err := webui.New(webui.Config{
 		Store: c.globals.store(),
 		Host:  c.Host,

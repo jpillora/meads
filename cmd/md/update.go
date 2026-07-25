@@ -55,8 +55,12 @@ func (c *updateCmd) Run() error {
 			return perr
 		}
 	}
+	ts, err := c.globals.tasks()
+	if err != nil {
+		return err
+	}
 	var updated meads.Task
-	err = c.globals.store().Update(id, func(t *meads.Task) {
+	err = ts.Update(id, func(t *meads.Task) {
 		if c.Status != "" {
 			t.SetStatus(c.Status)
 		}

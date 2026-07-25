@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-07-25T10:04:07Z
+* updated: 2026-07-25T10:40:52Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -490,40 +490,12 @@ optionally deprioritise tasks whose files are already claimed.
    and `md auto-delete` become **no-ops in git mode** — there is no working-tree
    file to stage, and nothing to prune since refs are never removed.
 
-## 62. Git mode phase 5: init --git, fetch refspec, mode detection
-
-* status: open
-* priority: P2
-* type: task
-* depends-on: 
-* created: 2026-07-25T08:19:07Z
-* updated: 2026-07-25T08:19:16Z
-
-`md init --git`, remote refspec wiring, and automatic mode detection. Design of record: task 57.
-
-### Build
-
-- **`md init --git`** — initialise git mode in the current repo; error clearly if `refs/meads/*` already exists
-- **Fetch refspec** — set `+refs/meads/*:refs/meads/*` on origin. This is additive and safe. Without it a default clone does NOT fetch these refs (verified on GitHub and Gitea), so tasks would silently not sync
-- **Detection** — git mode iff `refs/meads/tasks/*` exists (one cheap ref lookup). Honour explicit `--git` / `--file` flags and an env override
-
-### CRITICAL trap
-
-**Do NOT set `remote.origin.push`.** Configuring any push refspec replaces git's matching/simple default and breaks ordinary branch pushes for the user. Use an explicit refspec at push time, or a pre-push hook — reuse the hook plumbing in cmd/md/auto_delete.go.
-
-### Acceptance
-
-- init on a fresh repo produces a working git-mode store
-- second init errors instead of clobbering
-- detection selects git mode without an explicit flag
-- **regression test: a normal `git push` of a branch still behaves identically after init** (guards the refspec trap above)
-
 ## 63. Git mode phase 6: async auto-push on pushInterval
 
 * status: open
 * priority: P2
 * type: task
-* depends-on: 62
+* depends-on: 
 * created: 2026-07-25T08:19:07Z
 * updated: 2026-07-25T08:19:16Z
 
@@ -631,7 +603,7 @@ Port `md doctor` renumbering to git mode:
 * status: open
 * priority: P3
 * type: task
-* depends-on: 62
+* depends-on: 
 * created: 2026-07-25T08:19:07Z
 * updated: 2026-07-25T08:19:16Z
 

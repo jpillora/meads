@@ -22,8 +22,12 @@ func (c *rmDepCmd) Run() error {
 	if err != nil {
 		return fmt.Errorf("invalid parent task ID: %s", c.Parent)
 	}
+	ts, err := c.globals.tasks()
+	if err != nil {
+		return err
+	}
 	var updated meads.Task
-	err = c.globals.store().Update(child, func(t *meads.Task) {
+	err = ts.Update(child, func(t *meads.Task) {
 		t.RemoveDep(parent)
 		updated = *t
 	})

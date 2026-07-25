@@ -508,3 +508,43 @@ func TestGitStore_GetWithHistory_ResolvesDeleted(t *testing.T) {
 		t.Fatalf("GetWithHistory(nil) = %+v, want only active task 1", all)
 	}
 }
+
+// FindCycles is list/ready's warnCycles helper's read path in git mode (see
+// cmd/md/main.go); it must agree with the file backend's Store.FindCycles on
+// what counts as a cycle, and must never trip on a soft-deleted task's
+// DependsOn edges.
+func TestGitStore_FindCycles(t *testing.T) {
+	gs, rs, _ := newGitStoreRepo(t)
+	seedTask(t, rs, gs, Task{ID: 1, Title: "one", Status: "open", DependsOn: []int{2}})
+	seedTask(t, rs, gs, Task{ID: 2, Title: "two", Status: "open", DependsOn: []int{1}})
+	// A cycle through a deleted task must not be reported: deleted tasks are
+	// excluded from the active graph FindCycles builds, same as the file
+	// backend's Store.FindCycles.
+	seedTask(t, rs, gs, Task{ID: 3, Title: "three deleted", Status: "open", Deleted: true, DependsOn: []int{4}})
+	seedTask(t, rs, gs, Task{ID: 4, Title: "four", Status: "open", DependsOn: []int{3}})
+
+	cycles, err := gs.FindCycles()
+	if err != nil {
+		t.Fatalf("FindCycles: %v", err)
+	}
+	if len(cycles) != 1 {
+		t.Fatalf("len(FindCycles()) = %d, want 1 (%v)", len(cycles), cycles)
+	}
+	if got := cycleSig(cycles[0]); got != "1,2" {
+		t.Errorf("cycle = %v (sig %q), want the 1<->2 cycle (sig \"1,2\")", cycles[0], got)
+	}
+}
+
+func TestGitStore_FindCycles_NoneIsNilNotError(t *testing.T) {
+	gs, rs, _ := newGitStoreRepo(t)
+	seedTask(t, rs, gs, Task{ID: 1, Title: "one", Status: "open", DependsOn: []int{2}})
+	seedTask(t, rs, gs, Task{ID: 2, Title: "two", Status: "open"})
+
+	cycles, err := gs.FindCycles()
+	if err != nil {
+		t.Fatalf("FindCycles: %v", err)
+	}
+	if len(cycles) != 0 {
+		t.Errorf("FindCycles() = %v, want none", cycles)
+	}
+}

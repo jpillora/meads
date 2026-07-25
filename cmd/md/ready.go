@@ -7,7 +7,11 @@ type readyCmd struct {
 }
 
 func (c *readyCmd) Run() error {
-	tasks, err := c.globals.store().Ready()
+	ts, err := c.globals.tasks()
+	if err != nil {
+		return err
+	}
+	tasks, err := ts.Ready()
 	if err != nil {
 		return err
 	}

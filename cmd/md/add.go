@@ -168,7 +168,11 @@ func runAdd(g *globals, args []string, title, status, priority, typ, dependsOn, 
 	if description != "" {
 		t.Description = description
 	}
-	id, err := g.store().Add(t)
+	ts, err := g.tasks()
+	if err != nil {
+		return err
+	}
+	id, err := ts.Add(t)
 	if err != nil {
 		return err
 	}

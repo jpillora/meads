@@ -11,6 +11,12 @@ type doctorCmd struct {
 }
 
 func (c *doctorCmd) Run() error {
+	if err := c.globals.modeConflictErr(); err != nil {
+		return err
+	}
+	if c.globals.mode() == modeGit {
+		return errGitModeUnsupported("doctor")
+	}
 	s := c.globals.store()
 	fixes, err := s.Doctor()
 	if err != nil {
