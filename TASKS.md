@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-07-25T10:40:52Z
+* updated: 2026-07-25T11:30:31Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -191,7 +191,7 @@ Design:
 * priority: P2
 * type: idea
 * created: 2026-07-25T07:28:16Z
-* updated: 2026-07-25T08:08:50Z
+* updated: 2026-07-25T11:18:38Z
 
 Git mode v3
 
@@ -369,8 +369,17 @@ Correctness rests on per-ref CAS, not on a lock.
   global contention point a `meta.nextId` ref would have introduced on every
   create.
 - **Bulk ops** (`doctor` renumber) — a single atomic batch over every affected
-  ref, each with its expected old-oid. This is now the *only* place the atomic
-  batch primitive is needed on the write path.
+  ref, each with its expected old-oid.
+- **Soft delete** also needs an atomic batch. CORRECTION (found in phase 3): an
+  earlier draft said `doctor` was the only user of the batch primitive. That was
+  wrong. `Store.Delete` also strips the deleted id from every other task's
+  `DependsOn`, so git mode must update the deleted task's ref and every
+  dependent's ref together or not at all. Doing it non-atomically could leave
+  the store half-updated. The symptom of skipping the cleanup is not a `Ready`
+  blockage — `Ready` already treats a dependency on a deleted task as satisfied,
+  because `filterDeleted` runs before blocking is computed — it is that
+  `validateDeps` builds its known-id set from non-deleted tasks, so a dangling
+  `DependsOn` makes every future `Update` on the dependent fail permanently.
 
 **The retry trap.** A CAS retry must re-evaluate the *decision*, not replay the
 *write*. Naive "CAS failed → re-read oid → push again" succeeds on attempt 2 and
@@ -431,8 +440,13 @@ anywhere.
 
 - After each mutation, compare now against `$GIT_COMMON_DIR/meads/last-push`; if
   elapsed > `pushInterval`, trigger a push.
-- **Push asynchronously.** A remote ref op measured ≈2.5 s; blocking every
-  `md update` on that would be unusable. Fire-and-forget, log failures.
+- **Push synchronously, with a bounded timeout.** A remote ref op measured
+  ≈2.5 s. REVISED (JP's call, phase 6): blocking one command per push interval
+  is acceptable, and far simpler than a detached child process — it removes the
+  setsid/detach platform split and, more importantly, reports divergence in the
+  command that caused it rather than one command later. The timeout is the part
+  that must not be dropped: an unreachable remote can stall for far longer than
+  a normal push. On timeout, warn and mark pushed; never fail the mutation.
 - Push `refs/meads/*:refs/meads/*`. Set a **fetch** refspec
   `+refs/meads/*:refs/meads/*` on origin at init (additive, safe).
 - **Do NOT set `remote.origin.push`** — configuring any push refspec replaces
@@ -483,44 +497,18 @@ optionally deprioritise tasks whose files are already claimed.
    retry with precondition re-check.
 4. Config ref + oid-keyed cache.
 5. `md init --git`, fetch refspec, detection/auto-select of git mode.
+   Detection keys on the whole `refs/meads/` namespace, NOT `refs/meads/tasks/*`.
+   CORRECTION (found in phase 5): a tasks-only check cannot bootstrap — a freshly
+   initialised repo has no tasks, so the first `md add` resolves to file mode and
+   writes `TASKS.md` into the working tree. `init --git` writes the config ref so
+   the namespace is non-empty from the start. Every unit test passed with this
+   bug present; only an end-to-end run caught it.
 6. Auto-push (async, `pushInterval`).
 7. Two-stage lock, `remoteLocking` opt-in.
 8. Reconcile/merge for divergence + `doctor` for git mode.
 9. Integrations: webui watch (poll refs, not fsnotify on a file); `md auto-save`
    and `md auto-delete` become **no-ops in git mode** — there is no working-tree
    file to stage, and nothing to prune since refs are never removed.
-
-## 63. Git mode phase 6: async auto-push on pushInterval
-
-* status: open
-* priority: P2
-* type: task
-* depends-on: 
-* created: 2026-07-25T08:19:07Z
-* updated: 2026-07-25T08:19:16Z
-
-Push `refs/meads/*` to origin on an interval, without ever blocking a command. Design of record: task 57.
-
-### Build
-
-- After each mutation, compare now against the last-push timestamp; if elapsed > `pushInterval` (phase 4 config), trigger a push
-- **Last-push timestamp is LOCAL state** at `$GIT_COMMON_DIR/meads/last-push` — never a ref, never pushed. Push cadence is per-clone; a shared ref would make every clone fight over it
-- Push refspec `refs/meads/*:refs/meads/*` explicitly (see phase 5 — do not configure `remote.origin.push`)
-
-### CRITICAL
-
-**The push must be asynchronous.** A remote ref operation measured ~2.5 s over SSH, against ~3 ms for a local one. Blocking every `md update` on that makes the tool unusable. Fire-and-forget, log failures, and never fail the user's command because a push failed.
-
-### Divergence
-
-A non-fast-forward rejection means another clone has diverged. Surface it clearly and legibly; resolving it is phase 8. Do not force-push.
-
-### Acceptance
-
-- Mutation commands return promptly regardless of network state
-- Push fires only after `pushInterval` has elapsed
-- Push failure (offline, auth, rejection) does not fail the mutation
-- Non-fast-forward rejection produces an actionable message
 
 ## 64. Git mode phase 7: two-stage lock + opt-in remoteLocking
 
@@ -569,7 +557,7 @@ Per-ref CAS already prevents lost updates, so this lock exists only for operatio
 * status: open
 * priority: P3
 * type: task
-* depends-on: 63
+* depends-on: 
 * created: 2026-07-25T08:19:07Z
 * updated: 2026-07-25T08:19:16Z
 

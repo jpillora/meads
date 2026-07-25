@@ -29,6 +29,7 @@ func (c *delCmd) Run() error {
 	deleted := tasks[0]
 	deleted.Deleted = true
 	postWebhook(c.globals, "delete", deleted)
+	autoPush(c.globals)
 	fmt.Printf("deleted task %d\n", id)
 	return nil
 }

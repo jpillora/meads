@@ -178,6 +178,7 @@ func runAdd(g *globals, args []string, title, status, priority, typ, dependsOn, 
 	}
 	t.ID = id
 	postWebhook(g, "add", t)
+	autoPush(g)
 	fmt.Printf("added task %d\n", id)
 	return nil
 }

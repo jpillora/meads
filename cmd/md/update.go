@@ -85,6 +85,7 @@ func (c *updateCmd) Run() error {
 		return err
 	}
 	postWebhook(c.globals, "update", updated)
+	autoPush(c.globals)
 	fmt.Printf("updated task %d\n", id)
 	return nil
 }

@@ -38,6 +38,7 @@ func (c *addDepCmd) Run() error {
 		return err
 	}
 	postWebhook(c.globals, "update", updated)
+	autoPush(c.globals)
 	fmt.Printf("task %d now depends on %d\n", child, parent)
 	return nil
 }
