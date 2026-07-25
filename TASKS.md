@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-07-25T22:33:45Z
+* updated: 2026-07-25T22:44:04Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -625,3 +625,68 @@ including exactly the final write-up a closing commit is most likely to add.
 - Editing a task's description and closing it in the same commit preserves the
   edit somewhere in git history
 - A regression test covers edit-then-close-in-one-commit
+
+## 73. Git mode LoadAll spawns 4 git processes per task
+
+* status: open
+* priority: P1
+* type: bug
+* created: 2026-07-25T22:44:04Z
+
+`GitStore.LoadAll` (pkg/meads/gitstore.go) reads each task with its own
+`ReadFileAtRef`, which is `for-each-ref` + `cat-file blob` — two processes per
+task, on top of the `ListRefs` that already enumerated them. Every `md list`,
+`md ready` and `md get` in git mode pays it.
+
+### Measured
+
+Scratch git-mode repo, 100 tasks, git wrapped in a counting shim:
+
+```
+$ time md list
+real  0m1.314s
+user  0m0.357s
+sys   0m0.965s        <- sys > 2x user: this is fork/exec, not work
+git invocations: 404
+    203 for-each-ref
+    200 cat-file
+      1 rev-parse
+```
+
+~4 git processes and ~13ms per task, scaling linearly.
+
+### The fix costs one pipe
+
+git already has the batch plumbing. `cat-file --batch` accepts `<ref>:<path>`
+on stdin and streams every object back over a single process:
+
+```
+$ time (git for-each-ref --format='%(refname):task.json' refs/meads/tasks/ \
+        | git cat-file --batch | wc -c)
+12984
+real  0m0.013s
+```
+
+**1.314s -> 0.013s. 404 processes -> 2.** Same 100 tasks, same content, no new
+dependency.
+
+### Approach
+
+- Add a batch read to RefStore: feed `<ref>:<path>` lines to
+  `git cat-file --batch` and parse the `<oid> <type> <size>
+<payload>
+`
+  frames. Needs a streaming call on the Git interface — the current
+  `OutputWithInput` buffers, which is fine at this size but worth noting.
+- `LoadAll` then becomes one `ListRefs` + one batch read.
+- `ReadFileAtRef` stays for single-task paths; the CAS/write path is untouched.
+
+Note `LoadAll` currently also discards the per-ref OID it resolves; the batch
+frames carry the oid, so nothing is lost.
+
+### Acceptance
+
+- `md list` over N tasks issues O(1) git processes, not O(N)
+- A test asserts the invocation count does not scale with task count
+- Existing git-mode behaviour and CAS semantics unchanged
+
