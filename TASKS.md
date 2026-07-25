@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-07-25T22:44:04Z
+* updated: 2026-07-25T23:18:15Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -632,6 +632,7 @@ including exactly the final write-up a closing commit is most likely to add.
 * priority: P1
 * type: bug
 * created: 2026-07-25T22:44:04Z
+* updated: 2026-07-25T23:18:15Z
 
 `GitStore.LoadAll` (pkg/meads/gitstore.go) reads each task with its own
 `ReadFileAtRef`, which is `for-each-ref` + `cat-file blob` — two processes per
@@ -689,4 +690,33 @@ frames carry the oid, so nothing is lost.
 - `md list` over N tasks issues O(1) git processes, not O(N)
 - A test asserts the invocation count does not scale with task count
 - Existing git-mode behaviour and CAS semantics unchanged
+
+### Also: every command reads the whole store TWICE
+
+The invocation trace for `md list` in a 2-task git-mode repo shows the entire
+read sequence repeated verbatim:
+
+```
+for-each-ref refs/meads/            <- mode detection
+rev-parse --git-dir                 <- inGitRepo
+for-each-ref refs/meads/tasks/      <- LoadAll #1
+for-each-ref refs/meads/tasks/1
+cat-file blob refs/meads/tasks/1:task.json
+for-each-ref refs/meads/tasks/2
+cat-file blob refs/meads/tasks/2:task.json
+for-each-ref refs/meads/tasks/      <- LoadAll #2, identical
+for-each-ref refs/meads/tasks/1
+cat-file blob refs/meads/tasks/1:task.json
+for-each-ref refs/meads/tasks/2
+cat-file blob refs/meads/tasks/2:task.json
+```
+
+`globals.tasks()` caches the *store* in `TaskStoreCache`, but nothing caches
+the *reads*, so `warnCycles` re-runs the command's own read from scratch. That
+is where the 404 comes from: `2 x (1 + 100x2) + 2 = 404`. So the double read is
+a clean 2x on every command, independent of the batching fix, and the two
+compose: batching takes 404 -> 4, plus read caching takes it to 2.
+
+Worth fixing in the same pass, since both are "LoadAll is called more than it
+needs to be" and a shared per-process read cache is the natural place.
 
