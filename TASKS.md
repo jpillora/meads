@@ -3,19 +3,19 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-07-12T06:26:08Z
-* max-id: 55
+* updated: 2026-07-25T08:19:16Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
 
-* status: inprogress
+* status: draft
 * priority: P2
 * type: feature
 * depends-on: 
 * created: 2026-05-21T07:29:29Z
-* updated: 2026-05-21T16:36:32Z
+* updated: 2026-07-25T08:13:16Z
 
+VS Code extension end-to-end manual test
 Package the extension locally (vsce package in vscode/), install the .vsix in **desktop VS Code** (NOT 'code serve-web' / vscode.dev / Codespaces — those are blocked by mixed-content; see #26), open a TASKS.md, confirm webui renders inside the webview, confirm changes round-trip, confirm bind-vscode JSON-RPC works (vscode.openFile, vscode.showQuickPick, vscode.copyToClipboard, vscode.openExternal, vscode.showMessage), confirm subprocess cleanup on tab close. Note: bearer token currently rides in the iframe query string — fine inside a sandboxed webview but worth a glance during review.
 
 ## 21. meads.minMdVersion setting is dead code
@@ -62,15 +62,15 @@ Once the .vsix is attached to a real release, re-add the 'Web UI + VS Code exten
 extension doesn't work in code serve-web / vscode.dev / Codespaces
 The webview iframe loads md webui over HTTP, but VS Code's web client hosts webviews on an HTTPS origin (*.vscode-cdn.net). Chrome blocks the iframe as mixed-content before VS Code's portMapping/asExternalUri proxy can intercept (verified empirically with code serve-web 1.103.2 + agent-browser: no request reaches md webui's HTTP handler). Fix options: (a) serve md webui over HTTPS with a self-signed cert; (b) refactor the webview to load static assets via webview.asWebviewUri and proxy all API/SSE/WS traffic through the existing /bind-vscode channel; (c) document desktop-only and stop pretending. Track this before promoting the extension beyond desktop.
 
-## 30. Git mode
+## 30. Git mode plan v1
 
 * status: draft
 * priority: P2
 * type: idea
 * created: 2026-06-06T01:24:43Z
-* updated: 2026-07-12T06:26:08Z
+* updated: 2026-07-25T05:17:57Z
 
-Git mode
+Git mode plan v1
 
 ### Git mode for meads
 
@@ -151,3 +151,656 @@ type backend interface {
 - Manual smoke (temp repo): `git init` → `md init --git` → confirm `git status` is clean and `git for-each-ref refs/meads` shows the ref → `md add/update/del/get/ready`→ `git log refs/meads/tasks` shows one commit per change → `md get <deleted-id>`recovers from history.
 - Concurrency: run two `md add` in parallel; confirm CAS retry yields both (no lost update).
 - Speed: confirm git‑mode `md add` stays single‑digit‑ms (the 0.70 ms write path).
+
+## 56. Git mode plan v2
+
+* status: draft
+* priority: P2
+* type: idea
+* created: 2026-07-25T05:19:23Z
+* updated: 2026-07-25T06:47:58Z
+
+Git mode plan v2
+
+---
+
+A global task space, saved inside git, orthogonal to files, as git refs
+
+Designed to operate globally at the repo level, spanning all active branches (main + work trees); treat it like a localhost API, stored separately from the repository
+
+It assumes exactly one trunk branch, defaulting to HEAD branch (default branch)
+
+Design:
+
+- One repo ref for the lock `/refs/meads/lock` **all changes** must set `lock` to
+  -  `{"locked":true, "type":"local"}` 
+
+
+- One repo ref for config `/refs/meads/config` is a `{...}` JSON config object
+- One repo ref for metadata `/refs/meads/metadata` is a `{...}` JSON config object
+  - Latest task
+  - Last update
+- One repo (global) ref per task `/refs/meads/tasks/42`
+- Auto-push, configurable interval
+- Per-repo config
+- Agents in worktrees can mark `/refs/meads/tasks/42/metadata` as `{inprogress:true}`
+
+## 57. Git mode v3
+
+* status: draft
+* priority: P2
+* type: idea
+* created: 2026-07-25T07:28:16Z
+* updated: 2026-07-25T08:08:50Z
+
+Git mode v3
+
+Supersedes tasks 30 (v1) and 56 (v2). Design by OJ; requirements by JP.
+
+### Requirements (JP)
+
+- A global task list per repo, saved as `refs/meads/*`
+- Two agents, each in their own worktree, must share the same task list
+- `md update` (and all mutation commands) are guaranteed atomic
+  - 2 agents racing to claim task `42` as `status=inprogress` cannot both claim it
+- `md list` (and `get`, any read command) are fast
+- A global set of config vars, maybe `refs/meads/config`, where you can:
+  - optionally set `remoteLocking` to `true`; when set, "acquire lock" must attain a remote lock
+  - optionally set `pushInterval` to `<duration>`, deciding how often to push to the
+    remote; default `1m` (every change looks at the last updated timestamp, and if
+    time since > `1m` then push)
+- All mutations save a task version; versions must not slow down `md` operations.
+  Looking at old versions can be slow; "current state" must be fast
+- Agents communicate progress by updating their task ref:
+  - `status` → `inprogress` to signal claiming
+  - `agentId` → `<claude-session-id>` for traceability
+  - `description` after planning mode completes
+  - `filesInScope` → list of files the agent MAY write
+
+### Verified primitives
+
+Measured this session against real remotes (GitHub, Gitea 1.25.5). See
+`doc/GIT_REF_TESTS.md`; re-probe any new host with `doc/git-ref-probe.sh`.
+
+- `refs/meads/*` push accepted by both hosts; advertised in `ls-remote`; **not**
+  fetched by a default clone — needs an explicit refspec.
+- **Server-enforced CAS.** Proven with a raw `git-receive-pack` POST carrying a
+  falsified old-oid; both hosts rejected it and left the ref unchanged.
+  `--force-with-lease` alone does NOT prove this — its check is client-side.
+- **Atomic multi-ref push** (`atomic` capability) on both hosts: a mixed batch
+  (one valid CAS, one stale) rejected *both* and rolled back the valid update.
+  Same all-or-nothing locally via `git update-ref --stdin` (start/prepare/commit).
+- **create-if-absent** = CAS against the 40-zero oid. **CAS delete** =
+  `update-ref -d <ref> <old>`.
+- Argument order differs by layer — local `update-ref <ref> <NEW> <OLD>`, wire
+  `<OLD> <NEW> <ref>`. **Omitting OLD silently disables CAS.**
+- Commits/trees build via `hash-object` → `mktree` → `commit-tree` with **zero
+  worktree or index involvement**; verified across two linked worktrees sharing
+  one ref store, both with clean `git status` throughout.
+- Rejection text is not portable: GitHub says `cannot lock ref: is at X but
+  expected Y`, Gitea says `failed to update ref`. **Never branch on message text.**
+
+Read performance (git CLI, this session):
+
+| total refs | `md list` equivalent (500 tasks) | single ref lookup |
+| --- | --- | --- |
+| 10,500 | 22–25 ms | 2 ms |
+| 100,500 | 22 ms | 2 ms |
+
+Flat, because reads prefix-scan `refs/meads/tasks/` only.
+
+Next-ID computation from ref names alone (no blob reads): **15 ms at 500 tasks,
+39 ms at 5,000, 389 ms at 50,000** — linear, ~8 µs/ref, and that includes CLI
+spawn plus an `awk` pipe.
+
+Carried forward from task 30: go-git in-process ≈0.70 ms/write vs git-CLI
+4-spawn ≈31 ms/write (44×); a remote ref op ≈2.5 s over SSH; a local git op ≈3 ms.
+
+### Storage model
+
+```
+refs/meads/tasks/<id>  → commit → tree → task.json     one ref per task, forever
+refs/meads/config      → commit → tree → config.json   user settings
+refs/meads/lock        → blob                          only when remoteLocking=true
+```
+
+There is **no `meta` ref and no stored next-id counter** — see below.
+
+Local-only, never a ref and never pushed: last-push timestamp at
+`$GIT_COMMON_DIR/meads/last-push`. Push cadence is per-clone state; putting it in
+a shared ref would make every clone fight over it.
+
+`task.json`:
+
+```json
+{
+  "id": 42,
+  "title": "Fix login",
+  "description": "...",
+  "status": "inprogress",
+  "priority": "P2",
+  "type": "bug",
+  "deleted": false,
+  "dependsOn": [5],
+  "tags": [],
+  "agentId": "<claude-session-id>",
+  "filesInScope": ["pkg/meads/lock.go"],
+  "created": "...",
+  "updated": "..."
+}
+```
+
+No `version` field — the version *is* the commit depth, and duplicating it in the
+payload creates a second source of truth that can drift.
+
+#### Why commits, not blobs
+
+This is what satisfies "all mutations save a version" with the required
+performance asymmetry:
+
+- current state = ref tip, one lookup — **fast**, as required
+- old versions = walk parents — **slow**, explicitly allowed
+- version N = `refs/meads/tasks/42~N`
+- timestamps come from commit metadata
+- old versions stay reachable → GC-safe with no extra refs
+- keeps a `git log`-based history path
+
+#### Why not `refs/meads/task-versions/<id>/<n>`
+
+Rejected on measurement. 500 tasks × 200 versions = 100,500 refs →
+`git pack-refs` ran **over 5 minutes** (killed with 68,263 loose refs still
+unlinked) and produced a **7.1 MB** `packed-refs`, which is advertised on every
+fetch/push by every agent. Ref count would grow with *mutations*, not tasks.
+The commit chain gives identical time-travel at one ref per task.
+
+Cost accepted: version N is a walk (`~N`) rather than an O(1) named ref.
+
+#### Why no index/cache ref for `md list`
+
+22 ms for 500 tasks, flat to 100k refs, and go-git should beat that. An index ref
+would be a global contention point on *every* mutation — worse concurrency to fix
+a problem the measurements say we don't have. Revisit only if numbers change.
+
+### Soft delete, and no next-id counter
+
+**Tasks are never hard-deleted in git mode.** `md del` sets a boolean `deleted`
+field and CASes the task ref like any other update. The ref persists forever.
+
+Rationale (JP): the current codebase allows hard deletes *precisely because* tasks
+are rows in a committed file, so git history recovers them. Refs break that
+assumption — moving or removing a task ref orphans its chain, so the file-mode
+justification for hard delete does not carry over.
+
+This ports the semantics the CSV backend already has ("soft-delete and computed
+next-id" — README), reusing the existing `Task.Deleted` boolean and
+`filterDeleted()` (`tombstone.go:115`).
+
+**Use the existing boolean, not a new `status` value.** Status is
+draft/open/inprogress/closed; folding deletion into it loses what the task's
+status *was* when deleted and forces changes to status validation.
+
+**Next ID is computed on demand**: `max(id from ref names) + 1`. Measured at
+15 ms / 500 tasks using ref names only. Because refs persist, the max is always
+correct, so git mode does **not** need the `f.Meta["max-id"]` high-water-mark
+machinery (`tombstone.go:54-98`) that the file format requires — that exists only
+because the file compacts tombstones away, retaining a single tombstone row for
+the highest deleted task.
+
+Consequence, which is the point: task 14 stays present as a deleted ref forever,
+so a *new* task 14 can never be allocated. No ID reuse, no ambiguity in commit
+messages or history.
+
+Cost: `md list` reads every task ref and filters, so its cost tracks
+tasks-ever-created rather than live tasks. 22 ms at 500; extrapolating linearly,
+~90 ms at 2,000 and ~220 ms at 5,000. If that ever bites, the escape hatch is a
+`refs/meads/deleted/` namespace so `md list` prefix-scans only live tasks while
+next-ID scans both — **not** worth building now.
+
+### Concurrency
+
+Correctness rests on per-ref CAS, not on a lock.
+
+- **Single-task mutation** (including delete) — CAS on that task's ref. Changes to
+  different tasks never contend.
+- **Task creation** — a single create-if-absent CAS on `refs/meads/tasks/N`, where
+  N is the computed next ID. **No atomic batch, no shared counter ref.** The
+  create-only CAS *is* the uniqueness guarantee: if two agents both compute 58,
+  exactly one wins; the loser recomputes, gets 59, retries. This removes the
+  global contention point a `meta.nextId` ref would have introduced on every
+  create.
+- **Bulk ops** (`doctor` renumber) — a single atomic batch over every affected
+  ref, each with its expected old-oid. This is now the *only* place the atomic
+  batch primitive is needed on the write path.
+
+**The retry trap.** A CAS retry must re-evaluate the *decision*, not replay the
+*write*. Naive "CAS failed → re-read oid → push again" succeeds on attempt 2 and
+silently stomps the winner's claim:
+
+```
+loop:
+  oid, task = read(refs/meads/tasks/42)
+  if task.status != open: return ErrAlreadyClaimed   ← re-checked every iteration
+  cas(oid → newCommit)
+  if ok: return
+```
+
+Make old-oid a **required** parameter throughout the internal API — never expose
+an unconditional update, and this bug class disappears at the type level.
+
+### Locking (two-stage, opt-in)
+
+Per-ref CAS already prevents lost updates, so the lock exists only for
+multi-step operations that can't be one batch (format migration, long
+maintenance). Default off — which also preserves offline operation.
+
+1. **Local** — `flock` on `$GIT_COMMON_DIR/meads.lock`. Chosen over the current
+   lock-line scheme because the kernel releases it on process death (crash,
+   `kill -9`, OOM), so it cannot leak; and living in the common git dir means it
+   is automatically shared by all worktrees. Needs build-tagged impls (unix
+   `flock`, Windows `LockFileEx`). Guard against self-deadlock with an in-process
+   mutex + refcount — two `flock` calls on separate fds in one process block.
+2. **Read config** — cheap; see caching below.
+3. **Remote** — only if `remoteLocking=true`. Acquire = CAS `refs/meads/lock`
+   from the 40-zero oid (create-if-absent). Release = CAS delete with your own
+   oid, which also makes it impossible to release someone else's lock. Lease with
+   `{holder, expires}`; steal an expired lock via CAS so exactly one stealer wins.
+
+Ordering: acquire local → remote; release remote **after** the data write, since
+the remote lock brackets the whole critical section. If remote acquisition fails,
+release local before returning. If `remoteLocking=true` and the network is
+unavailable, **fail closed** — silently proceeding is the one outcome that loses
+mutual exclusion invisibly.
+
+Detect "lock is held" by re-reading the ref, never by matching rejection text.
+
+### Config and caching
+
+`config.json`: `{"remoteLocking": false, "pushInterval": "1m"}` — both optional,
+defaults as shown.
+
+Reading config is one ref lookup + one blob read (~2 ms local). Cache the parsed
+value keyed by the ref's oid: the oid changes iff config changed, so a cheap
+lookup validates the cache without re-parsing.
+
+`remoteLocking` must live in this shared ref rather than local git config — a
+lock protocol only works if every participant follows it, and a per-clone setting
+lets one misconfigured agent void mutual exclusion for everyone with no error
+anywhere.
+
+### Auto-push
+
+- After each mutation, compare now against `$GIT_COMMON_DIR/meads/last-push`; if
+  elapsed > `pushInterval`, trigger a push.
+- **Push asynchronously.** A remote ref op measured ≈2.5 s; blocking every
+  `md update` on that would be unusable. Fire-and-forget, log failures.
+- Push `refs/meads/*:refs/meads/*`. Set a **fetch** refspec
+  `+refs/meads/*:refs/meads/*` on origin at init (additive, safe).
+- **Do NOT set `remote.origin.push`** — configuring any push refspec replaces
+  git's matching/simple default and breaks ordinary branch pushes. Use an
+  explicit refspec at push time (or a pre-push hook, reusing the hook plumbing in
+  `cmd/md/auto_delete.go`).
+
+### Worktree sharing
+
+Free. `refs/` lives in the common git dir, so linked worktrees share one ref
+store and one object store — verified: agent 1 created a task in worktree A and
+agent 2 read it in worktree B with no fetch and no checkout, both worktrees clean
+throughout. Across clones, sharing is push/fetch of the same refs.
+
+### filesInScope
+
+Advisory only — a loose declaration so agents can see what others are working on.
+Not arbitrated, not a lock, no index ref. It rides along on the normal per-task
+CAS. A stale entry is merely misleading, not blocking. A read command unions
+`filesInScope` across `inprogress` tasks to show current activity; `md ready` can
+optionally deprioritise tasks whose files are already claimed.
+
+### Risks / open questions
+
+- **Offline divergence (hardest).** Two clones mutate task 42 while offline; both
+  build commit chains from a common parent, and the second push is rejected
+  non-fast-forward. Needs a reconcile: fetch, then merge two task JSON states.
+  MVP should fail loudly rather than lose data. Phase separately.
+- **Duplicate IDs offline.** Two clones both create task 58 — create-if-absent
+  can't coordinate across a partition (a shared counter wouldn't have helped
+  either). Same class as today's `md doctor`; renumbering must extend to git mode.
+- **`md ready` guarantees contention** — every agent asks and gets the same top
+  task. CAS handles it correctly, but shuffling among equal-priority tasks avoids
+  the wasted round-trip.
+- **Untested hosts** — GitLab, Bitbucket, Gerrit (Gerrit reserves `refs/for/*`,
+  `refs/changes/*` and is the likely failure). Run `doc/git-ref-probe.sh`.
+- **GC of custom-namespace refs** — untested whether any host expires them.
+- `reftable` backend (git 2.45+, we're on 2.43.0) would change ref-scale
+  behaviour; not needed given one-ref-per-task, but worth revisiting.
+
+### Suggested phases
+
+1. Ref storage layer — commit/tree/blob plumbing, CAS wrappers with mandatory
+   old-oid, atomic batch helper (needed only for `doctor`).
+2. Read path — `list`/`get`/`ready` over `refs/meads/tasks/*`, filtering
+   `deleted`; history walk; computed next-id.
+3. Write path — create (single create-if-absent CAS), update, soft delete;
+   retry with precondition re-check.
+4. Config ref + oid-keyed cache.
+5. `md init --git`, fetch refspec, detection/auto-select of git mode.
+6. Auto-push (async, `pushInterval`).
+7. Two-stage lock, `remoteLocking` opt-in.
+8. Reconcile/merge for divergence + `doctor` for git mode.
+9. Integrations: webui watch (poll refs, not fsnotify on a file); `md auto-save`
+   and `md auto-delete` become **no-ops in git mode** — there is no working-tree
+   file to stage, and nothing to prune since refs are never removed.
+
+## 58. Git mode phase 1: ref storage layer (objects, CAS, atomic batch)
+
+* status: open
+* priority: P1
+* type: task
+* created: 2026-07-25T08:19:07Z
+
+Foundation for git mode. Every other phase builds on this. Design of record: task 57. Verified primitives + probe script: doc/GIT_REF_TESTS.md.
+
+### Goal
+
+Read and write git objects and refs with compare-and-swap, entirely in the object database, never touching the working tree or index.
+
+### Build
+
+- **Object writers** — blob from bytes; tree holding one entry (`task.json`); commit with parent(s). Equivalent of `hash-object` -> `mktree` -> `commit-tree`. Use go-git in-process: task 30 measured 0.70 ms/write in-process vs 31 ms shelling out (44x).
+- **Readers** — resolve ref -> oid; commit -> tree -> blob content; walk parents for history.
+- **CAS wrapper** — `updateRef(name, next, prev)` where `prev` is a REQUIRED parameter. Also create-only (`prev` = 40-zero oid) and CAS delete.
+- **Atomic batch helper** — N ref updates, all-or-nothing. Local form is `git update-ref --stdin` with start/prepare/commit. Only phase 8 (doctor) needs it, but it belongs in this layer.
+
+### Constraints from research
+
+- **MUST NOT touch the working tree or `.git/index`.** Verified: building objects via plumbing left two linked worktrees with clean `git status` throughout, and the index unmodified. This is what makes worktree sharing work.
+- **Never expose an unconditional ref update.** Omitting the expected old value does not error — it silently disables CAS and clobbers. Making `prev` mandatory kills this bug class at the type level.
+- **Argument order is reversed between layers**: local `update-ref <ref> <NEW> <OLD>` vs wire `<OLD> <NEW> <ref>`. Encode it in the API so callers cannot get it wrong.
+- **Never branch on rejection message text.** GitHub says `cannot lock ref: is at X but expected Y`; Gitea says `failed to update ref`. Detect conflict from the operation status, then re-read the current value.
+
+### Acceptance
+
+- Build a commit chain and CAS-update a ref; assert `git status` clean and `.git/index` mtime unchanged
+- CAS with a stale old-oid is rejected and the ref does not move
+- Create-only against an existing ref is rejected
+- Atomic batch with one bad old-oid aborts entirely; no ref moves
+
+## 59. Git mode phase 2: read path (list/get/ready, history, computed next-id)
+
+* status: open
+* priority: P1
+* type: task
+* depends-on: 58
+* created: 2026-07-25T08:19:07Z
+* updated: 2026-07-25T08:19:16Z
+
+Read commands over `refs/meads/tasks/*`. Design of record: task 57.
+
+### Goal
+
+`list`, `get`, `ready`, history walking, and computed next-id — all fast.
+
+### Build
+
+- Enumerate `refs/meads/tasks/` and parse ids from ref names
+- Per task: ref -> commit -> tree -> `task.json` -> `Task` struct
+- Filter soft-deleted tasks from list/ready; reuse existing `filterDeleted()` (pkg/meads/tombstone.go:115)
+- `md get <id>` — single ref lookup, no enumeration
+- **History** — walk commit parents. Version N is `refs/meads/tasks/<id>~N`. Timestamps come from commit metadata, so the `updated` field is not load-bearing for ordering.
+- **Computed next-id** — `max(id parsed from ref names) + 1`. Ref names only, no blob reads.
+
+### Do NOT
+
+- **Do not port `f.Meta["max-id"]`** (pkg/meads/tombstone.go:54-98). That high-water mark exists only because the file format compacts tombstone rows away. Git mode never removes refs, so the max is always directly observable.
+- **Do not build an index or cache ref** for list. It would be a global contention point on every mutation, and the measurements below say it is unnecessary.
+
+### Measured targets (git CLI; in-process should beat these)
+
+- list 500 tasks (enumerate + read all blobs): 22 ms
+- single ref lookup: 2 ms
+- next-id from names only: 15 ms at 500 tasks, 39 ms at 5,000, 389 ms at 50,000 (linear, ~8 us/ref)
+- All flat at 100,500 total refs, because reads prefix-scan `refs/meads/tasks/` only
+
+### Acceptance
+
+- list/get/ready parity with the file backend on a shared fixture
+- soft-deleted tasks hidden from list/ready but still returned by `get`
+- next-id is correct when the highest-numbered task is deleted (must not reuse it)
+
+## 60. Git mode phase 3: write path (create, update, soft delete)
+
+* status: open
+* priority: P1
+* type: task
+* depends-on: 59
+* created: 2026-07-25T08:19:07Z
+* updated: 2026-07-25T08:19:16Z
+
+Create, update, and soft delete. Design of record: task 57.
+
+### Goal
+
+All mutations as single-ref compare-and-swap operations.
+
+### Build
+
+- **Create** — compute next id N (phase 2), build the commit, then `updateRef(refs/meads/tasks/N, commit, ZERO_OID)` create-only. On rejection, recompute and retry.
+  - **No shared counter ref and no atomic batch.** The create-only CAS is itself the uniqueness guarantee: if two agents both compute 58, exactly one wins; the loser recomputes, gets 59, succeeds. A counter ref would add a global contention point every create must queue behind.
+- **Update** — read `(oid, task)`, mutate, build a commit parented on the old one, CAS against `oid`.
+- **Soft delete** — set the `deleted` boolean true and CAS like any other update. **Never remove the ref.**
+  - Rationale: hard delete is correct in file mode precisely because tasks are rows in a committed file that git history recovers. Refs void that assumption — removing a task ref orphans its whole chain.
+  - Use the existing `Task.Deleted` boolean. Do NOT add `deleted` as a `status` value: status is draft/open/inprogress/closed, and folding deletion in destroys the record of what the status was at deletion and forces status-validation changes.
+
+### CRITICAL — the retry trap
+
+A CAS retry must re-evaluate the **decision**, not replay the **write**. The naive loop ("CAS failed -> re-read oid -> push again") succeeds on attempt 2 and silently stomps the winner's claim.
+
+```
+loop:
+  oid, task = read(refs/meads/tasks/42)
+  if task.status != open: return ErrAlreadyClaimed   <- re-checked EVERY iteration
+  cas(oid -> newCommit)
+  if ok: return
+```
+
+This is the single easiest way to get git mode wrong, and it is invisible until two agents actually race.
+
+### Acceptance
+
+- **Concurrent claim test**: two processes race to claim one task; exactly one wins, the loser observes `inprogress` and does not overwrite it
+- Two concurrent creates receive distinct ids
+- Soft delete leaves the ref present and the commit chain intact
+- Retry loop provably re-checks the precondition (test that a claim on an already-claimed task fails even under forced CAS contention)
+
+## 61. Git mode phase 4: config ref + oid-keyed cache
+
+* status: open
+* priority: P2
+* type: task
+* depends-on: 58
+* created: 2026-07-25T08:19:07Z
+* updated: 2026-07-25T08:19:16Z
+
+Global config at `refs/meads/config`. Design of record: task 57.
+
+### Goal
+
+Shared, versioned configuration with a cheap cache.
+
+### Build
+
+- `config.json`: `{"remoteLocking": false, "pushInterval": "1m"}` — both optional, those are the defaults, and the ref may be absent entirely
+- Read = one ref lookup + one blob read (~2 ms)
+- Write via the phase 1 CAS path, same as any other ref
+- **Cache keyed by the config ref's oid.** The oid changes if and only if config changed, so a cheap ref lookup validates the cache without re-parsing the blob
+
+### Constraint
+
+`remoteLocking` MUST live in this shared ref — not in local git config, not an env var. A lock protocol only works if every participant follows it. A per-clone setting lets one misconfigured agent void mutual exclusion for everyone, with no error surfacing anywhere.
+
+### Acceptance
+
+- Defaults apply when the ref is absent
+- Cache invalidates when the oid changes; no re-parse when it has not
+- Round-trip write/read preserves unknown fields (forward compatibility)
+
+## 62. Git mode phase 5: init --git, fetch refspec, mode detection
+
+* status: open
+* priority: P2
+* type: task
+* depends-on: 60,61
+* created: 2026-07-25T08:19:07Z
+* updated: 2026-07-25T08:19:16Z
+
+`md init --git`, remote refspec wiring, and automatic mode detection. Design of record: task 57.
+
+### Build
+
+- **`md init --git`** — initialise git mode in the current repo; error clearly if `refs/meads/*` already exists
+- **Fetch refspec** — set `+refs/meads/*:refs/meads/*` on origin. This is additive and safe. Without it a default clone does NOT fetch these refs (verified on GitHub and Gitea), so tasks would silently not sync
+- **Detection** — git mode iff `refs/meads/tasks/*` exists (one cheap ref lookup). Honour explicit `--git` / `--file` flags and an env override
+
+### CRITICAL trap
+
+**Do NOT set `remote.origin.push`.** Configuring any push refspec replaces git's matching/simple default and breaks ordinary branch pushes for the user. Use an explicit refspec at push time, or a pre-push hook — reuse the hook plumbing in cmd/md/auto_delete.go.
+
+### Acceptance
+
+- init on a fresh repo produces a working git-mode store
+- second init errors instead of clobbering
+- detection selects git mode without an explicit flag
+- **regression test: a normal `git push` of a branch still behaves identically after init** (guards the refspec trap above)
+
+## 63. Git mode phase 6: async auto-push on pushInterval
+
+* status: open
+* priority: P2
+* type: task
+* depends-on: 62
+* created: 2026-07-25T08:19:07Z
+* updated: 2026-07-25T08:19:16Z
+
+Push `refs/meads/*` to origin on an interval, without ever blocking a command. Design of record: task 57.
+
+### Build
+
+- After each mutation, compare now against the last-push timestamp; if elapsed > `pushInterval` (phase 4 config), trigger a push
+- **Last-push timestamp is LOCAL state** at `$GIT_COMMON_DIR/meads/last-push` — never a ref, never pushed. Push cadence is per-clone; a shared ref would make every clone fight over it
+- Push refspec `refs/meads/*:refs/meads/*` explicitly (see phase 5 — do not configure `remote.origin.push`)
+
+### CRITICAL
+
+**The push must be asynchronous.** A remote ref operation measured ~2.5 s over SSH, against ~3 ms for a local one. Blocking every `md update` on that makes the tool unusable. Fire-and-forget, log failures, and never fail the user's command because a push failed.
+
+### Divergence
+
+A non-fast-forward rejection means another clone has diverged. Surface it clearly and legibly; resolving it is phase 8. Do not force-push.
+
+### Acceptance
+
+- Mutation commands return promptly regardless of network state
+- Push fires only after `pushInterval` has elapsed
+- Push failure (offline, auth, rejection) does not fail the mutation
+- Non-fast-forward rejection produces an actionable message
+
+## 64. Git mode phase 7: two-stage lock + opt-in remoteLocking
+
+* status: open
+* priority: P2
+* type: task
+* depends-on: 60,61
+* created: 2026-07-25T08:19:07Z
+* updated: 2026-07-25T08:19:16Z
+
+Opt-in global lock for rare multi-step operations. Design of record: task 57.
+
+### Why this is small
+
+Per-ref CAS already prevents lost updates, so this lock exists only for operations that cannot be expressed as one batch (format migration, long maintenance). It is **off by default**, which is also what preserves offline operation.
+
+### Build — two stages
+
+1. **Local** — `flock` on `$GIT_COMMON_DIR/meads.lock`
+   - flock specifically, because the kernel releases it on process death (clean exit, crash, `kill -9`, OOM), so it cannot leak. A lock stored as data can.
+   - The common git dir means it is automatically shared by every linked worktree.
+   - Needs build-tagged implementations: unix `flock`, Windows `LockFileEx`.
+   - Guard self-deadlock with an in-process mutex + refcount — two `flock` calls on separate fds in one process block each other.
+2. **Read config** (phase 4)
+3. **Remote** — only if `remoteLocking` is true
+   - Acquire = CAS `refs/meads/lock` from the 40-zero oid (create-if-absent)
+   - Release = CAS delete against your own oid, which makes releasing someone else's lock impossible
+   - Lease `{holder, expires}`; an expired lock is stolen via CAS, so exactly one thief wins
+
+### Ordering and failure
+
+- Acquire local, then remote. Release remote **after** the data write — the remote lock brackets the whole critical section.
+- If remote acquisition fails, release the local lock before returning, or it leaks.
+- **Fail closed**: `remoteLocking` on + network unavailable = error. Silently proceeding is the one outcome that loses mutual exclusion invisibly.
+- Detect "lock is held" by re-reading the ref, never by matching rejection text.
+
+### Acceptance
+
+- Local lock is released after the holder is SIGKILLed
+- A second local holder blocks while the first holds
+- N racers against one expired remote lock: exactly one steals it
+- Remote acquisition failure releases the local lock
+
+## 65. Git mode phase 8: divergence reconcile + doctor for git mode
+
+* status: open
+* priority: P3
+* type: task
+* depends-on: 63
+* created: 2026-07-25T08:19:07Z
+* updated: 2026-07-25T08:19:16Z
+
+The hardest phase, deliberately deferred from MVP. Design of record: task 57.
+
+### Problem 1 — offline divergence
+
+Two clones both mutate task 42 while disconnected. Each builds a commit chain from a common ancestor. The second push is correctly rejected as non-fast-forward.
+
+Resolving this means genuinely merging two versions of one task. Options to evaluate: field-level merge, last-writer-wins by commit timestamp, or interactive resolution.
+
+**MVP requirement: fail loudly rather than lose data.** A wrong automatic merge is worse than a clear error.
+
+### Problem 2 — duplicate ids across clones
+
+Two disconnected clones both create task 58. Create-if-absent cannot coordinate across a network partition — and note a shared counter ref would not have helped either, so this is not a consequence of dropping it.
+
+Port `md doctor` renumbering to git mode:
+- One atomic batch (phase 1) over every affected ref, each carrying its expected old-oid
+- Renumbering MUST also rewrite `dependsOn` references that point at moved ids
+- Soft-deleted refs participate: their ids are still allocated and must not be reused
+
+### Acceptance
+
+- Simulate divergence with two clones; MVP surfaces it without data loss
+- `doctor` renumbers duplicates and fixes all `dependsOn` edges
+- `doctor` is atomic: an aborted run leaves no partial renumbering
+
+## 66. Git mode phase 9: integrations (webui watch, hooks, migration)
+
+* status: open
+* priority: P3
+* type: task
+* depends-on: 62
+* created: 2026-07-25T08:19:07Z
+* updated: 2026-07-25T08:19:16Z
+
+Make the rest of the toolchain git-mode aware. Design of record: task 57.
+
+### Build
+
+- **webui watch** (pkg/webui) — currently fsnotify on a single file. Git mode must observe refs instead. Note that refs move between loose files and `packed-refs`, so file watching alone is unreliable; polling the ref oids is simpler and more robust. Feeds the existing SSE `/api/events` stream.
+- **`md auto-save`** (cmd/md/auto_save.go) — **no-op in git mode.** It stages `TASKS.md` into commits; there is no working-tree file to stage.
+- **`md auto-delete`** (cmd/md/auto_delete.go) — **no-op in git mode.** It prunes closed tasks from the file to keep it small; there is no file to shrink, and refs are never removed.
+- **Migration** — `md convert` between `TASKS.md`/`.csv` and git mode, both directions.
+- **webhook** — lives at the command layer and should be unaffected; verify rather than assume.
+
+### Acceptance
+
+- webui live-updates when a task ref changes, including when refs are packed
+- both hooks detect git mode and no-op cleanly, without erroring or printing noise
+- migration round-trips a fixture file -> git mode -> file with no data loss
+- webhook still fires with correct payloads in git mode
