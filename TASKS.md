@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-07-25T23:37:59Z
+* updated: 2026-07-26T06:31:55Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -849,4 +849,95 @@ not absolute, and look for refs there. Everything else stays as is.
 - `md --help` in a linked worktree of a git-mode repo hides the file-mode
   commands, matching the main checkout
 - A test covers the worktree layout
+
+## 76. Cloning a git-mode repo silently falls back to file mode
+
+* status: open
+* priority: P1
+* type: bug
+* created: 2026-07-26T06:31:55Z
+
+A teammate who clones a git-mode repo gets no task refs, so meads auto-detects
+file mode and `md add` starts a second, divergent task store in TASKS.md.
+
+Git does not fetch custom ref namespaces by default, and the
+`+refs/meads/*:refs/meads-remote/*` refspec is added by `md init --git` to the
+*local* repo it ran in. A fresh clone has neither the refs nor the refspec, and
+`md init --git` deliberately seeds no worktree artifact - so there is no offline
+evidence of git mode for detection to find.
+
+#### Reproduced end to end
+
+```
+### source repo, git mode, one task, pushed
+$ md list
+1. [P2] lives in git mode
+$ git --git-dir=bare.git for-each-ref refs/meads/ --format='%(refname)'
+refs/meads/config
+refs/meads/tasks/1
+
+### teammate clones
+$ git clone bare.git clone && cd clone
+$ git for-each-ref refs/meads/ | wc -l
+0
+$ md list
+no tasks found (run 'md add' to create one)     <- repo HAS a task
+$ md add "task: teammate adds one"
+added task 1                                     <- id 1 collides with the server's id 1
+$ ls
+TASKS.md  f.txt                                  <- file mode, in a git-mode repo
+```
+
+Trying to bootstrap by hand does not recover it either:
+
+```
+$ md init --git
+initialized git mode (refs/meads/*)              <- succeeds: local namespace IS empty
+added fetch refspec +refs/meads/*:refs/meads-remote/* to origin
+$ md list
+no tasks found                                   <- still nothing; refs never fetched
+$ git push origin 'refs/meads/*:refs/meads/*'
+error: failed to push some refs
+hint: Updates were rejected because a pushed branch tip is behind its remote
+```
+
+The push rejection is the design working - server-side CAS refusing to discard
+the real config ref in favour of this clone's unrelated fresh root commit. But
+the user is left with no in-tool path forward.
+
+`md doctor` does not help: its cross-clone duplicate case requires an id present
+in BOTH local and remote-tracking refs. Here local is empty, so it sees nothing
+to reconcile.
+
+#### Impact
+
+Git mode is effectively single-clone-only today. Worse than not working, the
+failure is silent: the teammate sees an empty task list and a plausible-looking
+TASKS.md rather than an error.
+
+Not a regression - git mode is unreleased - but it should be understood before
+git mode is presented as a team feature.
+
+#### Approach
+
+The missing step is a clone bootstrap: fetch `refs/meads/*` into local
+`refs/meads/*` when the local namespace is empty. That specific case is safe by
+construction - there is no local state to lose.
+
+- `md init --git` in a repo whose origin already has `refs/meads/*` should fetch
+  and adopt them rather than initializing a fresh, unrelated namespace. It
+  already configures the refspec; it just never fetches.
+- Consider erroring instead of silently succeeding when origin has refs and
+  local does not, so the wrong outcome is at least loud.
+- Auto-detection has no offline signal to work with here. If implicit detection
+  in a fresh clone is wanted, it needs a committed marker (a tracked file, or a
+  value in an existing tracked file) - which trades away part of "git mode has
+  no working-tree artifact".
+
+#### Acceptance
+
+- Cloning a git-mode repo and running `md list` shows the repo's real tasks,
+  after at most one documented bootstrap command
+- `md add` in a fresh clone of a git-mode repo never silently creates TASKS.md
+- A test covers clone -> bootstrap -> list -> add -> push round trip
 
