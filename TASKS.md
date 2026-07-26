@@ -975,4 +975,3 @@ Worth checking whether cmd/md/push.go's auto-push (which uses exactly that
 wildcard refspec, with a pushTimeout) hits the same wall once a repo has many
 tasks - if so it would time out every interval and never converge, silently.
 Probably deserves its own task once confirmed.
-
