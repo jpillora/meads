@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-07-26T10:30:36Z
+* updated: 2026-07-26T22:51:31Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -855,8 +855,9 @@ not absolute, and look for refs there. Everything else stays as is.
 * status: open
 * priority: P1
 * type: bug
+* depends-on: 79
 * created: 2026-07-26T06:31:55Z
-* updated: 2026-07-26T10:30:36Z
+* updated: 2026-07-26T22:51:31Z
 
 A teammate who clones a git-mode repo gets no task refs, so meads auto-detects
 file mode and `md add` starts a second, divergent task store in TASKS.md.
@@ -916,31 +917,88 @@ Git mode is effectively single-clone-only today. Worse than not working, the
 failure is silent: the teammate sees an empty task list and a plausible-looking
 TASKS.md rather than an error.
 
-Not a regression - git mode is unreleased - but it should be understood before
-git mode is presented as a team feature.
+### Design: one-shot remote resolution, cached in a local marker ref
 
-#### Approach
+**The bar is `git clone` then `md list` - no bootstrap command.**
 
-The missing step is a clone bootstrap: fetch `refs/meads/*` into local
-`refs/meads/*` when the local namespace is empty. That specific case is safe by
-construction - there is no local state to lose.
+"No tasks file AND no local `refs/meads/*`" is ambiguous: it means either a
+genuinely uninitialised repo, or a clone of a git-mode repo. Nothing offline can
+tell them apart, so exactly one remote round-trip must decide it - and the
+answer must then be cached so it never repeats.
 
-- `md init --git` in a repo whose origin already has `refs/meads/*` should fetch
-  and adopt them rather than initializing a fresh, unrelated namespace. It
-  already configures the refspec; it just never fetches.
-- Consider erroring instead of silently succeeding when origin has refs and
-  local does not, so the wrong outcome is at least loud.
-- Auto-detection has no offline signal to work with here. If implicit detection
-  in a fresh clone is wanted, it needs a committed marker (a tracked file, or a
-  value in an existing tracked file) - which trades away part of "git mode has
-  no working-tree artifact".
+#### The marker ref
 
-#### Acceptance
+`refs/meads-init-check` records "I have asked origin, and it has no
+`refs/meads/*`". It is a ref pointing **directly at a blob**, no commit or tree
+- the same shape `refs/meads/lock` already uses (`gitlock.go:49`), for the same
+reason: the value has no useful history. Blob content should carry the origin
+URL that was checked, so a repo whose remote is later repointed can be spotted.
 
-- Cloning a git-mode repo and running `md list` shows the repo's real tasks,
-  after at most one documented bootstrap command
-- `md add` in a fresh clone of a git-mode repo never silently creates TASKS.md
-- A test covers clone -> bootstrap -> list -> add -> push round trip
+It lives **outside** `refs/meads/`, and that is load-bearing, not cosmetic:
+
+- `Detect` probes the whole `refs/meads/` namespace, so a marker inside it would
+  flip the repo into git mode - the exact bug this is fixing
+- the push refspec `refs/meads/*:refs/meads/*` does not match
+  `refs/meads-init-check` (`-` is not `/`), so it can never be pushed
+- likewise the fetch refspec `+refs/meads/*:refs/meads-remote/*` never touches it
+
+It is per-clone local state, like `<git-common-dir>/meads/last-push`.
+
+#### Resolution flow
+
+Runs only when there is **no tasks file** and **no local `refs/meads/*`**:
+
+1. `refs/meads-init-check` exists → resolved, file mode, no network. Done.
+2. no `origin` remote → nothing to ask; write the marker, file mode. Done.
+3. `git ls-remote origin 'refs/meads/*'`:
+   - **has refs** → this is a clone of a git-mode repo. **Adopt**:
+     `git fetch origin '+refs/meads/*:refs/meads/*'` (safe by construction - the
+     local namespace is empty, so there is nothing to lose), then add the normal
+     `+refs/meads/*:refs/meads-remote/*` fetch refspec. Repo is now in git mode;
+     print a one-line stderr notice ("adopted N task refs from origin"). Do NOT
+     write the marker - local refs now exist, which is itself the terminal state.
+   - **no refs** → write `refs/meads-init-check`. File mode. Safe to create
+     `TASKS.md` from here on.
+
+After step 3 the repo is in a terminal state either way, so the `ls-remote`
+happens **at most once per clone, ever**.
+
+#### Where it runs
+
+In the `OpenTasks`/`InitTasks` path (task 79) - **not** in `Detect`. `Detect`
+must stay pure, offline and cheap: rais calls it on a 1-minute ticker across
+every project it knows about.
+
+Probe both namespaces in one process:
+`git for-each-ref refs/meads/ refs/meads-init-check`. Steady state therefore
+stays exactly one `for-each-ref`, same as today.
+
+Marker writes are best-effort: a failure to write it must not fail the command,
+only cost a repeated `ls-remote` next time.
+
+#### Tradeoff to accept knowingly
+
+Every ordinary git repo with an origin and no tasks file pays one `ls-remote`
+and gets one local ref written, the first time meads looks at it - including
+repos that will never use meads. That is the price of transparent clone
+detection; there is no offline signal. It is one-shot and the ref is a single
+blob, but bulk scanners (rais scans every project) will see a slower first pass
+per repo.
+
+### Acceptance
+
+- `git clone <git-mode repo> && md list` shows the repo's real tasks, with **no
+  bootstrap command**
+- `md add` in a fresh clone of a git-mode repo never creates TASKS.md, and its
+  new task pushes cleanly (no id collision with the origin's ids)
+- a second `md list` in that clone issues no `ls-remote` (local refs now exist)
+- `md add` in a fresh clone of a repo that has never used meads creates TASKS.md
+  as today, writes `refs/meads-init-check`, and issues no further `ls-remote`
+- a repo with no origin behaves exactly as today, with no network call
+- `refs/meads-init-check` is never pushed and never fetched
+- tests cover: clone → list → add → push round trip; the no-origin path; the
+  marker short-circuit (assert zero `ls-remote` on the second call, e.g. via a
+  counting git shim)
 
 ### Verified workaround (works today)
 
@@ -955,14 +1013,11 @@ md list      # now shows the repo's real tasks
 
 Confirmed 2026-07-26 against a fresh clone of github.com/jpillora/accord after
 migrating it to git mode: `md list` showed "no tasks found" before, and all 97
-active tasks after.
+active tasks after. This is exactly what the adopt branch above automates.
 
 Do NOT bootstrap with `md init --git` in a clone - it succeeds, writes an
 unrelated fresh config ref, and the next push is rejected non-fast-forward (see
-above).
-
-So the fix is largely about doing this automatically and refusing to do the
-wrong thing, not about inventing a new mechanism.
+above). Once this task lands, `init --git` in that situation must adopt instead.
 
 ### Also seen while migrating accord
 
@@ -974,4 +1029,238 @@ batches of 20 completed all 113 in well under a minute.
 Worth checking whether cmd/md/push.go's auto-push (which uses exactly that
 wildcard refspec, with a pushTimeout) hits the same wall once a repo has many
 tasks - if so it would time out every interval and never converge, silently.
-Probably deserves its own task once confirmed.
+Probably deserves its own task once confirmed. Note the adopt branch above
+fetches with the same wildcard shape, so it may need the same batching.
+
+### Marker-ref isolation: verified empirically 2026-07-26
+
+All three isolation claims for `refs/meads-init-check` hold. Probed with a
+blob-valued marker alongside real `refs/meads/config` + `refs/meads/tasks/1`:
+
+| claim | result |
+|---|---|
+| `for-each-ref refs/meads/` does not see the marker | **0 matches** - lists only config + tasks/1 |
+| push refspec `refs/meads/*:refs/meads/*` does not push it | **0 on origin** after push |
+| fetch refspec `+refs/meads/*:refs/meads-remote/*` does not touch it | untouched, still `blob` |
+
+The combined single-process probe also works as designed:
+`git for-each-ref refs/meads/ refs/meads-init-check` accepts both patterns in
+one call and returns all three refs, so steady state stays at one `for-each-ref`.
+
+Git's pattern matching is what makes this safe: a wildcard-free pattern matches
+only at `/` boundaries, so `refs/meads/` can never match `refs/meads-init-check`
+(`-` is not `/`). The design's choice to put the marker outside the namespace
+rather than inside it is sound, and does not depend on ordering or filtering.
+
+
+## 77. Unify all three backends behind a single meads.Tasks interface
+
+* status: open
+* priority: P1
+* type: feature
+* created: 2026-07-26T12:14:55Z
+
+Today `*Store` covers markdown+csv (`detectFormat`, `store.go:36`), `*GitStore` covers git with a different method shape, and the adapters reconciling them are unexported in `cmd/md/taskstore.go` — which has already forced three hand-rolled duplicates into tests (`pkg/mcp/gitstore_test.go:23`, `pkg/webui/watch_test.go:32,269`).
+
+Add `pkg/meads/tasks.go`. `Format` is already taken (the md/csv **parser** interface, `format.go`), so the enum is `Backend`:
+
+```go
+type Backend int
+const ( BackendMarkdown Backend = iota; BackendCSV; BackendGit )
+func (b Backend) String() string // "md" | "csv" | "git"
+
+type Tasks interface {
+    Backend() Backend
+    Location() string          // "/abs/TASKS.md" | "refs/meads/tasks/*"
+    Exists() (bool, error)
+    Revision() (string, error) // cheap change token; differs iff tasks changed
+
+    Get(ids []int) ([]Task, error)
+    GetWithHistory(ids []int) ([]Task, error)
+    GetHistory() ([]Task, error)
+    Ready() ([]Task, error)
+    FindCycles() ([][]int, error)
+    Doctor() ([]DoctorFix, error)
+
+    Add(t Task) (int, error)
+    Update(id int, fn func(*Task)) error
+    Delete(id int) error
+
+    Sync(ctx context.Context) error // git: push refs/meads/*; file: no-op
+}
+```
+
+Move `cmd/md/taskstore.go`'s `fileTaskStore`/`gitTaskStore` in as exported `FileTasks`/`GitTasks`, extended with the new methods. Preserve the shim semantics documented at `cmd/md/taskstore.go:79-96`: `Add` discards `Create`'s Task and returns the id; `Update` wraps `fn` as `func(*Task) (bool, error)` always returning `true`; `Delete` = `SoftDelete` with the Task discarded; `GetHistory` = `LoadAll`; git `GetWithHistory` is a direct read (refs are kept forever, no history walk).
+
+**Breaking (meads is v0):** delete `pkg/meads/taskstore.go`'s narrow `TaskStore`.
+
+Two implementations cover three backends — `*Store` already models md+csv behind one type; `Backend()` reports which. Splitting `*Store` further is churn with no caller-visible gain. `*Store`/`*GitStore` stay exported for backend-specific extras (`RunImport`/`AutoClean`/`ImportAll`; `Diverged`/`Claim`/`Config`/`Acquire`) that don't belong on `Tasks`.
+
+### Per-backend semantics
+
+| | markdown / csv | git |
+|---|---|---|
+| `Exists` | file present | any ref under `refs/meads/` |
+| `Revision` | fnv64a of raw file bytes | fnv64a of sorted `refname oid` from `GitStore.TaskRefOIDs()` (`gitstore.go:171`, one `for-each-ref`) |
+| `Location` | absolute file path | `refs/meads/tasks/*` |
+| `Sync` | no-op | push (see the Sync task) |
+
+File `Revision` is deliberately the same fnv64a-of-bytes rais already computes, so rais's `ProjectMeads.Hash` keeps its current values.
+
+### Why
+
+rais must drive meads library-only (never the `md` CLI) and must work on all three backends. Every piece it needs — detection, the adapters, init, push — is currently private to `cmd/md`. Exporting one interface means there is a single implementation of each, so `md` and rais can never disagree about which store a project uses.
+
+## 78. Add Detect and the OpenTasks entry points
+
+* status: open
+* priority: P1
+* type: feature
+* depends-on: 77
+* created: 2026-07-26T12:14:55Z
+* updated: 2026-07-26T12:15:02Z
+
+```go
+func Detect(dir string) (Backend, error)
+func OpenTasks(dir string) (Tasks, error)                         // THE entry point
+func OpenTasksBackend(dir string, b Backend) (Tasks, error)       // forced --git/--file
+func OpenTasksFile(file string) (Tasks, error)                    // explicit --tasks-file
+func OpenTasksFS(fs billy.Filesystem, file string) (Tasks, error) // keeps memfs testing working
+func InitTasks(dir string, b Backend) (Tasks, error)
+```
+
+`Detect` is the body of `cmd/md/main.go:183` `gitTaskRefsExist`, then `bareDefaultTasksFile` (`main.go:20`): git iff `ListRefs(RefNamespace)` is non-empty, else csv iff `TASKS.csv` exists, else markdown.
+
+It probes the **whole** `refs/meads/` namespace, not just `refs/meads/tasks/*` — a fresh `init --git` has no tasks, and a tasks-only probe would mean git mode could never bootstrap (the first `add` would write `TASKS.md` into the working tree). Any git failure, including "not a repository", folds to a file backend, so detection never errors.
+
+`OpenTasks(dir)` always returns a usable store; "nothing initialised yet" is `Exists() == false`, **not** an error — consumers (rais's project scan) need to tell those apart cheaply.
+
+`OpenTasksFS` exists so `pkg/webui` and `pkg/mcp` tests keep their memfs-backed stores after `meads.NewStore(memfs.New(), ...)` stops being the entry point.
+
+## 79. Move the init --git body into pkg/meads.InitTasks
+
+* status: open
+* priority: P1
+* type: feature
+* depends-on: 78
+* created: 2026-07-26T12:14:55Z
+* updated: 2026-07-26T12:15:02Z
+
+Absorb `cmd/md/init.go:78` `runGit` and `:113` `ensureFetchRefspec` (moving `meadsFetchRefspec`, `init.go:61`) into `InitTasks(dir, BackendGit)`; markdown/csv get the empty-file write.
+
+Keep both invariants:
+
+* the fetch refspec is **additive** (`git config --add`, never a plain set) and lands in `refs/meads-remote/*`, **never** `refs/meads/*` — a force refspec onto the local namespace silently discards not-yet-pushed local commits
+* `remote.origin.push` is **never** touched — setting any push refspec replaces git's default matching/simple push behaviour and breaks ordinary branch pushes for the user (`TestIntegration_InitGit_DoesNotBreakNormalPush`)
+
+Return values instead of `fmt.Print` so a server caller (rais) has no stdout side effects; `runGit` becomes a thin wrapper that prints.
+
+Also keep the refusal: error if `refs/meads/` already has any ref ("git mode is already initialized"), and if not inside a git repository.
+
+## 80. Move the push body into GitTasks.Sync
+
+* status: open
+* priority: P1
+* type: feature
+* depends-on: 77
+* created: 2026-07-26T12:14:55Z
+* updated: 2026-07-26T12:15:02Z
+
+Absorb `cmd/md/push.go`'s push into `GitTasks.Sync(ctx)`:
+
+* `git push --porcelain origin refs/meads/*:refs/meads/*` (`pushRefspec`, `push.go:24`) — explicit refspec at push time, never a configured `remote.origin.push`
+* the rejection classification in `divergenceMessage` (`push.go:188`), which matches only git's own porcelain reasons (`non-fast-forward`, `fetch first`, `stale info`) and never host free-text
+* **never** force-push
+
+`cmd/md/push.go:autoPush` keeps the cadence — `GitStore.ShouldPush`/`MarkPushed`, `gitCommonDir`, `pushTimeout` — and delegates the push itself. File backends no-op, so a caller can invoke `Sync` unconditionally without a backend check.
+
+### Why
+
+rais pushes on every task write. Reimplementing the refspec and the porcelain rejection parsing on the rais side would be a second, drifting copy of the one piece of this that talks to a remote.
+
+## 81. Rewire cmd/md onto meads.Tasks and delete cmd/md/taskstore.go
+
+* status: open
+* priority: P1
+* type: task
+* depends-on: 79,80
+* created: 2026-07-26T12:14:55Z
+* updated: 2026-07-26T12:15:02Z
+
+`globals.mode()` / `gitTaskRefsExist` / `tasks()` (`main.go:183,206,244`) delegate to `Detect` and the `OpenTasks*` family, keeping the `--file` / `--git` / `explicitTasksFile` precedence layered on top. One detection implementation means `md` and library consumers (rais) can never disagree about which store a project uses.
+
+Delete the private `taskStore` interface and both adapters from `cmd/md/taskstore.go`. Move `errGitModeUnsupported` to `import.go`, its only remaining caller (`beads-import`).
+
+`doctor.go`'s mode switch collapses onto `Tasks.Doctor()` — both backends already have a `Doctor` returning `[]DoctorFix`. Only the git-only divergence report (`GitStore.Diverged`) still type-asserts.
+
+Everything wired through the old seam must behave identically afterwards: `get`, `list`, `ready`, `add`/`create`, `update`, `set-status`, `add-dep`, `rm-dep`, `del`, plus `mcp`, `webui`, `prime`, `convert`. `auto-save`/`auto-delete` stay no-ops in git mode (checked before the file-existence test, so a stray leftover `TASKS.md` is never staged or pruned), and stay hidden from help via `hiddenCommands()` rather than unregistered — the installed pre-commit hook runs them unconditionally.
+
+## 82. Rewire pkg/webui and pkg/mcp onto Tasks, deleting the type-assert seams
+
+* status: open
+* priority: P1
+* type: task
+* depends-on: 78
+* created: 2026-07-26T12:14:55Z
+* updated: 2026-07-26T12:15:02Z
+
+`pkg/mcp.NewServer(store meads.Tasks, ...)`; `pkg/webui.Server.Store meads.Tasks`.
+
+Deletions the interface makes possible:
+
+* `storeLocation` + `fileLocator` (`webui/server.go:240-260`) become `store.Location()` + `store.Backend()`
+* `startWatcher` (`webui/watch.go:70`) switches on `Backend()` instead of asserting: git polls `Revision()`, md/csv runs fsnotify on `Location()`. `refSnapshotter` is deleted
+* the three hand-rolled test doubles go: `gitTaskStoreForTest` (`pkg/mcp/gitstore_test.go:23`), `gitTaskStoreStub` (`pkg/webui/watch_test.go:32`), and `noopStore` (`:269`) — whose "implements neither seam" case ceases to exist
+
+Move the three `meads.NewStore(memfs.New(), "TASKS.md")` call sites (`pkg/mcp/server_test.go:18`, `pkg/webui/handlers_test.go:20`, `pkg/webui/bind_test.go:20`) to `OpenTasksFS`.
+
+Keep the watcher's existing coverage: the git path must still fire after `git pack-refs` removes the loose ref file — that is exactly why git mode polls instead of using fsnotify.
+
+## 83. Webhook file field points at a phantom TASKS.md in git mode
+
+* status: open
+* priority: P2
+* type: bug
+* created: 2026-07-26T12:14:55Z
+
+`postWebhook` (`cmd/md/webhook.go:24`) has no `mode()` check, so in git mode it still emits `File: <cwd>/TASKS.md` — a path to a file that does not exist.
+
+Consumers scope events by that path's **directory** (e.g. rais's `tasksFileGovernsDir`: accept only if `filepath.Dir(file)` is the terminal's working dir or an ancestor). `md` does not walk up to find the tasks file, so at the project root the phantom path resolves to the right directory and everything works — identical to file mode.
+
+It misjudges `md` run from a **subdirectory**. In file mode that genuinely is a different (nonexistent) store, so rejecting is correct. In git mode it is the *same* repo-wide store, so the consumer silently drops a legitimate event — in rais's case, the agent task badge never appears.
+
+### Fix
+
+In git mode only, resolve `tasksFileAbs()` against `git rev-parse --show-toplevel` instead of `globals.Dir`. No new payload field, no consumer change, file mode untouched.
+
+## 84. Git-mode tasks carry no meta.created / meta.updated
+
+* status: open
+* priority: P3
+* type: bug
+* created: 2026-07-26T12:14:55Z
+
+`GitStore.Create`/`Update` (`pkg/meads/gitmutate.go`) set no `Meta` at all — grep confirms `"created"` appears nowhere in `gitmutate.go`/`gitstore.go`. File mode's `Store.Add` sets `t.Meta["created"]` (`pkg/meads/mutate.go:38-40`) and bumps `f.Meta["updated"]`.
+
+Since `created`/`updated` are not in `knownMetaKeys` (`task.go:42`), file-mode JSON carries `"meta":{"created":"..."}` while git-mode JSON omits `meta` entirely. Task 57's own design doc specifies both fields in `task.json`, so this is an undocumented divergence from the design, not a deliberate omission.
+
+Not required by rais — its frontend never reads `task.meta` — but it is a real `md list --json` / `md get --json` parity gap between backends.
+
+## 85. Release meads v0.36.0
+
+* status: open
+* priority: P1
+* type: task
+* depends-on: 81,82,83,76
+* created: 2026-07-26T12:14:55Z
+* updated: 2026-07-26T14:38:42Z
+
+`go fmt ./...`, `go test ./...`, tag `v0.36.0` and push.
+
+Call out in the release notes that this is a **breaking** v0 change:
+
+* `meads.TaskStore` is gone, replaced by `meads.Tasks`
+* `pkg/mcp.NewServer` and `pkg/webui.Server.Store` now take `meads.Tasks`
+* `meads.NewStore` / `meads.NewFileStore` are no longer the entry point — use `meads.OpenTasks(dir)`, `meads.OpenTasksFile(file)` or `meads.OpenTasksFS(fs, file)`
+
+rais's integration work is blocked on this tag.
