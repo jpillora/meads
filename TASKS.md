@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-07-26T06:31:55Z
+* updated: 2026-07-26T10:30:36Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -856,6 +856,7 @@ not absolute, and look for refs there. Everything else stays as is.
 * priority: P1
 * type: bug
 * created: 2026-07-26T06:31:55Z
+* updated: 2026-07-26T10:30:36Z
 
 A teammate who clones a git-mode repo gets no task refs, so meads auto-detects
 file mode and `md add` starts a second, divergent task store in TASKS.md.
@@ -940,3 +941,38 @@ construction - there is no local state to lose.
   after at most one documented bootstrap command
 - `md add` in a fresh clone of a git-mode repo never silently creates TASKS.md
 - A test covers clone -> bootstrap -> list -> add -> push round trip
+
+### Verified workaround (works today)
+
+Fetching straight into the local namespace bootstraps a fresh clone. Safe
+precisely because the local namespace is empty, so there is nothing to lose:
+
+```
+git clone <repo> && cd <repo>
+git fetch origin '+refs/meads/*:refs/meads/*'
+md list      # now shows the repo's real tasks
+```
+
+Confirmed 2026-07-26 against a fresh clone of github.com/jpillora/accord after
+migrating it to git mode: `md list` showed "no tasks found" before, and all 97
+active tasks after.
+
+Do NOT bootstrap with `md init --git` in a clone - it succeeds, writes an
+unrelated fresh config ref, and the next push is rejected non-fast-forward (see
+above).
+
+So the fix is largely about doing this automatically and refusing to do the
+wrong thing, not about inventing a new mechanism.
+
+### Also seen while migrating accord
+
+Pushing the whole namespace in one go stalls. `git push origin
+'refs/meads/*:refs/meads/*'` with 113 refs made no progress in over 3 minutes
+and landed zero refs; a single-ref push completed instantly, and pushing in
+batches of 20 completed all 113 in well under a minute.
+
+Worth checking whether cmd/md/push.go's auto-push (which uses exactly that
+wildcard refspec, with a pushTimeout) hits the same wall once a repo has many
+tasks - if so it would time out every interval and never converge, silently.
+Probably deserves its own task once confirmed.
+
