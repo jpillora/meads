@@ -940,4 +940,3 @@ construction - there is no local state to lose.
   after at most one documented bootstrap command
 - `md add` in a fresh clone of a git-mode repo never silently creates TASKS.md
 - A test covers clone -> bootstrap -> list -> add -> push round trip
-
