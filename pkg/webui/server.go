@@ -13,24 +13,21 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
-	"github.com/go-git/go-billy/v5"
 	"github.com/jpillora/meads/pkg/meads"
 )
 
 // Config controls a Server.
 type Config struct {
-	// Store is the task backend to serve. meads.FileTasks (file mode) and
-	// meads.GitTasks (git mode, as wrapped by cmd/md/webui.go) both satisfy
-	// it - see meads.Tasks' doc comment. Richer capabilities that only one
-	// backend can offer - a file to fsnotify, or ref oids to poll for
-	// changes - are discovered through the optional fileLocator/
-	// refSnapshotter interfaces (see watch.go and storeLocation) rather
-	// than required by this field's type.
+	// Store is the task backend to serve: meads.FileTasks (file mode) and
+	// meads.GitTasks (git mode) both satisfy it - see meads.Tasks' doc
+	// comment. Everything backend-specific the server needs - which change
+	// watcher to run, what to call the store in the startup banner and in
+	// GET /api/file - comes from Backend(), Location() and Revision() on
+	// that interface (see watch.go and storeLocation), so no capability is
+	// discovered by type-asserting the concrete backend.
 	Store meads.Tasks
 	// Host to bind, e.g. "127.0.0.1". Defaults to 127.0.0.1.
 	Host string
@@ -232,30 +229,16 @@ type startInfo struct {
 	Format string `json:"format"`
 }
 
-// fileLocator is implemented by file-mode stores (namely meads.FileTasks,
-// delegating to its *meads.Store) to describe the on-disk file backing
-// them. storeLocation and the fsnotify watcher (startFileWatcher, in
-// watch.go) both use it. Git mode has no single file and does not implement
-// it; storeLocation falls back to a fixed description in that case, and
-// startWatcher falls back to refSnapshotter instead (see watch.go).
-type fileLocator interface {
-	FS() billy.Filesystem
-	Path() string
-}
-
 // storeLocation returns a display path and a short format label ("md",
 // "csv", or "git") for store, for the startup banner (printStartLine) and
 // GET /api/file (handleFileInfo).
+//
+// Both halves are on meads.Tasks now. This used to type-assert an optional
+// fileLocator (FS/Path) and infer the label from a ".csv" suffix, treating
+// "does not implement it" as git - which meant a new backend would have
+// been silently reported as git rather than as itself.
 func storeLocation(store meads.Tasks) (path, format string) {
-	fl, ok := store.(fileLocator)
-	if !ok {
-		return meads.TasksRefPrefix + "*", "git"
-	}
-	path = filepath.Join(fl.FS().Root(), fl.Path())
-	if strings.HasSuffix(fl.Path(), ".csv") {
-		return path, "csv"
-	}
-	return path, "md"
+	return store.Location(), store.Backend().String()
 }
 
 func randomToken() (string, error) {

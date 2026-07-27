@@ -15,17 +15,17 @@ import (
 // Tests for the two watcher implementations startWatcher dispatches between
 // (git mode phase 9, TASKS #66): fsnotify on a single tasks file in file
 // mode (startFileWatcher, unchanged from before this phase - see git log for
-// the pre-phase-9 version of this file), and periodic ref-oid polling in git
-// mode (startRefWatcher), which exists specifically because a ref can move
+// the pre-phase-9 version of this file), and periodic revision polling in
+// git mode (startRevWatcher), which exists specifically because a ref can move
 // between a loose file and .git/packed-refs with no loose-file event at all
 // - something fsnotify on .git/refs/meads/tasks/** would miss entirely (see
 // pollInterval's doc comment in watch.go).
 
-// --- git mode: ref-oid polling --------------------------------------------
+// --- git mode: revision polling -------------------------------------------
 
 // newGitTasks creates a real temporary git repository (t.TempDir()) and
-// returns a meads.GitTasks backed by it (meads.Tasks + refSnapshotter, the
-// same shape cmd/md/webui.go serves), plus the repo dir.
+// returns a meads.GitTasks backed by it (the same shape cmd/md/webui.go
+// serves), plus the repo dir.
 func newGitTasks(t *testing.T) (meads.GitTasks, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -76,7 +76,7 @@ func TestStartWatcher_GitMode_FiresOnRefChange(t *testing.T) {
 	}
 	defer w.Close()
 	if w.fs != nil {
-		t.Fatal("startWatcher against a refSnapshotter store should not start an fsnotify watcher")
+		t.Fatal("startWatcher in git mode should poll revisions, not start an fsnotify watcher")
 	}
 
 	if _, err := store.Add(meads.Task{Title: "a task"}); err != nil {
@@ -152,35 +152,11 @@ func TestStartWatcher_GitMode_NoChangeNoEvent(t *testing.T) {
 	assertNoEvent(t, ch, 2*pollInterval)
 }
 
-func TestRefOIDsEqual(t *testing.T) {
-	a := map[string]meads.OID{"refs/meads/tasks/1": "aaa", "refs/meads/tasks/2": "bbb"}
-	same := map[string]meads.OID{"refs/meads/tasks/1": "aaa", "refs/meads/tasks/2": "bbb"}
-	if !refOIDsEqual(a, same) {
-		t.Error("identical maps should compare equal")
-	}
-	if !refOIDsEqual(nil, map[string]meads.OID{}) {
-		t.Error("nil and empty should compare equal")
-	}
-	changedValue := map[string]meads.OID{"refs/meads/tasks/1": "aaa", "refs/meads/tasks/2": "ccc"}
-	if refOIDsEqual(a, changedValue) {
-		t.Error("a changed oid should compare unequal")
-	}
-	fewer := map[string]meads.OID{"refs/meads/tasks/1": "aaa"}
-	if refOIDsEqual(a, fewer) {
-		t.Error("a removed ref should compare unequal")
-	}
-	more := map[string]meads.OID{"refs/meads/tasks/1": "aaa", "refs/meads/tasks/2": "bbb", "refs/meads/tasks/3": "ccc"}
-	if refOIDsEqual(a, more) {
-		t.Error("an added ref should compare unequal")
-	}
-}
-
 // --- file mode: fsnotify, still reachable through the same dispatcher -----
 
 // TestStartWatcher_FileMode_StillFsnotify proves file mode is unaffected by
-// the git-mode dispatch added in front of it: meads.FileTasks satisfies both
-// meads.Tasks and (via its FS/Path delegates) fileLocator, so startWatcher
-// must still pick the fsnotify path and fire on an ordinary write. fsnotify
+// the git-mode dispatch in front of it: a markdown/csv Backend() must still
+// pick the fsnotify path and fire on an ordinary write. fsnotify
 // needs a real filesystem, so this uses meads.NewFileStore under t.TempDir()
 // rather than memfs.
 func TestStartWatcher_FileMode_StillFsnotify(t *testing.T) {
@@ -202,7 +178,7 @@ func TestStartWatcher_FileMode_StillFsnotify(t *testing.T) {
 	}
 	defer w.Close()
 	if w.fs == nil {
-		t.Fatal("startWatcher against a fileLocator store should start an fsnotify watcher")
+		t.Fatal("startWatcher in file mode should start an fsnotify watcher")
 	}
 
 	if _, err := store.Add(meads.Task{Title: "second"}); err != nil {
@@ -210,39 +186,4 @@ func TestStartWatcher_FileMode_StillFsnotify(t *testing.T) {
 	}
 
 	waitForEvent(t, ch, 2*time.Second)
-}
-
-func TestStartWatcher_NeitherInterface_ReturnsNilNotError(t *testing.T) {
-	bus := newEventBus()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	w, err := startWatcher(ctx, noopStore{}, bus, os.Stderr)
-	if err != nil {
-		t.Fatalf("startWatcher with a store implementing neither optional interface should not error, got: %v", err)
-	}
-	if w != nil {
-		t.Fatalf("startWatcher with a store implementing neither optional interface = %v, want nil watcher", w)
-	}
-	w.Close() // must be a safe no-op on a nil *watcher
-}
-
-// noopStore satisfies meads.Tasks but neither fileLocator nor
-// refSnapshotter, exercising startWatcher's final fallback branch.
-type noopStore struct{}
-
-func (noopStore) Backend() meads.Backend                         { return meads.BackendMarkdown }
-func (noopStore) Location() string                               { return "" }
-func (noopStore) Exists() (bool, error)                          { return false, nil }
-func (noopStore) Revision() (string, error)                      { return "", nil }
-func (noopStore) Get(ids []int) ([]meads.Task, error)            { return nil, nil }
-func (noopStore) GetWithHistory(ids []int) ([]meads.Task, error) { return nil, nil }
-func (noopStore) GetHistory() ([]meads.Task, error)              { return nil, nil }
-func (noopStore) Ready() ([]meads.Task, error)                   { return nil, nil }
-func (noopStore) FindCycles() ([][]int, error)                   { return nil, nil }
-func (noopStore) Doctor() ([]meads.DoctorFix, error)             { return nil, nil }
-func (noopStore) Add(t meads.Task) (int, error)                  { return 0, nil }
-func (noopStore) Update(id int, fn func(*meads.Task)) error      { return nil }
-func (noopStore) Delete(id int) error                            { return nil }
-func (noopStore) Sync(ctx context.Context) (*meads.SyncReport, error) {
-	return &meads.SyncReport{Integrate: &meads.IntegrateReport{}}, nil
 }

@@ -29,11 +29,11 @@ import (
 // events.
 const pollInterval = 1 * time.Second
 
-// watcher watches a Store for changes and publishes a "file_changed" event
+// watcher watches a Tasks for changes and publishes a "file_changed" event
 // to an eventBus whenever one is observed. Two implementations share this
-// type: fsnotify on the underlying file in file mode (startFileWatcher, via
-// fileLocator), or periodic ref-oid polling in git mode (startRefWatcher,
-// via refSnapshotter) - see startWatcher for how the choice is made.
+// type: fsnotify on the underlying file in file mode (startFileWatcher), or
+// periodic revision polling in git mode (startRevWatcher) - see
+// startWatcher for how the choice is made.
 type watcher struct {
 	cancel context.CancelFunc
 	fs     *fsnotify.Watcher // nil for a ref watcher; only the file watcher has an OS handle to close
@@ -49,40 +49,31 @@ func (w *watcher) Close() {
 	}
 }
 
-// refSnapshotter is implemented by git-mode stores to support
-// startRefWatcher. meads.GitTasks is the implementation (cmd/md/webui.go's
-// gitWatchStore embeds it): no CLI command needs TaskRefOIDs, only this
-// watcher, so it is not part of the plain meads.Tasks seam.
-type refSnapshotter interface {
-	// TaskRefOIDs returns the current commit oid of every task ref, keyed by
-	// full ref name (see GitStore.TaskRefOIDs). Called once per
-	// pollInterval tick; any difference from the previous call's result (a
-	// ref added, removed, or moved to a new oid) is treated as a change.
-	TaskRefOIDs() (map[string]meads.OID, error)
-}
-
-// startWatcher begins watching store for changes and forwards them to bus.
-// It prefers ref-oid polling (git mode, via refSnapshotter) over fsnotify
-// (file mode, via fileLocator) - see pollInterval's doc comment for why
-// polling is necessary in git mode specifically. In practice a given store
-// implements exactly one of the two. Returns a nil watcher and nil error if
-// store implements neither: nothing to watch, not a failure.
+// startWatcher begins watching store for changes and forwards them to bus,
+// choosing the strategy from store.Backend(): revision polling in git mode,
+// fsnotify in file mode - see pollInterval's doc comment for why polling is
+// necessary in git mode specifically.
+//
+// It used to discover the two strategies by type-asserting a pair of
+// optional interfaces (refSnapshotter, fileLocator), with a third "neither,
+// so watch nothing" branch that was unreachable for any real store. Backend
+// is on meads.Tasks itself and is total, so the choice is now a switch over
+// two cases and every store is watchable.
 func startWatcher(ctx context.Context, store meads.Tasks, bus *eventBus, stderr io.Writer) (*watcher, error) {
-	if rs, ok := store.(refSnapshotter); ok {
-		return startRefWatcher(ctx, rs, bus), nil
+	if store.Backend() == meads.BackendGit {
+		return startRevWatcher(ctx, store, bus), nil
 	}
-	if fl, ok := store.(fileLocator); ok {
-		return startFileWatcher(ctx, fl, bus, stderr)
-	}
-	return nil, nil
+	return startFileWatcher(ctx, store, bus, stderr)
 }
 
 // --- file mode: fsnotify on the tasks file --------------------------------
 
-// startFileWatcher watches the parent directory of fl's file and publishes a
-// debounced "file_changed" event whenever the target file is written.
-func startFileWatcher(ctx context.Context, fl fileLocator, bus *eventBus, stderr io.Writer) (*watcher, error) {
-	path := filepath.Join(fl.FS().Root(), fl.Path())
+// startFileWatcher watches the parent directory of store's file and
+// publishes a debounced "file_changed" event whenever the target file is
+// written. The file is meads.Tasks.Location(), which for a file backend is
+// the absolute on-disk path.
+func startFileWatcher(ctx context.Context, store meads.Tasks, bus *eventBus, stderr io.Writer) (*watcher, error) {
+	path := store.Location()
 	dir := filepath.Dir(path)
 	base := filepath.Base(path)
 
@@ -140,54 +131,45 @@ func (w *watcher) runFile(ctx context.Context, targetBase string, bus *eventBus,
 	}
 }
 
-// --- git mode: ref-oid polling --------------------------------------------
+// --- git mode: revision polling -------------------------------------------
 
-// startRefWatcher periodically polls rs.TaskRefOIDs (every pollInterval) and
-// publishes "file_changed" whenever the returned set of ref oids differs
-// from the previous poll - see pollInterval's doc comment for why polling,
-// rather than fsnotify, is used here.
-func startRefWatcher(ctx context.Context, rs refSnapshotter, bus *eventBus) *watcher {
+// startRevWatcher periodically polls store.Revision (every pollInterval)
+// and publishes "file_changed" whenever it differs from the previous poll -
+// see pollInterval's doc comment for why polling, rather than fsnotify, is
+// used here.
+//
+// Revision is the same one `git for-each-ref` over the task refs it used to
+// compare by hand as a map of ref name -> oid, folded to a single token by
+// the library, so a tick is one string comparison instead of a map walk and
+// the map-equality helper is gone.
+func startRevWatcher(ctx context.Context, store meads.Tasks, bus *eventBus) *watcher {
 	ctx, cancel := context.WithCancel(ctx)
 	w := &watcher{cancel: cancel}
-	go w.runRefs(ctx, rs, bus)
+	go w.runRevs(ctx, store, bus)
 	return w
 }
 
-func (w *watcher) runRefs(ctx context.Context, rs refSnapshotter, bus *eventBus) {
+func (w *watcher) runRevs(ctx context.Context, store meads.Tasks, bus *eventBus) {
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
-	// Best-effort baseline: if this first read fails, prev stays nil and
-	// the next successful read (almost certainly different from "no refs
-	// known yet") fires one extra event - harmless, and simpler than
+	// Best-effort baseline: if this first read fails, prev stays "" and the
+	// next successful read (necessarily different, since a real revision is
+	// never empty) fires one extra event - harmless, and simpler than
 	// special-casing a failed baseline read.
-	prev, _ := rs.TaskRefOIDs()
+	prev, _ := store.Revision()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			cur, err := rs.TaskRefOIDs()
+			cur, err := store.Revision()
 			if err != nil {
 				continue // transient git failure; try again next tick
 			}
-			if !refOIDsEqual(prev, cur) {
+			if cur != prev {
 				prev = cur
 				bus.publish(event{Kind: "file_changed"})
 			}
 		}
 	}
-}
-
-// refOIDsEqual reports whether a and b contain exactly the same ref name ->
-// oid pairs.
-func refOIDsEqual(a, b map[string]meads.OID) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for k, v := range a {
-		if b[k] != v {
-			return false
-		}
-	}
-	return true
 }

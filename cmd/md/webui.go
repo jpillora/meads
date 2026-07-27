@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -10,7 +9,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/jpillora/meads/pkg/meads"
 	"github.com/jpillora/meads/pkg/webui"
 )
 
@@ -27,7 +25,7 @@ func (c *webuiCmd) Run() error {
 	if err := c.globals.modeConflictErr(); err != nil {
 		return err
 	}
-	store, err := c.store()
+	store, err := c.globals.tasks()
 	if err != nil {
 		return err
 	}
@@ -55,45 +53,6 @@ func (c *webuiCmd) Run() error {
 	}
 
 	return <-done
-}
-
-// store resolves the meads.Tasks to serve over the web UI, mirroring
-// globals.tasks()' three-way split (forced branches construct directly;
-// auto-detect delegates to meads.OpenTasksGit, which runs the one-shot
-// clone resolution - see pkg/meads/clone.go). File mode passes
-// meads.FileTasks, which delegates FS()/Path() to the underlying
-// *meads.Store so the fsnotify watcher and startup banner keep working (see
-// pkg/webui's fileLocator). Git mode wraps meads.GitTasks in gitWatchStore
-// so the ref-polling watcher can use GitStore.TaskRefOIDs (see pkg/webui's
-// refSnapshotter).
-func (c *webuiCmd) store() (meads.Tasks, error) {
-	g := c.globals
-	if g.FileMode || g.explicitTasksFile() {
-		return meads.NewFileTasks(g.store(), g.git()), nil
-	}
-	if g.GitMode {
-		if !g.inGitRepo() {
-			return nil, fmt.Errorf("--git requires a git repository")
-		}
-		return gitWatchStore{meads.NewGitTasks(g.gitStore())}, nil
-	}
-	tasks, err := meads.OpenTasksGit(g.Dir, g.git())
-	if err != nil {
-		return nil, err
-	}
-	if gt, ok := tasks.(meads.GitTasks); ok {
-		return gitWatchStore{gt}, nil
-	}
-	return tasks, nil
-}
-
-// gitWatchStore is meads.GitTasks for the web UI's git-mode wiring: the
-// embedded type already carries TaskRefOIDs (promoted here through
-// embedding), which pkg/webui's refSnapshotter discovers structurally for
-// its change-detection watcher (see pkg/webui/watch.go). TaskRefOIDs is not
-// part of meads.Tasks itself: no CLI command needs it, only the watcher.
-type gitWatchStore struct {
-	meads.GitTasks
 }
 
 // waitAndOpen polls until the server has an address, then opens it in the browser.

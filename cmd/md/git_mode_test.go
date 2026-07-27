@@ -187,28 +187,29 @@ func TestIntegration_GitMode_BeadsImportUnsupported(t *testing.T) {
 }
 
 // TestIntegration_GitMode_Mcp_NoLongerGated is mcp's un-gating regression
-// guard (task 66 phase 9): unlike beads-import above, mcp now wires
-// meads.GitTasks directly (mcpCmd.store), so it must resolve to that adapter
-// rather than erroring with "not supported in git mode yet" - and, more
-// than just being the right TYPE, actually read and write through to the
-// real GitStore behind h.globals.
+// guard (task 66 phase 9): unlike beads-import above, mcp serves whatever
+// globals.tasks() resolves - meads.GitTasks in git mode - rather than
+// erroring with "not supported in git mode yet". More than just being the
+// right TYPE, it must read and write through to the real GitStore behind
+// h.globals. (mcpCmd had its own store() until task 82; it duplicated
+// globals.tasks() exactly, so it now calls it.)
 func TestIntegration_GitMode_Mcp_NoLongerGated(t *testing.T) {
 	h := gitModeHarness(t)
-	store, err := (&mcpCmd{globals: h.globals}).store()
+	store, err := h.globals.tasks()
 	if err != nil {
-		t.Fatalf("mcpCmd.store() in git mode: %v", err)
+		t.Fatalf("tasks() in git mode: %v", err)
 	}
 	if _, ok := store.(meads.GitTasks); !ok {
-		t.Fatalf("mcpCmd.store() in git mode = %T, want meads.GitTasks", store)
+		t.Fatalf("tasks() in git mode = %T, want meads.GitTasks", store)
 	}
 	id, err := store.Add(meads.Task{Title: "via mcp store"})
 	if err != nil {
-		t.Fatalf("Add via mcpCmd.store(): %v", err)
+		t.Fatalf("Add via tasks(): %v", err)
 	}
 	gs := meads.NewGitStore(h.globals.git())
 	got, err := gs.Get([]int{id})
 	if err != nil || len(got) != 1 || got[0].Title != "via mcp store" {
-		t.Fatalf("task added via mcpCmd.store() not visible in GitStore: got=%v err=%v", got, err)
+		t.Fatalf("task added via tasks() not visible in GitStore: got=%v err=%v", got, err)
 	}
 }
 
@@ -220,9 +221,9 @@ func TestIntegration_GitMode_Mcp_OutsideGitRepo_ErrorsClearly(t *testing.T) {
 		TasksFile: "TASKS.md",
 		GitMode:   true,
 	}
-	_, err := (&mcpCmd{globals: g}).store()
+	_, err := g.tasks()
 	if err == nil {
-		t.Fatal("mcpCmd.store() with --git forced outside a git repository should error, got nil")
+		t.Fatal("tasks() with --git forced outside a git repository should error, got nil")
 	}
 	if got := err.Error(); got != "--git requires a git repository" {
 		t.Errorf("error = %q, want a clear \"--git requires a git repository\" message", got)
@@ -230,34 +231,34 @@ func TestIntegration_GitMode_Mcp_OutsideGitRepo_ErrorsClearly(t *testing.T) {
 }
 
 // TestIntegration_GitMode_Webui_NoLongerGated is webui's un-gating
-// regression guard (task 66 phase 9): unlike beads-import above, webui now
-// wires gitWatchStore (which embeds meads.GitTasks, so it satisfies
-// meads.Tasks the same way), so it must resolve to that adapter rather
-// than erroring - and, more than just being the right type, actually read
-// and write through to the real GitStore, with a working TaskRefOIDs on top
-// for pkg/webui's watcher.
+// regression guard (task 66 phase 9): webui serves whatever
+// globals.tasks() resolves - meads.GitTasks in git mode - rather than
+// erroring, and must read and write through to the real GitStore, with a
+// working Revision() on top for pkg/webui's change watcher. (webui wrapped
+// this in a gitWatchStore until task 82, purely to expose TaskRefOIDs to a
+// refSnapshotter type-assert; the watcher polls Revision() now, so both the
+// wrapper and webuiCmd.store() are gone.)
 func TestIntegration_GitMode_Webui_NoLongerGated(t *testing.T) {
 	h := gitModeHarness(t)
-	store, err := (&webuiCmd{globals: h.globals}).store()
+	store, err := h.globals.tasks()
 	if err != nil {
-		t.Fatalf("webuiCmd.store() in git mode: %v", err)
+		t.Fatalf("tasks() in git mode: %v", err)
 	}
-	gws, ok := store.(gitWatchStore)
-	if !ok {
-		t.Fatalf("webuiCmd.store() in git mode = %T, want gitWatchStore", store)
+	if _, ok := store.(meads.GitTasks); !ok {
+		t.Fatalf("tasks() in git mode = %T, want meads.GitTasks", store)
 	}
 	id, err := store.Add(meads.Task{Title: "via webui store"})
 	if err != nil {
-		t.Fatalf("Add via webuiCmd.store(): %v", err)
+		t.Fatalf("Add via tasks(): %v", err)
 	}
 	gs := meads.NewGitStore(h.globals.git())
 	got, err := gs.Get([]int{id})
 	if err != nil || len(got) != 1 || got[0].Title != "via webui store" {
-		t.Fatalf("task added via webuiCmd.store() not visible in GitStore: got=%v err=%v", got, err)
+		t.Fatalf("task added via tasks() not visible in GitStore: got=%v err=%v", got, err)
 	}
-	oids, err := gws.TaskRefOIDs()
-	if err != nil || len(oids) != 1 {
-		t.Fatalf("gitWatchStore.TaskRefOIDs() = %v, err=%v, want exactly 1 ref", oids, err)
+	rev, err := store.Revision()
+	if err != nil || rev == "" {
+		t.Fatalf("Revision() = %q, err=%v, want a non-empty change token for the watcher", rev, err)
 	}
 }
 
@@ -269,9 +270,9 @@ func TestIntegration_GitMode_Webui_OutsideGitRepo_ErrorsClearly(t *testing.T) {
 		TasksFile: "TASKS.md",
 		GitMode:   true,
 	}
-	_, err := (&webuiCmd{globals: g}).store()
+	_, err := g.tasks()
 	if err == nil {
-		t.Fatal("webuiCmd.store() with --git forced outside a git repository should error, got nil")
+		t.Fatal("tasks() with --git forced outside a git repository should error, got nil")
 	}
 	if got := err.Error(); got != "--git requires a git repository" {
 		t.Errorf("error = %q, want a clear \"--git requires a git repository\" message", got)
@@ -292,9 +293,9 @@ func TestIntegration_GitMode_Webui_EndToEnd(t *testing.T) {
 		t.Fatalf("add: %v", err)
 	}
 
-	store, err := (&webuiCmd{globals: h.globals}).store()
+	store, err := h.globals.tasks()
 	if err != nil {
-		t.Fatalf("webuiCmd.store(): %v", err)
+		t.Fatalf("tasks(): %v", err)
 	}
 	srv, err := webui.New(webui.Config{Store: store, Print: "none"})
 	if err != nil {

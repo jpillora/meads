@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-07-27T23:50:52Z
+* updated: 2026-07-27T23:55:26Z
 * max-id: 88
 * next-id: 13
 
@@ -790,27 +790,6 @@ not absolute, and look for refs there. Everything else stays as is.
   commands, matching the main checkout
 - A test covers the worktree layout
 
-## 82. Rewire pkg/webui and pkg/mcp onto Tasks, deleting the type-assert seams
-
-* status: open
-* priority: P1
-* type: task
-* depends-on: 
-* created: 2026-07-26T12:14:55Z
-* updated: 2026-07-26T12:15:02Z
-
-`pkg/mcp.NewServer(store meads.Tasks, ...)`; `pkg/webui.Server.Store meads.Tasks`.
-
-Deletions the interface makes possible:
-
-* `storeLocation` + `fileLocator` (`webui/server.go:240-260`) become `store.Location()` + `store.Backend()`
-* `startWatcher` (`webui/watch.go:70`) switches on `Backend()` instead of asserting: git polls `Revision()`, md/csv runs fsnotify on `Location()`. `refSnapshotter` is deleted
-* the three hand-rolled test doubles go: `gitTaskStoreForTest` (`pkg/mcp/gitstore_test.go:23`), `gitTaskStoreStub` (`pkg/webui/watch_test.go:32`), and `noopStore` (`:269`) — whose "implements neither seam" case ceases to exist
-
-Move the three `meads.NewStore(memfs.New(), "TASKS.md")` call sites (`pkg/mcp/server_test.go:18`, `pkg/webui/handlers_test.go:20`, `pkg/webui/bind_test.go:20`) to `OpenTasksFS`.
-
-Keep the watcher's existing coverage: the git path must still fire after `git pack-refs` removes the loose ref file — that is exactly why git mode polls instead of using fsnotify.
-
 ## 83. Webhook file field points at a phantom TASKS.md in git mode
 
 * status: open
@@ -846,7 +825,7 @@ Not required by rais — its frontend never reads `task.meta` — but it is a re
 * status: open
 * priority: P1
 * type: task
-* depends-on: 82,83
+* depends-on: 83
 * created: 2026-07-26T12:14:55Z
 * updated: 2026-07-27T14:04:35Z
 

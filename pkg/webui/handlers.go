@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -52,9 +51,13 @@ func (s *Server) handleFileInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	path, format := storeLocation(s.cfg.Store)
+	// Git mode has no file to stat, so it reports no updated_at; a file
+	// backend over an in-memory filesystem has a Location that does not
+	// exist on disk either, and the failed stat leaves it empty the same
+	// way it always did.
 	updated := ""
-	if fl, ok := s.cfg.Store.(fileLocator); ok {
-		if fi, err := os.Stat(filepath.Join(fl.FS().Root(), fl.Path())); err == nil {
+	if s.cfg.Store.Backend() != meads.BackendGit {
+		if fi, err := os.Stat(s.cfg.Store.Location()); err == nil {
 			updated = fi.ModTime().UTC().Format(time.RFC3339)
 		}
 	}
