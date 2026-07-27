@@ -85,6 +85,10 @@ type InitResult struct {
 	// only (file backends have no remote plumbing and always report
 	// FetchRefspecNoOrigin).
 	FetchRefspec FetchRefspecOutcome
+	// AdoptedTasks is the number of task refs adopted from origin, or 0 for
+	// a fresh initialisation. Non-zero means the repo was a clone of an
+	// already-initialised git-mode remote and no new config ref was seeded.
+	AdoptedTasks int
 }
 
 // InitTasks initialises a task store in dir for backend b and returns it.
@@ -137,6 +141,18 @@ func InitTasks(dir string, b Backend) (InitResult, error) {
 			return InitResult{}, fmt.Errorf("git mode is already initialized (%s already has refs)", RefNamespace)
 		}
 		gs := NewGitStore(git)
+		// A fresh clone of a git-mode repo has an empty LOCAL namespace but
+		// an initialised origin: seeding a fresh config ref here would make
+		// the next push reject non-fast-forward over origin's real one, so
+		// adopt origin's refs instead (safe: the local namespace is empty,
+		// so there is nothing to lose).
+		if lsOut, err := originMeadsRefs(git); err == nil && strings.TrimSpace(lsOut) != "" {
+			tasks, outcome, err := adoptOriginRefs(git, lsOut)
+			if err != nil {
+				return InitResult{}, err
+			}
+			return InitResult{Tasks: NewGitTasks(gs), FetchRefspec: outcome, AdoptedTasks: tasks}, nil
+		}
 		if err := gs.SetConfig(DefaultConfig()); err != nil {
 			return InitResult{}, fmt.Errorf("writing default config: %w", err)
 		}

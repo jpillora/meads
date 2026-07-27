@@ -246,12 +246,12 @@ func TestIntegration_GitMode_DoctorRenumbersCrossClonedDuplicate(t *testing.T) {
 	if err := (&addCmd{globals: g1, Args: []string{"clone1's task"}}).Run(); err != nil {
 		t.Fatalf("add (clone1): %v", err)
 	}
-	runGit(t, clone1, "push", "origin", meads.RefNamespace+"*:"+meads.RefNamespace+"*")
 
-	// clone2 is fully independent: it creates its OWN first task before ever
-	// fetching clone1's state, so it also computes id 1 - create-if-absent
-	// cannot coordinate across a partition (gitmutate.go's Create doc
-	// comment).
+	// clone2 is fully independent: it is cloned and creates its OWN first
+	// task BEFORE clone1 pushes, so its init --git sees an empty origin
+	// (seeds fresh rather than adopting - see meads.InitTasks' adopt branch)
+	// and it also computes id 1 - create-if-absent cannot coordinate across
+	// a partition (gitmutate.go's Create doc comment).
 	clone2 := t.TempDir()
 	runGit(t, "", "clone", bareDir, clone2)
 	runGit(t, clone2, "config", "user.name", "Clone2")
@@ -263,6 +263,8 @@ func TestIntegration_GitMode_DoctorRenumbersCrossClonedDuplicate(t *testing.T) {
 	if err := (&addCmd{globals: g2, Args: []string{"clone2's task"}}).Run(); err != nil {
 		t.Fatalf("add (clone2): %v", err)
 	}
+
+	runGit(t, clone1, "push", "origin", meads.RefNamespace+"*:"+meads.RefNamespace+"*")
 
 	// A real plain `git fetch origin`, relying on the fetch refspec `md init
 	// --git` configured - lands clone1's conflicting id-1 task in

@@ -41,7 +41,14 @@ func (c *initCmd) runGit() error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("initialized git mode (%s*)\n", meads.RefNamespace)
+	if res.AdoptedTasks > 0 {
+		// The repo was a clone of an already-initialised git-mode remote:
+		// origin's refs were fetched, no fresh config ref seeded (see
+		// meads.InitTasks).
+		fmt.Printf("adopted %d task refs from origin\n", res.AdoptedTasks)
+	} else {
+		fmt.Printf("initialized git mode (%s*)\n", meads.RefNamespace)
+	}
 	switch res.FetchRefspec {
 	case meads.FetchRefspecNoOrigin:
 		fmt.Println("no 'origin' remote configured — skipping fetch refspec setup")

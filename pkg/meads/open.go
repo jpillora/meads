@@ -23,22 +23,59 @@ func Detect(dir string) (Backend, error) {
 	if err == nil && len(refs) > 0 {
 		return BackendGit, nil
 	}
-	if _, err := os.Stat(filepath.Join(dir, "TASKS.csv")); err == nil {
+	if fileExists(filepath.Join(dir, "TASKS.csv")) {
 		return BackendCSV, nil
 	}
 	return BackendMarkdown, nil
 }
 
-// OpenTasks opens dir's task store, whichever backend Detect finds - THE
-// entry point for library consumers. It always returns a usable store:
-// "nothing initialised yet" is Exists() == false, NOT an error (consumers
-// like rais's project scan need to tell those apart cheaply).
+// OpenTasks opens dir's task store - THE entry point for library
+// consumers. It always returns a usable store: "nothing initialised yet" is
+// Exists() == false, NOT an error (consumers like rais's project scan need
+// to tell those apart cheaply).
+//
+// Unlike Detect (which must stay pure, offline and cheap: rais calls it on
+// a ticker), OpenTasks additionally runs the ONE-SHOT clone resolution
+// (resolveCloneBackend) when the probe is ambiguous - no tasks file and no
+// local refs/meads/* is either an uninitialised repo or a fresh clone of a
+// git-mode repo, which only one remote round-trip can tell apart. The
+// answer is cached (adopted refs, or the InitCheckRef marker), so the
+// steady state stays at a single for-each-ref per call and the ls-remote
+// happens at most once per clone, ever.
 func OpenTasks(dir string) (Tasks, error) {
-	b, err := Detect(dir)
-	if err != nil {
-		return nil, err
+	return OpenTasksGit(dir, &ExecGit{Dir: dir})
+}
+
+// OpenTasksGit is OpenTasks with an explicit Git implementation for the
+// detection/resolution probes, so callers that already hold one (cmd/md's
+// globals) route every probe through it - which is also how tests count or
+// script git calls. The constructed store still derives its own git from
+// dir (see OpenTasksFile).
+func OpenTasksGit(dir string, git Git) (Tasks, error) {
+	meadsRefs, initChecked := probeInitState(git)
+	switch {
+	case len(meadsRefs) > 0:
+		return OpenTasksBackend(dir, BackendGit)
+	case fileExists(filepath.Join(dir, "TASKS.csv")):
+		return OpenTasksBackend(dir, BackendCSV)
+	case fileExists(filepath.Join(dir, "TASKS.md")):
+		// An existing tasks file is unambiguous file mode, never a reason
+		// to ask origin anything.
+		return OpenTasksBackend(dir, BackendMarkdown)
+	case initChecked:
+		// "Asked origin already; it has no refs/meads/*" - file mode, no
+		// network (see InitCheckRef).
+		return OpenTasksBackend(dir, BackendMarkdown)
+	default:
+		return OpenTasksBackend(dir, resolveCloneBackend(git))
 	}
-	return OpenTasksBackend(dir, b)
+}
+
+// fileExists reports whether path is present (any stat error reads as
+// "not", so detection paths never error on it).
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 // OpenTasksBackend opens dir's task store for a forced backend, bypassing

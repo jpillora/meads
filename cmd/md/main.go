@@ -232,11 +232,19 @@ func (g *globals) modeConflictErr() error {
 
 // tasks returns the meads.Tasks seam commands use to work against either
 // backend (meads.FileTasks over *meads.Store, or meads.GitTasks over
-// *meads.GitStore - see pkg/meads/tasks.go), computed from mode() and cached
-// in TaskStoreCache: mode() and git-mode construction each cost a git
-// subprocess spawn, and the answer cannot change within one md process's
-// lifetime, so a command's second call (e.g. warnCycles after the command's
-// own read) reuses the first result rather than spawning again.
+// *meads.GitStore - see pkg/meads/tasks.go), cached in TaskStoreCache:
+// detection and git-mode construction each cost git subprocess spawns, and
+// the answer cannot change within one md process's lifetime, so a command's
+// second call (e.g. warnCycles after the command's own read) reuses the
+// first result rather than spawning again.
+//
+// The forced branches (--file / explicit tasks file, then --git) construct
+// their stores directly, preserving mode()'s precedence. The auto-detect
+// branch delegates to meads.OpenTasks, which additionally runs the one-shot
+// clone resolution: a fresh clone of a git-mode repo is adopted (origin's
+// refs fetched) instead of silently falling back to file mode - see
+// pkg/meads/clone.go. mode() itself stays pure for the commands that only
+// dispatch on it (doctor, import, autoPush).
 //
 // Construction can fail where mode() alone cannot: forcing git mode (--git
 // or MEADS_GIT) outside a git repository has no cheap silent fallback the
@@ -249,15 +257,23 @@ func (g *globals) tasks() (meads.Tasks, error) {
 	if err := g.modeConflictErr(); err != nil {
 		return nil, err
 	}
-	if g.mode() == modeGit {
+	if g.FileMode || g.explicitTasksFile() {
+		g.TaskStoreCache = meads.NewFileTasks(g.store(), g.git())
+		return g.TaskStoreCache, nil
+	}
+	if g.GitMode {
 		if !g.inGitRepo() {
 			return nil, fmt.Errorf("--git requires a git repository")
 		}
 		g.TaskStoreCache = meads.NewGitTasks(g.gitStore())
 		return g.TaskStoreCache, nil
 	}
-	g.TaskStoreCache = meads.NewFileTasks(g.store(), g.git())
-	return g.TaskStoreCache, nil
+	tasks, err := meads.OpenTasksGit(g.Dir, g.git())
+	if err != nil {
+		return nil, err
+	}
+	g.TaskStoreCache = tasks
+	return tasks, nil
 }
 
 type root struct {
