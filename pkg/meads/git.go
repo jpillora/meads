@@ -80,12 +80,49 @@ func outputContext(ctx context.Context, git Git, args ...string) (string, error)
 	return git.Output(args...)
 }
 
+// CombinedOutputGit is a second OPTIONAL half of Git, for the one kind of
+// command whose OUTPUT is meaningful even when the command FAILS.
+//
+// `git push --porcelain` is the case that forces it: a rejected push exits
+// non-zero, and its porcelain status lines - the only stable way to tell a
+// divergence apart from an auth failure or an offline remote (see
+// PushRejected) - are exactly what it printed on the way out. Run discards
+// stdout entirely and Output/OutputContext discard it on a non-zero exit,
+// so neither can see them. Like ContextGit this is discovered by type
+// assert rather than added to Git, so test fakes do not have to grow a
+// method they have no use for.
+type CombinedOutputGit interface {
+	// CombinedOutputContext runs args bounded by ctx and returns stdout and
+	// stderr interleaved, ALWAYS - including alongside a non-nil error.
+	CombinedOutputContext(ctx context.Context, args ...string) (string, error)
+}
+
+// combinedOutputContext runs args on git and returns its combined output
+// even on failure, when git can do that.
+//
+// The fallback for a Git that is not a CombinedOutputGit is Output, which
+// yields "" on failure: such a Git is a test fake backed by memory, which
+// neither talks to a remote nor produces porcelain status lines, so the
+// only thing lost is a classification that had nothing to classify.
+func combinedOutputContext(ctx context.Context, git Git, args ...string) (string, error) {
+	if cg, ok := git.(CombinedOutputGit); ok {
+		return cg.CombinedOutputContext(ctx, args...)
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	return git.Output(args...)
+}
+
 // ExecGit implements Git by shelling out to the git CLI.
 type ExecGit struct {
 	Dir string
 }
 
-var _ ContextGit = (*ExecGit)(nil)
+var (
+	_ ContextGit        = (*ExecGit)(nil)
+	_ CombinedOutputGit = (*ExecGit)(nil)
+)
 
 // waitDelay bounds how long a ctx-bounded command waits AFTER the deadline
 // killed git itself, before giving up on its output pipes and returning.
@@ -178,6 +215,19 @@ func (g *ExecGit) OutputContext(ctx context.Context, args ...string) (string, er
 		return "", withContextErr(ctx, err)
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+// CombinedOutputContext is Output bounded by ctx that keeps stderr and
+// survives failure - see CombinedOutputGit. The output is returned in every
+// case, including a non-zero exit and a deadline kill, because for a
+// rejected push the output IS the diagnosis; the error is decorated with
+// ctx's own error for the same reason RunContext does it.
+func (g *ExecGit) CombinedOutputContext(ctx context.Context, args ...string) (string, error) {
+	out, err := g.command(ctx, args...).CombinedOutput()
+	if err != nil {
+		return string(out), withContextErr(ctx, err)
+	}
+	return string(out), nil
 }
 
 func (g *ExecGit) OutputWithInput(stdin string, args ...string) (string, error) {

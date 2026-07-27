@@ -131,7 +131,7 @@ func TestOpenTasks_CloneAdopts(t *testing.T) {
 	if id != 3 {
 		t.Errorf("Add id in an adopted clone = %d, want 3 (continuing origin's ids)", id)
 	}
-	if err := tasks2.Sync(t.Context()); err != nil {
+	if _, err := tasks2.Sync(t.Context()); err != nil {
 		t.Fatalf("Sync (push refs/meads/*) after adopt: %v", err)
 	}
 	if out, _ := (&ExecGit{Dir: origin}).Output("for-each-ref", "--format=%(refname)", TasksRefPrefix); strings.Count(out, "\n")+1 != 3 {
@@ -279,7 +279,7 @@ func TestInitTasks_CloneAdopts(t *testing.T) {
 		t.Error("second InitTasks after adopt should refuse (already initialized), got nil")
 	}
 	// And the push path is clean: no non-fast-forward rejection.
-	if err := res.Tasks.Sync(t.Context()); err != nil {
+	if _, err := res.Tasks.Sync(t.Context()); err != nil {
 		t.Errorf("Sync after adopt should push cleanly, got: %v", err)
 	}
 }

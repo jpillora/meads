@@ -169,7 +169,7 @@ func TestGitTasks_Sync_HonoursContext(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
 	defer cancel()
 	done := make(chan error, 1)
-	go func() { done <- NewGitTasks(gs).Sync(ctx) }()
+	go func() { _, err := NewGitTasks(gs).Sync(ctx); done <- err }()
 	select {
 	case err := <-done:
 		if !errors.Is(err, context.DeadlineExceeded) {
@@ -190,7 +190,7 @@ func TestGitTasks_Sync_AlreadyCancelledDoesNothing(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := NewGitTasks(gs).Sync(ctx); !errors.Is(err, context.Canceled) {
+	if _, err := NewGitTasks(gs).Sync(ctx); !errors.Is(err, context.Canceled) {
 		t.Errorf("Sync err = %v, want context.Canceled", err)
 	}
 	if n := spy.calls(); n != 0 {

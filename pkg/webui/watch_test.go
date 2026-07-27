@@ -243,4 +243,6 @@ func (noopStore) Doctor() ([]meads.DoctorFix, error)             { return nil, n
 func (noopStore) Add(t meads.Task) (int, error)                  { return 0, nil }
 func (noopStore) Update(id int, fn func(*meads.Task)) error      { return nil }
 func (noopStore) Delete(id int) error                            { return nil }
-func (noopStore) Sync(ctx context.Context) error                 { return nil }
+func (noopStore) Sync(ctx context.Context) (*meads.SyncReport, error) {
+	return &meads.SyncReport{Integrate: &meads.IntegrateReport{}}, nil
+}

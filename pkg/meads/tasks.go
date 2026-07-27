@@ -112,7 +112,39 @@ type Tasks interface {
 	// re-homing contended local tasks at fresh ids - see GitStore.Pull and
 	// GitStore.Doctor), then pushes refs/meads/*; file backends have
 	// nothing to sync and no-op.
-	Sync(ctx context.Context) error
+	//
+	// The report says what happened, and is never nil - including
+	// alongside a non-nil error, so a caller can still tell a divergence
+	// (SyncReport.Rejected: local refs intact, the next sync reconciles)
+	// from a genuine failure. Reporting it is the caller's job: nothing
+	// under pkg/meads prints.
+	Sync(ctx context.Context) (*SyncReport, error)
+}
+
+// SyncReport describes what one Sync did, as data, so a caller can report
+// or react to it without Sync itself printing anything: cmd/md renders it
+// to stderr on the command that caused it, and a server embedding meads
+// reacts to the id re-homes below, which rename a task out from under
+// anything holding its id.
+type SyncReport struct {
+	// Integrate is what the pull half reconciled - adopted ids,
+	// fast-forwarded ids, the config ref, and Doctor's fixes including the
+	// re-homes. Never nil, even when the pull did nothing at all (no
+	// origin, or nothing new), so callers never have to nil-check it.
+	Integrate *IntegrateReport
+	// PushOutput is the push attempt's combined output, verbatim and
+	// regardless of success: for a rejected push the output IS the
+	// diagnosis (see PushRejected). Empty when the push never ran because
+	// the pull failed first, and empty for file backends.
+	PushOutput string
+	// Rejected reports the push was refused as non-fast-forward
+	// (PushRejected over PushOutput). It is deliberately NOT an error on
+	// its own: the local refs are committed and safe, and the next sync's
+	// pull normally reconciles it - so a caller should log it and carry
+	// on, not treat it as a failed write. The push error is still
+	// returned alongside, so a caller that only checks err is never
+	// silently misled.
+	Rejected bool
 }
 
 // FileTasks adapts *Store to Tasks. git is the Git implementation
@@ -194,8 +226,12 @@ func (t FileTasks) Update(id int, fn func(*Task)) error { return t.store.Update(
 
 func (t FileTasks) Delete(id int) error { return t.store.Delete(id) }
 
-// Sync is a no-op: a file backend has nothing to publish.
-func (t FileTasks) Sync(context.Context) error { return nil }
+// Sync is a no-op: a file backend has nothing to publish. The report is
+// still non-nil and empty, so a caller can inspect it unconditionally
+// without caring which backend it holds.
+func (t FileTasks) Sync(context.Context) (*SyncReport, error) {
+	return &SyncReport{Integrate: &IntegrateReport{}}, nil
+}
 
 // FS returns the underlying filesystem, delegated from *Store so file-mode
 // consumers that discover capabilities structurally (pkg/webui's
@@ -318,21 +354,33 @@ func (t GitTasks) Delete(id int) error {
 // a deadline gets one (a remote git command is otherwise unbounded; see
 // ContextGit). The integration between them is local git work and is not
 // individually cancellable, so ctx is checked at that boundary instead.
-func (t GitTasks) Sync(ctx context.Context) error {
+func (t GitTasks) Sync(ctx context.Context) (*SyncReport, error) {
+	report := &SyncReport{Integrate: &IntegrateReport{}}
 	if err := ctx.Err(); err != nil {
-		return err
+		return report, err
 	}
-	if _, err := t.gs.PullContext(ctx); err != nil {
-		return err
+	integrated, err := t.gs.PullContext(ctx)
+	if err != nil {
+		return report, err
+	}
+	if integrated != nil {
+		report.Integrate = integrated
 	}
 	if err := ctx.Err(); err != nil {
-		return err
+		return report, err
 	}
+	// The push output is captured rather than discarded because a
+	// rejection is only diagnosable from git's own porcelain status lines
+	// (see PushRejected) - and it is captured on the FAILURE path too,
+	// which is the only path that has any.
 	refspec := RefNamespace + "*:" + RefNamespace + "*"
-	if err := runContext(ctx, t.gs.git, "push", "--porcelain", "origin", refspec); err != nil {
-		return fmt.Errorf("pushing %s to origin: %w", RefNamespace+"*", err)
+	out, err := combinedOutputContext(ctx, t.gs.git, "push", "--porcelain", "origin", refspec)
+	report.PushOutput = out
+	report.Rejected = PushRejected(out)
+	if err != nil {
+		return report, fmt.Errorf("pushing %s to origin: %w", RefNamespace+"*", err)
 	}
-	return nil
+	return report, nil
 }
 
 // TaskRefOIDs delegates GitStore.TaskRefOIDs so git-mode consumers that

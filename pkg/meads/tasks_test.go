@@ -122,8 +122,17 @@ func TestFileTasks_Revision_MissingFileErrors(t *testing.T) {
 
 func TestFileTasks_SyncIsNoOp(t *testing.T) {
 	ft := NewFileTasks(newTestStore(t, ""), nil)
-	if err := ft.Sync(context.Background()); err != nil {
+	report, err := ft.Sync(context.Background())
+	if err != nil {
 		t.Errorf("FileTasks.Sync = %v, want nil (nothing to publish)", err)
+	}
+	// Non-nil and empty, so a caller can inspect the report without first
+	// asking which backend it holds.
+	if report == nil || report.Integrate == nil {
+		t.Fatalf("FileTasks.Sync report = %+v, want a non-nil report with a non-nil Integrate", report)
+	}
+	if !report.Integrate.empty() || report.PushOutput != "" || report.Rejected {
+		t.Errorf("FileTasks.Sync report = %+v, want it empty", report)
 	}
 }
 
@@ -260,7 +269,7 @@ func TestGitTasks_SyncWithoutOriginErrors(t *testing.T) {
 	}
 	// No origin remote is configured, so the push must fail - Sync reports
 	// it rather than silently pretending the refs were published.
-	err := gt.Sync(context.Background())
+	_, err := gt.Sync(context.Background())
 	if err == nil {
 		t.Fatal("Sync with no origin remote should error, got nil")
 	}
@@ -274,7 +283,104 @@ func TestGitTasks_SyncCancelledContext(t *testing.T) {
 	gt := NewGitTasks(gs)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := gt.Sync(ctx); err == nil {
+	if _, err := gt.Sync(ctx); err == nil {
 		t.Fatal("Sync with a cancelled context should error before pushing, got nil")
+	}
+}
+
+// TestGitTasks_Sync_ReportsReHomeToCaller is task 87's point: a sync that
+// RENAMES a local task must say so through the Tasks interface. Before
+// this, Sync discarded Pull's IntegrateReport and returned a bare error, so
+// cmd/md (which calls Integrate itself) could print the re-home while a
+// library caller holding that id in its own durable state - rais keys agent
+// badges and .plans/<id>/ directories on it - saw nothing at all.
+//
+// The partition is the same one TestGitStore_Pull_TwoCloneRoundTrip builds:
+// two clones independently land on id 1, so clone2's sync re-homes its own
+// version at id 2 and lets origin's keep the id.
+func TestGitTasks_Sync_ReportsReHomeToCaller(t *testing.T) {
+	bare := t.TempDir()
+	runGit(t, bare, "init", "--bare", "-b", "main")
+
+	c1 := newDetectRepo(t)
+	gs1 := NewGitStore(&ExecGit{Dir: c1})
+	runGit(t, c1, "remote", "add", "origin", bare)
+	if _, err := EnsureFetchRefspec(&ExecGit{Dir: c1}); err != nil {
+		t.Fatalf("EnsureFetchRefspec (clone1): %v", err)
+	}
+	if err := gs1.SetConfig(DefaultConfig()); err != nil {
+		t.Fatalf("SetConfig (clone1): %v", err)
+	}
+	if _, err := gs1.Create(Task{Title: "clone1's task", Status: "open"}); err != nil {
+		t.Fatalf("Create (clone1): %v", err)
+	}
+	runGit(t, c1, "push", "origin", RefNamespace+"*:"+RefNamespace+"*")
+
+	c2 := newDetectRepo(t)
+	gs2 := NewGitStore(&ExecGit{Dir: c2})
+	runGit(t, c2, "remote", "add", "origin", bare)
+	if _, err := EnsureFetchRefspec(&ExecGit{Dir: c2}); err != nil {
+		t.Fatalf("EnsureFetchRefspec (clone2): %v", err)
+	}
+	if err := gs2.SetConfig(DefaultConfig()); err != nil {
+		t.Fatalf("SetConfig (clone2): %v", err)
+	}
+	if _, err := gs2.Create(Task{Title: "clone2's task", Status: "open"}); err != nil {
+		t.Fatalf("Create (clone2): %v", err)
+	}
+
+	report, err := NewGitTasks(gs2).Sync(t.Context())
+	if err != nil {
+		t.Fatalf("Sync (clone2): %v", err)
+	}
+	if report == nil || report.Integrate == nil {
+		t.Fatalf("Sync report = %+v, want a non-nil report with a non-nil Integrate", report)
+	}
+	fixes := report.Integrate.Fixes
+	if len(fixes) != 1 || fixes[0].OldID != 1 || fixes[0].NewID != 2 || fixes[0].Kind != DoctorFixDuplicate {
+		t.Fatalf("Integrate.Fixes = %+v, want exactly one {OldID:1 NewID:2 Kind:duplicate}", fixes)
+	}
+	// The re-home really happened, so a caller acting on the report (moving
+	// its own id-keyed state) is acting on a fact, not a prediction.
+	got, err := gs2.Get([]int{2})
+	if err != nil || len(got) != 1 || got[0].Title != "clone2's task" {
+		t.Errorf("task 2 on clone2 = %v, %v; want clone2's re-homed task", got, err)
+	}
+	// The pull made the push converge, and its output was captured rather
+	// than discarded - that capture is what makes Rejected meaningful.
+	if report.Rejected {
+		t.Errorf("Rejected = true, want false: the pull reconciled before the push")
+	}
+	if report.PushOutput == "" {
+		t.Error("PushOutput is empty, want the push's porcelain output captured")
+	}
+}
+
+// TestPushRejected pins the porcelain reasons that mean "origin moved"
+// against everything else a push can fail with - the distinction a caller
+// needs to tell "try again next sync" from "the remote is broken".
+func TestPushRejected(t *testing.T) {
+	cases := []struct {
+		name   string
+		output string
+		want   bool
+	}{
+		{"clean push", "To /tmp/bare\n=\trefs/meads/tasks/1:refs/meads/tasks/1\t[up to date]\nDone\n", false},
+		{"fetch first", "To /tmp/bare\n!\trefs/meads/tasks/1:refs/meads/tasks/1\t[rejected] (fetch first)\nDone\n", true},
+		{"non-fast-forward", "!\trefs/meads/tasks/1:refs/meads/tasks/1\t[rejected] (non-fast-forward)\n", true},
+		{"stale info", "!\trefs/meads/config:refs/meads/config\t[rejected] (stale info)\n", true},
+		{"auth failure", "fatal: Authentication failed for 'https://example.com/x.git/'\n", false},
+		{"offline", "fatal: unable to access 'https://example.com/x.git/': Could not resolve host\n", false},
+		// A host's own free-text refusal is never matched: it varies by
+		// host and is not git's porcelain vocabulary.
+		{"host free text", "!\trefs/meads/tasks/1:refs/meads/tasks/1\t[remote rejected] (pre-receive hook declined)\n", false},
+		{"empty", "", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := PushRejected(c.output); got != c.want {
+				t.Errorf("PushRejected(%q) = %v, want %v", c.output, got, c.want)
+			}
+		})
 	}
 }

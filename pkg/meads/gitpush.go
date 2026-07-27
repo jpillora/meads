@@ -96,3 +96,43 @@ func readLastPush(commonDir string) (t time.Time, ok bool, err error) {
 	}
 	return time.Unix(0, ns), true, nil
 }
+
+// PushRejected reports whether the combined output of a
+// `git push --porcelain <refs/meads/* refspec>` shows a non-fast-forward
+// style rejection - i.e. origin moved and this clone's refs/meads/* is
+// behind - as opposed to any other push failure (offline, auth, no such
+// remote), none of which are diagnostic of divergence.
+//
+// It matches only on git's OWN client-side porcelain summary reasons -
+// "non-fast-forward", "fetch first", "stale info" (all three confirmed
+// experimentally against a real diverged push; git currently favours
+// "fetch first" for the plain two-clones-diverged case, but the other two
+// are long-standing synonyms from older/other rejection paths). Those are
+// stable across git versions precisely because --porcelain exists for
+// scripts to parse. It never matches a remote HOST's free-text rejection
+// reason, which task 57's design doc found varies by host (GitHub vs
+// Gitea) and which nothing else in this codebase parses either (see
+// RefStore's conflictError doc comment).
+//
+// Lives here, not in cmd/md, so every caller of Tasks.Sync classifies a
+// rejection identically: since task 86 a divergence is normally resolved
+// by the pull half of the NEXT sync (Integrate's Doctor re-homes contended
+// tasks at fresh ids), so "rejected" means "try again", not "wedged" - and
+// a library caller has no other way to tell those apart from the error
+// alone. Rendering that into a human message stays in cmd/md; this returns
+// only the fact.
+func PushRejected(output string) bool {
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "!") {
+			continue
+		}
+		lower := strings.ToLower(line)
+		if strings.Contains(lower, "non-fast-forward") ||
+			strings.Contains(lower, "fetch first") ||
+			strings.Contains(lower, "stale info") {
+			return true
+		}
+	}
+	return false
+}

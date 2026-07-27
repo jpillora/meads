@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-07-27T22:11:54Z
+* updated: 2026-07-27T23:43:15Z
 * max-id: 88
 * next-id: 13
 
@@ -795,7 +795,7 @@ not absolute, and look for refs there. Everything else stays as is.
 * status: open
 * priority: P1
 * type: feature
-* depends-on: 87
+* depends-on: 
 * created: 2026-07-26T12:14:55Z
 * updated: 2026-07-27T14:04:35Z
 
@@ -906,7 +906,7 @@ Not required by rais — its frontend never reads `task.meta` — but it is a re
 * status: open
 * priority: P1
 * type: task
-* depends-on: 81,82,83,87
+* depends-on: 81,82,83
 * created: 2026-07-26T12:14:55Z
 * updated: 2026-07-27T14:04:35Z
 
@@ -919,52 +919,3 @@ Call out in the release notes that this is a **breaking** v0 change:
 * `meads.NewStore` / `meads.NewFileStore` are no longer the entry point — use `meads.OpenTasks(dir)`, `meads.OpenTasksFile(file)` or `meads.OpenTasksFS(fs, file)`
 
 rais's integration work is blocked on this tag.
-
-## 87. Tasks.Sync discards the integrate report, hiding id re-homes from library callers
-
-* status: open
-* priority: P1
-* type: bug
-* created: 2026-07-27T14:04:30Z
-
-`Tasks.Sync(ctx) error` (`pkg/meads/tasks.go:315`) calls `GitStore.Pull`, which
-returns an `*IntegrateReport`, and then discards it:
-
-```go
-if _, err := t.gs.Pull(); err != nil {
-	return err
-}
-```
-
-Since #86, a sync can **renumber local tasks**: when two clones race the same
-id, the fetched-remote version keeps the id and the LOCAL version is re-homed at
-a fresh id with its content preserved. `cmd/md` surfaces this on stderr via
-`integrateMessage` (`cmd/md/push.go:164`), so a human running `md update` sees
-it. A library caller sees nothing at all — `Sync` returns `nil`.
-
-That is a correctness problem for any consumer holding task ids in durable state
-outside meads. rais does: agent task badges (`state.AgentMeads.TaskID`) and plan
-documents on disk at `<project>/.plans/<taskId>/vN.md`
-(`internal/app/machine/machine_meads_plan.go:48`). After a re-home, its badge
-points at content that moved and its plan directory is orphaned under an id that
-now belongs to a different task — silently.
-
-### Change
-
-Return what happened:
-
-```go
-Sync(ctx context.Context) (*SyncReport, error)
-```
-
-carrying at minimum the `IntegrateReport` (adopted / fast-forwarded / re-homed,
-with old→new id pairs for re-homes) and enough of the push outcome to classify a
-rejection the way `divergenceMessage` does. `FileTasks.Sync` returns an empty
-report.
-
-This also unblocks collapsing `cmd/md/push.go`'s duplicate pull-then-push onto
-`Tasks.Sync` (task 80), which currently cannot delegate precisely because the
-report and the porcelain output are unreachable through the interface.
-
-Breaking signature change, but meads is v0 and the only callers are `cmd/md` and
-rais's not-yet-written integration.
