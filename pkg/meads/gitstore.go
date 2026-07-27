@@ -74,28 +74,26 @@ func (g *GitStore) TaskRef(id int) string {
 
 // LoadAll returns every task, including soft-deleted ones, ascending by id.
 // Returns nil, nil if there are no task refs at all.
+//
+// Two git processes total, whatever the store's size: one for-each-ref to
+// enumerate the refs and one cat-file --batch to read them all (see
+// RefStore.ReadFilesAtCommits). It used to be a ReadFileAtRef per task -
+// a for-each-ref AND a cat-file each - so a read scaled linearly in
+// processes and a 100-task store spent most of a second in fork/exec.
 func (g *GitStore) LoadAll() ([]Task, error) {
-	refs, err := g.refs.ListRefs(TasksRefPrefix)
+	tasks, _, err := g.loadAllWithOIDs(TasksRefPrefix)
 	if err != nil {
-		return nil, fmt.Errorf("listing task refs: %w", err)
+		return nil, err
 	}
-	if len(refs) == 0 {
+	if len(tasks) == 0 {
 		return nil, nil
 	}
-	tasks := make([]Task, 0, len(refs))
-	for ref := range refs {
-		content, _, err := g.refs.ReadFileAtRef(ref, TaskFileName)
-		if err != nil {
-			return nil, fmt.Errorf("reading %s at %s: %w", TaskFileName, ref, err)
-		}
-		var t Task
-		if err := json.Unmarshal(content, &t); err != nil {
-			return nil, fmt.Errorf("parsing %s at %s: %w", TaskFileName, ref, err)
-		}
-		tasks = append(tasks, t)
+	out := make([]Task, 0, len(tasks))
+	for _, t := range tasks {
+		out = append(out, t)
 	}
-	sort.Slice(tasks, func(i, j int) bool { return tasks[i].ID < tasks[j].ID })
-	return tasks, nil
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out, nil
 }
 
 // Get returns active (non-deleted) tasks. If ids is non-empty only the

@@ -50,26 +50,50 @@ func (g *GitStore) readTaskAndOID(id int) (Task, OID, error) {
 // prefix is a parameter rather than hardcoded. Re-resolving each ref
 // individually the way readTaskAndOID/ReadFileAtRef does would cost an
 // extra round trip per task for no benefit, since ListRefs already returns
-// every oid up front; reading each blob directly at its already-known oid
-// (readTaskAtCommit) skips that second resolve.
+// every oid up front.
+//
+// Exactly two git processes regardless of task count: the ListRefs above
+// and one cat-file --batch for every blob (RefStore.ReadFilesAtCommits).
+// Reading each blob with its own readTaskAtCommit was one process per task,
+// which mattered doubly here - a single auto-sync calls this FOUR times
+// (local and remote-tracking, in planIntegration and again in
+// planDoctorFixes), inside an interactive command.
+//
+// The ids are sorted before reading so the batch's positional results can be
+// mapped back to them: ListRefs returns a map, whose iteration order is
+// deliberately randomised by Go and would otherwise differ between building
+// the request and reading the response.
 func (g *GitStore) loadAllWithOIDs(prefix string) (map[int]Task, map[int]OID, error) {
 	refs, err := g.refs.ListRefs(prefix)
 	if err != nil {
 		return nil, nil, fmt.Errorf("listing task refs: %w", err)
 	}
-	tasks := make(map[int]Task, len(refs))
 	oids := make(map[int]OID, len(refs))
 	for name, oid := range refs {
-		id, ok := taskIDFromRef(prefix, name)
-		if !ok {
-			continue
+		if id, ok := taskIDFromRef(prefix, name); ok {
+			oids[id] = oid
 		}
-		t, err := g.readTaskAtCommit(oid)
-		if err != nil {
-			return nil, nil, err
+	}
+	ids := make([]int, 0, len(oids))
+	for id := range oids {
+		ids = append(ids, id)
+	}
+	sort.Ints(ids)
+	commits := make([]OID, len(ids))
+	for i, id := range ids {
+		commits[i] = oids[id]
+	}
+	blobs, err := g.refs.ReadFilesAtCommits(commits, TaskFileName)
+	if err != nil {
+		return nil, nil, err
+	}
+	tasks := make(map[int]Task, len(ids))
+	for i, id := range ids {
+		var t Task
+		if err := json.Unmarshal(blobs[i], &t); err != nil {
+			return nil, nil, fmt.Errorf("parsing %s at %s: %w", TaskFileName, commits[i], err)
 		}
 		tasks[id] = t
-		oids[id] = oid
 	}
 	return tasks, oids, nil
 }

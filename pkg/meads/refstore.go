@@ -1,9 +1,11 @@
 package meads
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 )
 
@@ -252,6 +254,89 @@ func (r *RefStore) ReadFileAtRef(ref, path string) (content []byte, refOID OID, 
 		return nil, "", fmt.Errorf("reading %s at %s: %w", path, ref, err)
 	}
 	return content, refOID, nil
+}
+
+// ReadFilesAtCommits reads path out of every commit in commits, using ONE
+// `git cat-file --batch` process for the whole set instead of one (or, via
+// ReadFileAtRef, two) per commit. Results come back in the same order as
+// commits.
+//
+// This is what keeps a git-mode read O(1) in git processes rather than
+// O(tasks): every task is its own ref, so the naive shape spawns a pair of
+// plumbing processes per task and a store of any size spends nearly all its
+// wall clock in fork/exec rather than in git (measured at 100 tasks: 403
+// processes, 0.72s, with sys time 3x user). git already has the batch
+// plumbing; this just uses it.
+//
+// Addressing is by commit oid rather than refname - "<oid>:<path>" - because
+// callers reach here from ListRefs, which already resolved every ref to its
+// oid. Re-deriving a refname would both re-resolve refs git has already told
+// us about and re-introduce the per-task for-each-ref this exists to remove.
+//
+// A commit whose path is absent is an error, not a hole: every task ref is
+// created with its task.json in the same commit (CommitFile), so a missing
+// one means a corrupt store rather than a legitimately empty slot.
+func (r *RefStore) ReadFilesAtCommits(commits []OID, path string) ([][]byte, error) {
+	if len(commits) == 0 {
+		return nil, nil
+	}
+	var stdin strings.Builder
+	for _, oid := range commits {
+		stdin.WriteString(string(oid))
+		stdin.WriteString(":")
+		stdin.WriteString(path)
+		stdin.WriteString("\n")
+	}
+	out, err := r.git.OutputRawWithInput(stdin.String(), "cat-file", "--batch")
+	if err != nil {
+		return nil, fmt.Errorf("cat-file --batch over %d commits: %w", len(commits), err)
+	}
+	return parseCatFileBatch(out, len(commits), path)
+}
+
+// parseCatFileBatch splits `git cat-file --batch` output into its want
+// payloads. The format is one frame per input line, IN INPUT ORDER, each
+//
+//	<oid> SP <type> SP <size> LF <contents> LF
+//
+// or, when the object could not be resolved, a lone
+//
+//	<input-spec> SP missing LF
+//
+// Frames are matched to inputs by position, not by the oid in the header:
+// that oid is the BLOB's, while the input was addressed by commit, so the
+// two never match and only order relates them. <size> is authoritative -
+// contents are binary-safe and may contain LF - so the payload is taken by
+// length and the delimiter after it merely skipped.
+func parseCatFileBatch(out []byte, want int, path string) ([][]byte, error) {
+	results := make([][]byte, 0, want)
+	rest := out
+	for len(results) < want {
+		nl := bytes.IndexByte(rest, '\n')
+		if nl < 0 {
+			return nil, fmt.Errorf("cat-file --batch: output ended after %d of %d objects", len(results), want)
+		}
+		header := string(rest[:nl])
+		rest = rest[nl+1:]
+		fields := strings.Fields(header)
+		if len(fields) != 3 {
+			// "<spec> missing", "<spec> ambiguous", or something unforeseen.
+			return nil, fmt.Errorf("cat-file --batch: reading %s: %s", path, header)
+		}
+		size, err := strconv.Atoi(fields[2])
+		if err != nil {
+			return nil, fmt.Errorf("cat-file --batch: unparsable size in %q: %w", header, err)
+		}
+		if size > len(rest) {
+			return nil, fmt.Errorf("cat-file --batch: %q claims %d bytes, only %d remain", header, size, len(rest))
+		}
+		results = append(results, rest[:size])
+		rest = rest[size:]
+		if len(rest) > 0 && rest[0] == '\n' {
+			rest = rest[1:] // the LF git appends after each payload
+		}
+	}
+	return results, nil
 }
 
 // CommitFile writes content as path's sole file at ref's tip: it blobs the

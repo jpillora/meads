@@ -55,6 +55,10 @@ func (g *fakeGit) OutputRaw(args ...string) ([]byte, error) {
 	return []byte(out), err
 }
 
+func (g *fakeGit) OutputRawWithInput(stdin string, args ...string) ([]byte, error) {
+	return g.OutputRaw(args...)
+}
+
 // fakeGitError always returns errors.
 type fakeGitError struct{}
 
@@ -64,3 +68,6 @@ func (g *fakeGitError) OutputWithInput(stdin string, args ...string) (string, er
 	return "", fmt.Errorf("git error")
 }
 func (g *fakeGitError) OutputRaw(args ...string) ([]byte, error) { return nil, fmt.Errorf("git error") }
+func (g *fakeGitError) OutputRawWithInput(stdin string, args ...string) ([]byte, error) {
+	return nil, fmt.Errorf("git error")
+}

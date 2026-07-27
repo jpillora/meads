@@ -33,6 +33,9 @@ func (g *spyGit) OutputRaw(args ...string) ([]byte, error) {
 	g.called = true
 	return nil, fmt.Errorf("spyGit should not be called")
 }
+func (g *spyGit) OutputRawWithInput(stdin string, args ...string) ([]byte, error) {
+	return g.OutputRaw(args...)
+}
 
 // Active tasks come straight from the working file; git must not be consulted.
 func TestGetWithHistory_ActiveSkipsGit(t *testing.T) {

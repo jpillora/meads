@@ -3,7 +3,8 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-07-27T21:41:49Z
+* updated: 2026-07-27T22:11:54Z
+* max-id: 88
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -510,58 +511,91 @@ optionally deprioritise tasks whose files are already claimed.
    and `md auto-delete` become **no-ops in git mode** — there is no working-tree
    file to stage, and nothing to prune since refs are never removed.
 
-## 68. pkg/meads -race fails on TestConcurrentWriters_OneWins (pre-existing)
+## 68. md add fails under write contention instead of retrying (-race failure is a memfs artifact)
 
 * status: open
 * priority: P2
 * type: bug
 * created: 2026-07-25T09:32:33Z
+* updated: 2026-07-27T22:05:18Z
 
-`go test ./pkg/meads/ -race` fails on `TestConcurrentWriters_OneWins`
-(pkg/meads/lock_test.go:132) with "race detected during execution of test".
+Two separate things were tangled under one title. Both are now settled, and
+neither is what the original task suspected.
 
-### Pre-existing, not caused by git mode
+### 1. The `-race` failure is a test artifact — resolved question, small fix
 
-Verified by checking out commit 69581ab (the state before any git-mode work) into
-a scratch worktree under /tmp — none of refstore.go / gitstore.go / gitmutate.go
-present — and running the same test under `-race`. It fails identically there.
+`go test ./pkg/meads/ -race -run TestConcurrentWriters_OneWins` still fails,
+but the race stack is entirely inside the dependency:
 
-Also reported as functionally flaky without `-race`: "expected exactly 1 winner,
-got 2" under `-count=5`.
+```
+Read at 0x... by goroutine 9:
+  go-billy/v5/memfs.(*content).Len()        memfs/memory.go:395
+  go-billy/v5/memfs.(*file).Duplicate()     memfs/memory.go:336
+  go-billy/v5/memfs.(*Memory).OpenFile()    memfs/memory.go:74
+  meads.(*Store).acquireLock()              lock.go:23
+Previous write at 0x... by goroutine 15:
+  go-billy/v5/memfs.(*content).WriteAt()    memfs/storage.go:212
+  meads.(*Store).acquireLock()              lock.go:27
+```
 
-### What to determine
+`memfs` is a plain in-memory map with no synchronisation and is not safe for
+concurrent use. meads' own lock logic never appears in the trace — both
+goroutines are inside `acquireLock` only because that is where they touch the
+shared filesystem. So this is option (1) from the original task: a fixture
+problem, not a lock defect.
 
-The test drives concurrent `acquireLock` calls against a shared in-memory billy
-filesystem. The key question is whether this is:
+Fix: give the test a real filesystem (`t.TempDir()`, which is also what real
+concurrency uses) or serialise memfs access behind a mutex in the fixture.
+Nothing in `lock.go` needs to change for this half.
 
-1. **A test artifact.** Real concurrency in meads is across *processes*, which do
-   not share memory — they contend through the actual file via O_APPEND. An
-   in-process test sharing one memfs may simply be racing on memfs internals that
-   are not safe for concurrent use, in which case the lock design is fine and the
-   test needs a process-level or lock-protected fixture.
-2. **A real defect.** The README advertises "Concurrent-write safe via optimistic
-   locking — multiple processes or AI agents can write simultaneously". If the
-   "got 2 winners" outcome can occur across processes on a real filesystem, the
-   optimistic lock has a genuine hole and that claim is wrong.
+Note the "flaky without -race, got 2 winners under -count=5" report did NOT
+reproduce: `-count=10` passes cleanly.
 
-Distinguishing these matters: (1) is a test fix, (2) is a correctness bug in a
-headline feature.
+### 2. The real defect: `md` gives up on contention instead of retrying
 
-Suggested: write a process-level reproduction (spawn N `md` processes against one
-real TASKS.md in a temp dir under /tmp and count winners) to settle which it is
-before touching the lock code.
+The process-level reproduction the original task asked for, run for real
+(25 concurrent `md add` against one TASKS.md in a temp dir, three rounds):
 
-### Note
+| round | landed | exited 1 |
+|---|---|---|
+| 1 | 18 | 7 |
+| 2 | 20 | 5 |
+| 3 | 15 | 10 |
 
-Git mode does not inherit this. Its concurrency is server/filesystem-enforced
-compare-and-swap on refs, covered by TestGitStore_Claim_ConcurrentRaceExactlyOneWinner
-and friends, which pass cleanly under `-race`.
+Every failure printed `lock contention: another writer holds the lock` and
+exited 1, and landed + failed == 25 exactly in every round. So:
+
+* **No write was ever silently lost.** The optimistic lock is sound and the
+  README's "concurrent-write safe" claim is correct as stated — it is safe.
+* **But `md` does not retry.** At 25-way contention up to 40% of `md add`
+  calls simply fail. For a tool whose headline use case is several AI agents
+  writing at once, "safe, but you lose 4 in 10 writes and must handle the
+  retry yourself" is the actual bug.
+
+`acquireLock` (pkg/meads/lock.go) returns the contention error to the caller
+immediately; there is no backoff and no retry anywhere above it. Compare git
+mode, which already retries: every mutating `GitStore` method loops on
+`ErrCASConflict` up to `maxCASRetries` (gitmutate.go). File mode should have
+the equivalent.
+
+### Change
+
+* Retry `acquireLock` with bounded backoff — a small number of attempts with
+  jitter, surfacing the existing error only once they are exhausted. Match git
+  mode's shape (`maxCASRetries`, re-read on every attempt) so the two backends
+  behave the same under contention.
+* Fix the test fixture so `-race` passes (real temp dir, or a synchronised
+  memfs).
 
 ### Acceptance
 
-- `go test ./pkg/meads/ -race` passes
-- The question above is answered explicitly, and if it is (2), the README claim is
-  corrected or the lock is fixed
+* `go test ./pkg/meads/ -race` passes
+* 25 concurrent `md add` processes against one TASKS.md all land, or the
+  failures are a documented, much smaller tail
+* A process-level test covers it — the in-process memfs one cannot, which is
+  how this stayed open so long
+* The README claim is re-checked against whatever the retry policy ends up
+  being
 
 ## 72. Task edits made in the same commit that closes them are lost
 
@@ -625,100 +659,6 @@ including exactly the final write-up a closing commit is most likely to add.
 - Editing a task's description and closing it in the same commit preserves the
   edit somewhere in git history
 - A regression test covers edit-then-close-in-one-commit
-
-## 73. Git mode LoadAll spawns 4 git processes per task
-
-* status: open
-* priority: P1
-* type: bug
-* created: 2026-07-25T22:44:04Z
-* updated: 2026-07-25T23:18:15Z
-
-`GitStore.LoadAll` (pkg/meads/gitstore.go) reads each task with its own
-`ReadFileAtRef`, which is `for-each-ref` + `cat-file blob` — two processes per
-task, on top of the `ListRefs` that already enumerated them. Every `md list`,
-`md ready` and `md get` in git mode pays it.
-
-### Measured
-
-Scratch git-mode repo, 100 tasks, git wrapped in a counting shim:
-
-```
-$ time md list
-real  0m1.314s
-user  0m0.357s
-sys   0m0.965s        <- sys > 2x user: this is fork/exec, not work
-git invocations: 404
-    203 for-each-ref
-    200 cat-file
-      1 rev-parse
-```
-
-~4 git processes and ~13ms per task, scaling linearly.
-
-### The fix costs one pipe
-
-git already has the batch plumbing. `cat-file --batch` accepts `<ref>:<path>`
-on stdin and streams every object back over a single process:
-
-```
-$ time (git for-each-ref --format='%(refname):task.json' refs/meads/tasks/ \
-        | git cat-file --batch | wc -c)
-12984
-real  0m0.013s
-```
-
-**1.314s -> 0.013s. 404 processes -> 2.** Same 100 tasks, same content, no new
-dependency.
-
-### Approach
-
-- Add a batch read to RefStore: feed `<ref>:<path>` lines to
-  `git cat-file --batch` and parse the `<oid> <type> <size>
-<payload>
-`
-  frames. Needs a streaming call on the Git interface — the current
-  `OutputWithInput` buffers, which is fine at this size but worth noting.
-- `LoadAll` then becomes one `ListRefs` + one batch read.
-- `ReadFileAtRef` stays for single-task paths; the CAS/write path is untouched.
-
-Note `LoadAll` currently also discards the per-ref OID it resolves; the batch
-frames carry the oid, so nothing is lost.
-
-### Acceptance
-
-- `md list` over N tasks issues O(1) git processes, not O(N)
-- A test asserts the invocation count does not scale with task count
-- Existing git-mode behaviour and CAS semantics unchanged
-
-### Also: every command reads the whole store TWICE
-
-The invocation trace for `md list` in a 2-task git-mode repo shows the entire
-read sequence repeated verbatim:
-
-```
-for-each-ref refs/meads/            <- mode detection
-rev-parse --git-dir                 <- inGitRepo
-for-each-ref refs/meads/tasks/      <- LoadAll #1
-for-each-ref refs/meads/tasks/1
-cat-file blob refs/meads/tasks/1:task.json
-for-each-ref refs/meads/tasks/2
-cat-file blob refs/meads/tasks/2:task.json
-for-each-ref refs/meads/tasks/      <- LoadAll #2, identical
-for-each-ref refs/meads/tasks/1
-cat-file blob refs/meads/tasks/1:task.json
-for-each-ref refs/meads/tasks/2
-cat-file blob refs/meads/tasks/2:task.json
-```
-
-`globals.tasks()` caches the *store* in `TaskStoreCache`, but nothing caches
-the *reads*, so `warnCycles` re-runs the command's own read from scratch. That
-is where the 404 comes from: `2 x (1 + 100x2) + 2 = 404`. So the double read is
-a clean 2x on every command, independent of the batching fix, and the two
-compose: batching takes 404 -> 4, plus read caching takes it to 2.
-
-Worth fixing in the same pass, since both are "LoadAll is called more than it
-needs to be" and a shared per-process read cache is the natural place.
 
 ## 74. TASKS.md left dirty by one trailing newline after every description-file write
 
@@ -1028,12 +968,3 @@ report and the porcelain output are unreachable through the interface.
 
 Breaking signature change, but meads is v0 and the only callers are `cmd/md` and
 rais's not-yet-written integration.
-
-## 88. auto-sync loads every task ref 4x per interval
-
-* status: open
-* priority: P2
-* type: task
-* created: 2026-07-27T21:41:34Z
-
-Each auto-sync now walks the whole task set four times: planIntegration reads local+remote-tracking (loadAllWithOIDs x2, gitpull.go) and planDoctorFixes reads both again (gitdoctor.go). With readTaskAtCommit spawning one git process per task (see task 73), that is ~4N+ subprocesses inside an interactive md add/update once per pushInterval - roughly 450 on a 113-task repo. It also sits between autoPush's fetch and push while sharing their single 10s budget, so a large repo can eat the push's share of the timeout. Fix is either to thread one snapshot through Integrate into Doctor (they read the same two namespaces back to back) or to land task 73's batched cat-file first.

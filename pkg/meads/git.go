@@ -26,6 +26,12 @@ type Git interface {
 	// written, with no trimming. Use this for binary-safe reads (e.g. blob
 	// contents) where trimming could silently corrupt the result.
 	OutputRaw(args ...string) ([]byte, error)
+	// OutputRawWithInput is OutputWithInput's binary-safe counterpart: it
+	// pipes stdin AND returns stdout exactly as written. The batch plumbing
+	// commands need both halves at once - `cat-file --batch` takes its object
+	// list on stdin and streams length-delimited payloads back, where
+	// trimming would corrupt the frames (see RefStore.ReadFilesAtCommits).
+	OutputRawWithInput(stdin string, args ...string) ([]byte, error)
 }
 
 // ContextGit is the OPTIONAL half of Git: a Git implementation that can
@@ -184,6 +190,10 @@ func (g *ExecGit) OutputWithInput(stdin string, args ...string) (string, error) 
 
 func (g *ExecGit) OutputRaw(args ...string) ([]byte, error) {
 	return g.outputRaw("", args...)
+}
+
+func (g *ExecGit) OutputRawWithInput(stdin string, args ...string) ([]byte, error) {
+	return g.outputRaw(stdin, args...)
 }
 
 // outputRaw runs git with stdin piped from the given string and returns
