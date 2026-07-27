@@ -24,14 +24,14 @@ import (
 
 // Config controls a Server.
 type Config struct {
-	// Store is the task backend to serve. *meads.Store (file mode) and the
-	// git-mode adapter cmd/md/webui.go constructs both satisfy it - see
-	// meads.TaskStore's doc comment. Richer capabilities that only one
+	// Store is the task backend to serve. meads.FileTasks (file mode) and
+	// meads.GitTasks (git mode, as wrapped by cmd/md/webui.go) both satisfy
+	// it - see meads.Tasks' doc comment. Richer capabilities that only one
 	// backend can offer - a file to fsnotify, or ref oids to poll for
 	// changes - are discovered through the optional fileLocator/
 	// refSnapshotter interfaces (see watch.go and storeLocation) rather
 	// than required by this field's type.
-	Store meads.TaskStore
+	Store meads.Tasks
 	// Host to bind, e.g. "127.0.0.1". Defaults to 127.0.0.1.
 	Host string
 	// Port to listen on. 0 = pick a random free port.
@@ -232,12 +232,12 @@ type startInfo struct {
 	Format string `json:"format"`
 }
 
-// fileLocator is implemented by file-mode stores (namely *meads.Store) to
-// describe the on-disk file backing them. storeLocation and the fsnotify
-// watcher (startFileWatcher, in watch.go) both use it. Git mode has no
-// single file and does not implement it; storeLocation falls back to a
-// fixed description in that case, and startWatcher falls back to
-// refSnapshotter instead (see watch.go).
+// fileLocator is implemented by file-mode stores (namely meads.FileTasks,
+// delegating to its *meads.Store) to describe the on-disk file backing
+// them. storeLocation and the fsnotify watcher (startFileWatcher, in
+// watch.go) both use it. Git mode has no single file and does not implement
+// it; storeLocation falls back to a fixed description in that case, and
+// startWatcher falls back to refSnapshotter instead (see watch.go).
 type fileLocator interface {
 	FS() billy.Filesystem
 	Path() string
@@ -246,7 +246,7 @@ type fileLocator interface {
 // storeLocation returns a display path and a short format label ("md",
 // "csv", or "git") for store, for the startup banner (printStartLine) and
 // GET /api/file (handleFileInfo).
-func storeLocation(store meads.TaskStore) (path, format string) {
+func storeLocation(store meads.Tasks) (path, format string) {
 	fl, ok := store.(fileLocator)
 	if !ok {
 		return meads.TasksRefPrefix + "*", "git"

@@ -17,7 +17,8 @@ import (
 // *Server so tests can exercise bindHub.Call directly.
 func newTestServerForBind(t *testing.T) (*httptest.Server, *Server) {
 	t.Helper()
-	store := meads.NewStore(memfs.New(), "TASKS.md")
+	// git is nil: see handlers_test.go's newTestServer.
+	store := meads.NewFileTasks(meads.NewStore(memfs.New(), "TASKS.md"), nil)
 	s, err := New(Config{Store: store, Token: "tok", Print: "none"})
 	if err != nil {
 		t.Fatal(err)

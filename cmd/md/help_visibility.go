@@ -172,7 +172,7 @@ func fastTasksFileExists(dir string) bool {
 // Nothing is hidden in file mode or helpModeUnknown: there is currently no
 // git-mode-only command to hide there symmetrically (every command either
 // works the same in both modes, like list/get/add..., or is one of the
-// three hidden above) - see cmd/md/taskstore.go's errGitModeUnsupported doc
+// three hidden above) - see cmd/md/import.go's errGitModeUnsupported doc
 // comment, which confirms beads-import is the only command still gated at
 // all.
 func hiddenCommands(m helpMode) map[string]bool {

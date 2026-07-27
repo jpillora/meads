@@ -17,7 +17,10 @@ import (
 // never call Run() directly.
 func newTestServer(t *testing.T) (*httptest.Server, string) {
 	t.Helper()
-	store := meads.NewStore(memfs.New(), "TASKS.md")
+	// git is nil: the web UI never calls the history methods
+	// (GetWithHistory/GetHistory) that would need it - see meads.FileTasks'
+	// doc comment.
+	store := meads.NewFileTasks(meads.NewStore(memfs.New(), "TASKS.md"), nil)
 	s, err := New(Config{Store: store, Token: "secret-test-token", Print: "none"})
 	if err != nil {
 		t.Fatal(err)

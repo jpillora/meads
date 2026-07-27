@@ -72,7 +72,7 @@ type globals struct {
 	// one md process's lifetime, so recomputing per call (e.g. once for a
 	// command's main read/write, once more for warnCycles) would just be a
 	// redundant plumbing spawn for the same answer.
-	TaskStoreCache taskStore `opts:"-"`
+	TaskStoreCache meads.Tasks `opts:"-"`
 }
 
 // tasksFileAbs resolves TasksFile to an absolute path. It is included in every
@@ -218,7 +218,7 @@ func (g *globals) mode() taskStoreMode {
 
 // modeConflictErr reports whether --git and --file were both forced, which
 // mode()'s plain precedence order would otherwise resolve silently (--file
-// wins). Shared by tasks() and by commands not wired to the taskStore seam
+// wins). Shared by tasks() and by commands not wired to the meads.Tasks seam
 // (doctor.go, import.go, mcp.go, webui.go all check mode() directly to
 // decide whether to refuse git mode) so a self-contradictory flag
 // combination is reported consistently regardless of which path a command
@@ -230,9 +230,10 @@ func (g *globals) modeConflictErr() error {
 	return nil
 }
 
-// tasks returns the taskStore seam commands use to work against either
-// backend (see cmd/md/taskstore.go), computed from mode() and cached in
-// TaskStoreCache: mode() and git-mode construction each cost a git
+// tasks returns the meads.Tasks seam commands use to work against either
+// backend (meads.FileTasks over *meads.Store, or meads.GitTasks over
+// *meads.GitStore - see pkg/meads/tasks.go), computed from mode() and cached
+// in TaskStoreCache: mode() and git-mode construction each cost a git
 // subprocess spawn, and the answer cannot change within one md process's
 // lifetime, so a command's second call (e.g. warnCycles after the command's
 // own read) reuses the first result rather than spawning again.
@@ -241,7 +242,7 @@ func (g *globals) modeConflictErr() error {
 // or MEADS_GIT) outside a git repository has no cheap silent fallback the
 // way auto-detection does, so it errors clearly instead of leaving the first
 // git-plumbing call downstream to fail with a raw git error.
-func (g *globals) tasks() (taskStore, error) {
+func (g *globals) tasks() (meads.Tasks, error) {
 	if g.TaskStoreCache != nil {
 		return g.TaskStoreCache, nil
 	}
@@ -252,10 +253,10 @@ func (g *globals) tasks() (taskStore, error) {
 		if !g.inGitRepo() {
 			return nil, fmt.Errorf("--git requires a git repository")
 		}
-		g.TaskStoreCache = gitTaskStore{gs: g.gitStore()}
+		g.TaskStoreCache = meads.NewGitTasks(g.gitStore())
 		return g.TaskStoreCache, nil
 	}
-	g.TaskStoreCache = fileTaskStore{store: g.store(), git: g.git()}
+	g.TaskStoreCache = meads.NewFileTasks(g.store(), g.git())
 	return g.TaskStoreCache, nil
 }
 

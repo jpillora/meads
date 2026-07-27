@@ -50,9 +50,9 @@ func (w *watcher) Close() {
 }
 
 // refSnapshotter is implemented by git-mode stores to support
-// startRefWatcher. cmd/md/webui.go's gitWatchStore is the only
-// implementation: no CLI command needs TaskRefOIDs, only this watcher, so it
-// is not part of the plain taskStore/meads.TaskStore CRUD seam.
+// startRefWatcher. meads.GitTasks is the implementation (cmd/md/webui.go's
+// gitWatchStore embeds it): no CLI command needs TaskRefOIDs, only this
+// watcher, so it is not part of the plain meads.Tasks seam.
 type refSnapshotter interface {
 	// TaskRefOIDs returns the current commit oid of every task ref, keyed by
 	// full ref name (see GitStore.TaskRefOIDs). Called once per
@@ -67,7 +67,7 @@ type refSnapshotter interface {
 // polling is necessary in git mode specifically. In practice a given store
 // implements exactly one of the two. Returns a nil watcher and nil error if
 // store implements neither: nothing to watch, not a failure.
-func startWatcher(ctx context.Context, store meads.TaskStore, bus *eventBus, stderr io.Writer) (*watcher, error) {
+func startWatcher(ctx context.Context, store meads.Tasks, bus *eventBus, stderr io.Writer) (*watcher, error) {
 	if rs, ok := store.(refSnapshotter); ok {
 		return startRefWatcher(ctx, rs, bus), nil
 	}

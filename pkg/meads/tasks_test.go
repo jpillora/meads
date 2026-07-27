@@ -1,0 +1,280 @@
+package meads
+
+import (
+	"context"
+	"hash/fnv"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"testing"
+
+	"github.com/go-git/go-billy/v5/memfs"
+	"github.com/go-git/go-billy/v5/util"
+)
+
+// Tests for the unified Tasks seam (tasks.go): the Backend enum, and the
+// FileTasks/GitTasks adapters' newer methods (Backend/Location/Exists/
+// Revision/Sync) plus the GitTasks shim semantics (Add discarding Create's
+// Task, Update's always-write wrap, Delete discarding SoftDelete's Task,
+// GetHistory == LoadAll, GetWithHistory as a direct read). CRUD parity
+// between the backends themselves is already covered by gitstore_test.go;
+// these tests pin the adapter layer on top.
+
+func TestBackendString(t *testing.T) {
+	cases := map[Backend]string{
+		BackendMarkdown: "md",
+		BackendCSV:      "csv",
+		BackendGit:      "git",
+		Backend(99):     "Backend(99)",
+	}
+	for b, want := range cases {
+		if got := b.String(); got != want {
+			t.Errorf("Backend(%d).String() = %q, want %q", int(b), got, want)
+		}
+	}
+}
+
+// --- FileTasks ---
+
+func TestFileTasks_Backend(t *testing.T) {
+	if got := NewFileTasks(NewStore(memfs.New(), "TASKS.md"), nil).Backend(); got != BackendMarkdown {
+		t.Errorf("TASKS.md backend = %v, want BackendMarkdown", got)
+	}
+	if got := NewFileTasks(NewStore(memfs.New(), "TASKS.csv"), nil).Backend(); got != BackendCSV {
+		t.Errorf("TASKS.csv backend = %v, want BackendCSV", got)
+	}
+}
+
+func TestFileTasks_Location(t *testing.T) {
+	// memfs roots at "/", so the location is the root-joined path.
+	if got := NewFileTasks(NewStore(memfs.New(), "TASKS.md"), nil).Location(); got != "/TASKS.md" {
+		t.Errorf("memfs Location() = %q, want /TASKS.md", got)
+	}
+	// A real file store resolves to the absolute on-disk path.
+	abs := filepath.Join(t.TempDir(), "TASKS.md")
+	if got := NewFileTasks(NewFileStore(abs), nil).Location(); got != abs {
+		t.Errorf("osfs Location() = %q, want %q", got, abs)
+	}
+}
+
+func TestFileTasks_Exists(t *testing.T) {
+	ft := NewFileTasks(newTestStore(t, ""), nil)
+	exists, err := ft.Exists()
+	if err != nil || exists {
+		t.Fatalf("Exists() before any write = %v, %v; want false, nil", exists, err)
+	}
+	if _, err := ft.Add(Task{Title: "x"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	exists, err = ft.Exists()
+	if err != nil || !exists {
+		t.Fatalf("Exists() after Add = %v, %v; want true, nil", exists, err)
+	}
+}
+
+// TestFileTasks_Revision pins the exact hash shape rais's ProjectMeads.Hash
+// computes (fnv64a of the raw file bytes, hex via strconv.FormatUint 16) so
+// the two can never drift apart, and that the value tracks writes.
+func TestFileTasks_Revision(t *testing.T) {
+	fs := memfs.New()
+	content := "# Tasks\n\n## 1. a task\n\n* status: open\n"
+	if err := util.WriteFile(fs, "TASKS.md", []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	ft := NewFileTasks(NewStore(fs, "TASKS.md"), nil)
+
+	h := fnv.New64a()
+	h.Write([]byte(content))
+	want := strconv.FormatUint(h.Sum64(), 16)
+
+	rev, err := ft.Revision()
+	if err != nil {
+		t.Fatalf("Revision: %v", err)
+	}
+	if rev != want {
+		t.Errorf("Revision() = %q, want fnv64a-of-bytes %q", rev, want)
+	}
+
+	// Stable across calls with no write in between...
+	again, err := ft.Revision()
+	if err != nil || again != rev {
+		t.Errorf("Revision() across calls = %q, %v; want unchanged %q", again, err, rev)
+	}
+	// ...and different after a write.
+	if _, err := ft.Add(Task{Title: "y"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	after, err := ft.Revision()
+	if err != nil {
+		t.Fatalf("Revision after Add: %v", err)
+	}
+	if after == rev {
+		t.Errorf("Revision() after Add = %q, want a different token", after)
+	}
+}
+
+func TestFileTasks_Revision_MissingFileErrors(t *testing.T) {
+	ft := NewFileTasks(NewStore(memfs.New(), "TASKS.md"), nil)
+	if _, err := ft.Revision(); err == nil {
+		t.Fatal("Revision() with no tasks file should error, got nil")
+	}
+}
+
+func TestFileTasks_SyncIsNoOp(t *testing.T) {
+	ft := NewFileTasks(newTestStore(t, ""), nil)
+	if err := ft.Sync(context.Background()); err != nil {
+		t.Errorf("FileTasks.Sync = %v, want nil (nothing to publish)", err)
+	}
+}
+
+// TestFileTasks_FSLocator proves the FS/Path delegates survive the adapter,
+// which is what pkg/webui's fileLocator (fsnotify watcher, startup banner)
+// discovers structurally.
+func TestFileTasks_FSLocator(t *testing.T) {
+	store := NewStore(memfs.New(), "TASKS.md")
+	ft := NewFileTasks(store, nil)
+	if ft.FS() != store.FS() || ft.Path() != store.Path() {
+		t.Errorf("FS/Path = (%v, %q), want the underlying Store's (%v, %q)",
+			ft.FS(), ft.Path(), store.FS(), store.Path())
+	}
+}
+
+// --- GitTasks ---
+
+func TestGitTasks_BackendLocation(t *testing.T) {
+	gs, _, _ := newGitStoreRepo(t)
+	gt := NewGitTasks(gs)
+	if got := gt.Backend(); got != BackendGit {
+		t.Errorf("Backend() = %v, want BackendGit", got)
+	}
+	if got := gt.Location(); got != "refs/meads/tasks/*" {
+		t.Errorf("Location() = %q, want refs/meads/tasks/*", got)
+	}
+}
+
+func TestGitTasks_Exists(t *testing.T) {
+	gs, _, _ := newGitStoreRepo(t)
+	gt := NewGitTasks(gs)
+	// A bare repo has no refs/meads/* at all: not initialised.
+	exists, err := gt.Exists()
+	if err != nil || exists {
+		t.Fatalf("Exists() in a bare repo = %v, %v; want false, nil", exists, err)
+	}
+	// Any ref under refs/meads/ counts - including the config ref alone,
+	// with zero tasks, which is how a fresh `init --git` bootstraps.
+	if err := gs.SetConfig(Config{PushInterval: "1h"}); err != nil {
+		t.Fatalf("SetConfig: %v", err)
+	}
+	exists, err = gt.Exists()
+	if err != nil || !exists {
+		t.Fatalf("Exists() with only a config ref = %v, %v; want true, nil", exists, err)
+	}
+}
+
+func TestGitTasks_Revision(t *testing.T) {
+	gs, _, _ := newGitStoreRepo(t)
+	gt := NewGitTasks(gs)
+
+	empty, err := gt.Revision()
+	if err != nil {
+		t.Fatalf("Revision: %v", err)
+	}
+	id, err := gt.Add(Task{Title: "x"})
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	one, err := gt.Revision()
+	if err != nil {
+		t.Fatalf("Revision: %v", err)
+	}
+	if one == empty {
+		t.Error("Revision() after first Add should differ from the no-refs token")
+	}
+	if err := gt.Update(id, func(task *Task) { task.Title = "y" }); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	two, err := gt.Revision()
+	if err != nil {
+		t.Fatalf("Revision: %v", err)
+	}
+	if two == one {
+		t.Error("Revision() after Update should differ (the ref moved)")
+	}
+	again, err := gt.Revision()
+	if err != nil || again != two {
+		t.Errorf("Revision() across calls = %q, %v; want unchanged %q", again, err, two)
+	}
+}
+
+// TestGitTasks_ShimSemantics pins the adapter reconciliations GitTasks
+// documents: Add returns just the id, Update's fn-shaped mutate always
+// writes, Delete soft-deletes with the Task discarded, GetHistory is
+// LoadAll, and GetWithHistory resolves a deleted id directly.
+func TestGitTasks_ShimSemantics(t *testing.T) {
+	gs, _, _ := newGitStoreRepo(t)
+	gt := NewGitTasks(gs)
+
+	id, err := gt.Add(Task{Title: "shim", Status: "open"})
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if id != 1 {
+		t.Errorf("first Add id = %d, want 1", id)
+	}
+
+	if err := gt.Update(id, func(task *Task) { task.Title = "renamed" }); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	got, err := gt.Get([]int{id})
+	if err != nil || len(got) != 1 || got[0].Title != "renamed" {
+		t.Fatalf("Get after Update = %v, %v; want the renamed task", got, err)
+	}
+
+	if err := gt.Delete(id); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if _, err := gt.Get([]int{id}); err == nil {
+		t.Error("Get after Delete should error (soft-deleted)")
+	}
+	// GetWithHistory resolves the deleted id straight from its kept ref.
+	gwh, err := gt.GetWithHistory([]int{id})
+	if err != nil || len(gwh) != 1 || !gwh[0].Deleted {
+		t.Errorf("GetWithHistory after Delete = %+v, %v; want the one deleted task", gwh, err)
+	}
+	// GetHistory is LoadAll: every task ever created, including deleted.
+	hist, err := gt.GetHistory()
+	if err != nil || len(hist) != 1 || hist[0].ID != id {
+		t.Errorf("GetHistory = %+v, %v; want exactly task %d (deleted included)", hist, err, id)
+	}
+	loadAll, err := gs.LoadAll()
+	if err != nil || len(loadAll) != len(hist) {
+		t.Fatalf("LoadAll = %+v, %v; want same length as GetHistory", loadAll, err)
+	}
+}
+
+func TestGitTasks_SyncWithoutOriginErrors(t *testing.T) {
+	gs, _, _ := newGitStoreRepo(t)
+	gt := NewGitTasks(gs)
+	if _, err := gt.Add(Task{Title: "x"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	// No origin remote is configured, so the push must fail - Sync reports
+	// it rather than silently pretending the refs were published.
+	err := gt.Sync(context.Background())
+	if err == nil {
+		t.Fatal("Sync with no origin remote should error, got nil")
+	}
+	if !strings.Contains(err.Error(), "refs/meads/") {
+		t.Errorf("Sync error = %q, want it to name the refs/meads/* push", err)
+	}
+}
+
+func TestGitTasks_SyncCancelledContext(t *testing.T) {
+	gs, _, _ := newGitStoreRepo(t)
+	gt := NewGitTasks(gs)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := gt.Sync(ctx); err == nil {
+		t.Fatal("Sync with a cancelled context should error before pushing, got nil")
+	}
+}

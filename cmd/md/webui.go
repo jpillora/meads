@@ -57,36 +57,29 @@ func (c *webuiCmd) Run() error {
 	return <-done
 }
 
-// store resolves the meads.TaskStore to serve over the web UI. File mode
-// passes *meads.Store directly, unchanged, so the fsnotify watcher and
-// startup banner can use its FS()/Path() (see pkg/webui's fileLocator). Git
-// mode wraps gitTaskStore (taskstore.go) in gitWatchStore so the
-// ref-polling watcher can use GitStore.TaskRefOIDs (see pkg/webui's
-// refSnapshotter) - a bare gitTaskStore has no such method, since no CLI
-// command needs it.
-func (c *webuiCmd) store() (meads.TaskStore, error) {
+// store resolves the meads.Tasks to serve over the web UI. File mode passes
+// meads.FileTasks, which delegates FS()/Path() to the underlying
+// *meads.Store so the fsnotify watcher and startup banner keep working (see
+// pkg/webui's fileLocator). Git mode wraps meads.GitTasks in gitWatchStore
+// so the ref-polling watcher can use GitStore.TaskRefOIDs (see pkg/webui's
+// refSnapshotter).
+func (c *webuiCmd) store() (meads.Tasks, error) {
 	if c.globals.mode() != modeGit {
-		return c.globals.store(), nil
+		return meads.NewFileTasks(c.globals.store(), c.globals.git()), nil
 	}
 	if !c.globals.inGitRepo() {
 		return nil, fmt.Errorf("--git requires a git repository")
 	}
-	return gitWatchStore{gitTaskStore{gs: c.globals.gitStore()}}, nil
+	return gitWatchStore{meads.NewGitTasks(c.globals.gitStore())}, nil
 }
 
-// gitWatchStore adds pkg/webui's ref-polling watch support on top of
-// gitTaskStore's CRUD methods, which already satisfy meads.TaskStore
-// structurally (see taskstore.go's doc comment on gitTaskStore - Go
-// interfaces are matched by method set, not by declared type, so embedding
-// is enough). TaskRefOIDs is not part of taskStore itself: no CLI command
-// needs it, only the web UI's change-detection watcher (see
-// pkg/webui/watch.go's refSnapshotter).
+// gitWatchStore is meads.GitTasks for the web UI's git-mode wiring: the
+// embedded type already carries TaskRefOIDs (promoted here through
+// embedding), which pkg/webui's refSnapshotter discovers structurally for
+// its change-detection watcher (see pkg/webui/watch.go). TaskRefOIDs is not
+// part of meads.Tasks itself: no CLI command needs it, only the watcher.
 type gitWatchStore struct {
-	gitTaskStore
-}
-
-func (g gitWatchStore) TaskRefOIDs() (map[string]meads.OID, error) {
-	return g.gs.TaskRefOIDs()
+	meads.GitTasks
 }
 
 // waitAndOpen polls until the server has an address, then opens it in the browser.

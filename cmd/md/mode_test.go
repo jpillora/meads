@@ -163,8 +163,8 @@ func TestMode_OutsideGitRepo_NoError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tasks() outside a git repo (unforced) should not error, got: %v", err)
 	}
-	if _, ok := ts.(fileTaskStore); !ok {
-		t.Errorf("tasks() outside a git repo = %T, want fileTaskStore", ts)
+	if _, ok := ts.(meads.FileTasks); !ok {
+		t.Errorf("tasks() outside a git repo = %T, want meads.FileTasks", ts)
 	}
 }
 

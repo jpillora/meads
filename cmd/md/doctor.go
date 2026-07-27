@@ -57,7 +57,7 @@ func (c *doctorCmd) runFile() error {
 }
 
 // runGit is doctor's git-mode counterpart (task 65 phase 8), calling
-// GitStore directly rather than going through the taskStore seam: Doctor and
+// GitStore directly rather than going through the meads.Tasks seam: Doctor and
 // Diverged are git-mode-only concepts (there is no file-backend equivalent
 // of a fetched remote-tracking namespace to compare against), so forcing
 // them into the cross-backend interface would just mean a dummy

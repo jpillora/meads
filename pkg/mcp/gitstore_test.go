@@ -11,45 +11,12 @@ import (
 )
 
 // Tests proving the MCP server works against a git-mode backend (task 66
-// phase 9): every tool maps cleanly onto meads.TaskStore's five methods, so
-// - unlike the file-mode tests above - nothing here is gated. See
+// phase 9): every tool maps cleanly onto the meads.Tasks interface, so -
+// unlike the file-mode tests above - nothing here is gated. See
 // cmd/md/mcp.go for the equivalent CLI-level wiring (mcpCmd.store).
 
-// gitTaskStoreForTest adapts *meads.GitStore to meads.TaskStore, mirroring
-// cmd/md/taskstore.go's gitTaskStore (package main, so not importable from
-// this external test package). See that type's doc comment for why the
-// shapes need a thin adapter rather than reusing GitStore's Create/Update/
-// SoftDelete directly.
-type gitTaskStoreForTest struct {
-	gs *meads.GitStore
-}
-
-func (a gitTaskStoreForTest) Get(ids []int) ([]meads.Task, error) { return a.gs.Get(ids) }
-func (a gitTaskStoreForTest) Ready() ([]meads.Task, error)        { return a.gs.Ready() }
-
-func (a gitTaskStoreForTest) Add(t meads.Task) (int, error) {
-	created, err := a.gs.Create(t)
-	if err != nil {
-		return 0, err
-	}
-	return created.ID, nil
-}
-
-func (a gitTaskStoreForTest) Update(id int, fn func(*meads.Task)) error {
-	_, err := a.gs.Update(id, func(t *meads.Task) (bool, error) {
-		fn(t)
-		return true, nil
-	})
-	return err
-}
-
-func (a gitTaskStoreForTest) Delete(id int) error {
-	_, err := a.gs.SoftDelete(id)
-	return err
-}
-
 // setupGit creates a real temporary git repository (t.TempDir()) and an MCP
-// client session backed by GitStore through gitTaskStoreForTest, mirroring
+// client session backed by GitStore through meads.GitTasks, mirroring
 // setup() above but over git mode instead of an in-memory file store.
 func setupGit(t *testing.T) *mcp.ClientSession {
 	t.Helper()
@@ -65,7 +32,7 @@ func setupGit(t *testing.T) *mcp.ClientSession {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}
 	}
-	store := gitTaskStoreForTest{gs: meads.NewGitStore(&meads.ExecGit{Dir: dir})}
+	store := meads.NewGitTasks(meads.NewGitStore(&meads.ExecGit{Dir: dir}))
 
 	ctx := context.Background()
 	server := mcppkg.NewServer(store, "test")

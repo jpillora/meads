@@ -15,7 +15,9 @@ import (
 func setup(t *testing.T) *mcp.ClientSession {
 	t.Helper()
 	fs := memfs.New()
-	store := meads.NewStore(fs, "TASKS.md")
+	// git is nil: no MCP tool calls the history methods (GetWithHistory/
+	// GetHistory) that would need it - see meads.FileTasks' doc comment.
+	store := meads.NewFileTasks(meads.NewStore(fs, "TASKS.md"), nil)
 
 	ctx := context.Background()
 	server := mcppkg.NewServer(store, "test")

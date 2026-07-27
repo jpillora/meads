@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-07-27T09:50:00Z
+* updated: 2026-07-27T10:20:39Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -1052,71 +1052,12 @@ only at `/` boundaries, so `refs/meads/` can never match `refs/meads-init-check`
 (`-` is not `/`). The design's choice to put the marker outside the namespace
 rather than inside it is sound, and does not depend on ordering or filtering.
 
-## 77. Unify all three backends behind a single meads.Tasks interface
-
-* status: open
-* priority: P0
-* type: feature
-* created: 2026-07-26T12:14:55Z
-* updated: 2026-07-27T09:50:00Z
-
-Today `*Store` covers markdown+csv (`detectFormat`, `store.go:36`), `*GitStore` covers git with a different method shape, and the adapters reconciling them are unexported in `cmd/md/taskstore.go` — which has already forced three hand-rolled duplicates into tests (`pkg/mcp/gitstore_test.go:23`, `pkg/webui/watch_test.go:32,269`).
-
-Add `pkg/meads/tasks.go`. `Format` is already taken (the md/csv **parser** interface, `format.go`), so the enum is `Backend`:
-
-```go
-type Backend int
-const ( BackendMarkdown Backend = iota; BackendCSV; BackendGit )
-func (b Backend) String() string // "md" | "csv" | "git"
-
-type Tasks interface {
-    Backend() Backend
-    Location() string          // "/abs/TASKS.md" | "refs/meads/tasks/*"
-    Exists() (bool, error)
-    Revision() (string, error) // cheap change token; differs iff tasks changed
-
-    Get(ids []int) ([]Task, error)
-    GetWithHistory(ids []int) ([]Task, error)
-    GetHistory() ([]Task, error)
-    Ready() ([]Task, error)
-    FindCycles() ([][]int, error)
-    Doctor() ([]DoctorFix, error)
-
-    Add(t Task) (int, error)
-    Update(id int, fn func(*Task)) error
-    Delete(id int) error
-
-    Sync(ctx context.Context) error // git: push refs/meads/*; file: no-op
-}
-```
-
-Move `cmd/md/taskstore.go`'s `fileTaskStore`/`gitTaskStore` in as exported `FileTasks`/`GitTasks`, extended with the new methods. Preserve the shim semantics documented at `cmd/md/taskstore.go:79-96`: `Add` discards `Create`'s Task and returns the id; `Update` wraps `fn` as `func(*Task) (bool, error)` always returning `true`; `Delete` = `SoftDelete` with the Task discarded; `GetHistory` = `LoadAll`; git `GetWithHistory` is a direct read (refs are kept forever, no history walk).
-
-**Breaking (meads is v0):** delete `pkg/meads/taskstore.go`'s narrow `TaskStore`.
-
-Two implementations cover three backends — `*Store` already models md+csv behind one type; `Backend()` reports which. Splitting `*Store` further is churn with no caller-visible gain. `*Store`/`*GitStore` stay exported for backend-specific extras (`RunImport`/`AutoClean`/`ImportAll`; `Diverged`/`Claim`/`Config`/`Acquire`) that don't belong on `Tasks`.
-
-### Per-backend semantics
-
-| | markdown / csv | git |
-|---|---|---|
-| `Exists` | file present | any ref under `refs/meads/` |
-| `Revision` | fnv64a of raw file bytes | fnv64a of sorted `refname oid` from `GitStore.TaskRefOIDs()` (`gitstore.go:171`, one `for-each-ref`) |
-| `Location` | absolute file path | `refs/meads/tasks/*` |
-| `Sync` | no-op | push (see the Sync task) |
-
-File `Revision` is deliberately the same fnv64a-of-bytes rais already computes, so rais's `ProjectMeads.Hash` keeps its current values.
-
-### Why
-
-rais must drive meads library-only (never the `md` CLI) and must work on all three backends. Every piece it needs — detection, the adapters, init, push — is currently private to `cmd/md`. Exporting one interface means there is a single implementation of each, so `md` and rais can never disagree about which store a project uses.
-
 ## 78. Add Detect and the OpenTasks entry points
 
 * status: open
 * priority: P0
 * type: feature
-* depends-on: 77
+* depends-on: 
 * created: 2026-07-26T12:14:55Z
 * updated: 2026-07-27T09:50:00Z
 
@@ -1162,7 +1103,7 @@ Also keep the refusal: error if `refs/meads/` already has any ref ("git mode is 
 * status: open
 * priority: P1
 * type: feature
-* depends-on: 77
+* depends-on: 
 * created: 2026-07-26T12:14:55Z
 * updated: 2026-07-26T12:15:02Z
 

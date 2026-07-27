@@ -15,7 +15,7 @@ import (
 	"github.com/jpillora/meads/pkg/webui"
 )
 
-// Tests proving the taskStore seam (cmd/md/taskstore.go) actually wires the
+// Tests proving the meads.Tasks seam (globals.tasks) actually wires the
 // CLI command layer to GitStore correctly, end to end through each wired
 // command's Run() method - not just that GitStore itself works (that's
 // pkg/meads/gitstore_test.go and gitmutate_test.go's job) and not just that
@@ -139,7 +139,7 @@ func TestIntegration_GitMode_FullCommandWiring(t *testing.T) {
 		t.Fatalf("task %d should be excluded from Get after del (soft-deleted)", id2)
 	}
 	// `md get` uses GetWithHistory, which must still resolve a deleted task
-	// (see taskStore's doc comment on GetWithHistory vs Get).
+	// (see meads.Tasks' doc comment on GetWithHistory vs Get).
 	if err := (&getCmd{globals: g, IDs: []string{strconv.Itoa(id2)}}).Run(); err != nil {
 		t.Fatalf("get on a deleted task (via GetWithHistory) should still succeed: %v", err)
 	}
@@ -188,7 +188,7 @@ func TestIntegration_GitMode_BeadsImportUnsupported(t *testing.T) {
 
 // TestIntegration_GitMode_Mcp_NoLongerGated is mcp's un-gating regression
 // guard (task 66 phase 9): unlike beads-import above, mcp now wires
-// gitTaskStore directly (mcpCmd.store), so it must resolve to that adapter
+// meads.GitTasks directly (mcpCmd.store), so it must resolve to that adapter
 // rather than erroring with "not supported in git mode yet" - and, more
 // than just being the right TYPE, actually read and write through to the
 // real GitStore behind h.globals.
@@ -198,8 +198,8 @@ func TestIntegration_GitMode_Mcp_NoLongerGated(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mcpCmd.store() in git mode: %v", err)
 	}
-	if _, ok := store.(gitTaskStore); !ok {
-		t.Fatalf("mcpCmd.store() in git mode = %T, want gitTaskStore", store)
+	if _, ok := store.(meads.GitTasks); !ok {
+		t.Fatalf("mcpCmd.store() in git mode = %T, want meads.GitTasks", store)
 	}
 	id, err := store.Add(meads.Task{Title: "via mcp store"})
 	if err != nil {
@@ -231,8 +231,8 @@ func TestIntegration_GitMode_Mcp_OutsideGitRepo_ErrorsClearly(t *testing.T) {
 
 // TestIntegration_GitMode_Webui_NoLongerGated is webui's un-gating
 // regression guard (task 66 phase 9): unlike beads-import above, webui now
-// wires gitWatchStore (which embeds gitTaskStore, so it satisfies
-// meads.TaskStore the same way), so it must resolve to that adapter rather
+// wires gitWatchStore (which embeds meads.GitTasks, so it satisfies
+// meads.Tasks the same way), so it must resolve to that adapter rather
 // than erroring - and, more than just being the right type, actually read
 // and write through to the real GitStore, with a working TaskRefOIDs on top
 // for pkg/webui's watcher.
