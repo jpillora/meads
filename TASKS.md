@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-07-27T10:25:05Z
+* updated: 2026-07-27T10:37:38Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -855,7 +855,7 @@ not absolute, and look for refs there. Everything else stays as is.
 * status: open
 * priority: P0
 * type: bug
-* depends-on: 79
+* depends-on: 
 * created: 2026-07-26T06:31:55Z
 * updated: 2026-07-27T09:50:00Z
 
@@ -1052,26 +1052,6 @@ only at `/` boundaries, so `refs/meads/` can never match `refs/meads-init-check`
 (`-` is not `/`). The design's choice to put the marker outside the namespace
 rather than inside it is sound, and does not depend on ordering or filtering.
 
-## 79. Move the init --git body into pkg/meads.InitTasks
-
-* status: open
-* priority: P0
-* type: feature
-* depends-on: 
-* created: 2026-07-26T12:14:55Z
-* updated: 2026-07-27T09:50:00Z
-
-Absorb `cmd/md/init.go:78` `runGit` and `:113` `ensureFetchRefspec` (moving `meadsFetchRefspec`, `init.go:61`) into `InitTasks(dir, BackendGit)`; markdown/csv get the empty-file write.
-
-Keep both invariants:
-
-* the fetch refspec is **additive** (`git config --add`, never a plain set) and lands in `refs/meads-remote/*`, **never** `refs/meads/*` — a force refspec onto the local namespace silently discards not-yet-pushed local commits
-* `remote.origin.push` is **never** touched — setting any push refspec replaces git's default matching/simple push behaviour and breaks ordinary branch pushes for the user (`TestIntegration_InitGit_DoesNotBreakNormalPush`)
-
-Return values instead of `fmt.Print` so a server caller (rais) has no stdout side effects; `runGit` becomes a thin wrapper that prints.
-
-Also keep the refusal: error if `refs/meads/` already has any ref ("git mode is already initialized"), and if not inside a git repository.
-
 ## 80. Move the push body into GitTasks.Sync
 
 * status: open
@@ -1098,7 +1078,7 @@ rais pushes on every task write. Reimplementing the refspec and the porcelain re
 * status: open
 * priority: P1
 * type: task
-* depends-on: 79,80
+* depends-on: 80
 * created: 2026-07-26T12:14:55Z
 * updated: 2026-07-26T12:15:02Z
 

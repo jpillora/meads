@@ -195,12 +195,12 @@ func TestIntegration_InitGit_SetsFetchRefspec(t *testing.T) {
 	}
 	found := false
 	for _, line := range after {
-		if line == meadsFetchRefspec {
+		if line == meads.FetchRefspec {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("remote.origin.fetch = %v, want it to include %q", after, meadsFetchRefspec)
+		t.Errorf("remote.origin.fetch = %v, want it to include %q", after, meads.FetchRefspec)
 	}
 	// The pre-existing default refspec must survive untouched (additive,
 	// never replacing).
@@ -218,29 +218,37 @@ func TestIntegration_InitGit_FetchRefspecNotDuplicated(t *testing.T) {
 	// --git` would be rejected by the already-initialized check before ever
 	// reaching this step, so this is the right granularity to prove
 	// idempotency at.
-	if err := ensureFetchRefspec(h.globals); err != nil {
-		t.Fatalf("ensureFetchRefspec (1st): %v", err)
+	outcome, err := meads.EnsureFetchRefspec(h.globals.git())
+	if err != nil {
+		t.Fatalf("EnsureFetchRefspec (1st): %v", err)
+	}
+	if outcome != meads.FetchRefspecAdded {
+		t.Errorf("EnsureFetchRefspec (1st) = %v, want FetchRefspecAdded", outcome)
 	}
 	firstRun, _ := gitConfigGetAll(t, h.dir, "remote.origin.fetch")
 	countMeads := func(lines []string) int {
 		n := 0
 		for _, l := range lines {
-			if l == meadsFetchRefspec {
+			if l == meads.FetchRefspec {
 				n++
 			}
 		}
 		return n
 	}
 	if n := countMeads(firstRun); n != 1 {
-		t.Fatalf("after first ensureFetchRefspec, meads refspec appears %d times, want 1 (%v)", n, firstRun)
+		t.Fatalf("after first EnsureFetchRefspec, meads refspec appears %d times, want 1 (%v)", n, firstRun)
 	}
 
-	if err := ensureFetchRefspec(h.globals); err != nil {
-		t.Fatalf("ensureFetchRefspec (2nd): %v", err)
+	outcome, err = meads.EnsureFetchRefspec(h.globals.git())
+	if err != nil {
+		t.Fatalf("EnsureFetchRefspec (2nd): %v", err)
+	}
+	if outcome != meads.FetchRefspecAlreadyPresent {
+		t.Errorf("EnsureFetchRefspec (2nd) = %v, want FetchRefspecAlreadyPresent", outcome)
 	}
 	secondRun, _ := gitConfigGetAll(t, h.dir, "remote.origin.fetch")
 	if n := countMeads(secondRun); n != 1 {
-		t.Fatalf("after a second ensureFetchRefspec, meads refspec appears %d times, want still 1 (%v)", n, secondRun)
+		t.Fatalf("after a second EnsureFetchRefspec, meads refspec appears %d times, want still 1 (%v)", n, secondRun)
 	}
 	if len(secondRun) != len(firstRun) {
 		t.Fatalf("remote.origin.fetch grew from %v to %v on a repeat call, want unchanged", firstRun, secondRun)

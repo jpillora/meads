@@ -16,11 +16,9 @@ import (
 // refs/meads/* to origin. It is passed explicitly on every push invocation
 // rather than configured as remote.origin.push, which would replace git's
 // default matching/simple push behaviour for ordinary branches too - see
-// init.go's ensureFetchRefspec doc comment and
-// TestIntegration_InitGit_DoesNotBreakNormalPush. Mirrors meadsFetchRefspec
-// (init.go), which is the same kind of CLI/remote-plumbing constant and
-// lives here in cmd/md for the same reason: it is a git-remote concern, not
-// a ref-storage-model concern (pkg/meads's focus).
+// meads.EnsureFetchRefspec's doc comment and
+// TestIntegration_InitGit_DoesNotBreakNormalPush. Mirrors meads.FetchRefspec
+// (pkg/meads/init.go), which is the same kind of remote-plumbing constant.
 const pushRefspec = meads.RefNamespace + "*:" + meads.RefNamespace + "*"
 
 // pushTimeout bounds how long autoPush will wait for `git push` before
