@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-07-26T22:51:31Z
+* updated: 2026-07-27T09:50:00Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -853,11 +853,11 @@ not absolute, and look for refs there. Everything else stays as is.
 ## 76. Cloning a git-mode repo silently falls back to file mode
 
 * status: open
-* priority: P1
+* priority: P0
 * type: bug
 * depends-on: 79
 * created: 2026-07-26T06:31:55Z
-* updated: 2026-07-26T22:51:31Z
+* updated: 2026-07-27T09:50:00Z
 
 A teammate who clones a git-mode repo gets no task refs, so meads auto-detects
 file mode and `md add` starts a second, divergent task store in TASKS.md.
@@ -1052,13 +1052,13 @@ only at `/` boundaries, so `refs/meads/` can never match `refs/meads-init-check`
 (`-` is not `/`). The design's choice to put the marker outside the namespace
 rather than inside it is sound, and does not depend on ordering or filtering.
 
-
 ## 77. Unify all three backends behind a single meads.Tasks interface
 
 * status: open
-* priority: P1
+* priority: P0
 * type: feature
 * created: 2026-07-26T12:14:55Z
+* updated: 2026-07-27T09:50:00Z
 
 Today `*Store` covers markdown+csv (`detectFormat`, `store.go:36`), `*GitStore` covers git with a different method shape, and the adapters reconciling them are unexported in `cmd/md/taskstore.go` â€” which has already forced three hand-rolled duplicates into tests (`pkg/mcp/gitstore_test.go:23`, `pkg/webui/watch_test.go:32,269`).
 
@@ -1114,11 +1114,11 @@ rais must drive meads library-only (never the `md` CLI) and must work on all thr
 ## 78. Add Detect and the OpenTasks entry points
 
 * status: open
-* priority: P1
+* priority: P0
 * type: feature
 * depends-on: 77
 * created: 2026-07-26T12:14:55Z
-* updated: 2026-07-26T12:15:02Z
+* updated: 2026-07-27T09:50:00Z
 
 ```go
 func Detect(dir string) (Backend, error)
@@ -1140,11 +1140,11 @@ It probes the **whole** `refs/meads/` namespace, not just `refs/meads/tasks/*` â
 ## 79. Move the init --git body into pkg/meads.InitTasks
 
 * status: open
-* priority: P1
+* priority: P0
 * type: feature
 * depends-on: 78
 * created: 2026-07-26T12:14:55Z
-* updated: 2026-07-26T12:15:02Z
+* updated: 2026-07-27T09:50:00Z
 
 Absorb `cmd/md/init.go:78` `runGit` and `:113` `ensureFetchRefspec` (moving `meadsFetchRefspec`, `init.go:61`) into `InitTasks(dir, BackendGit)`; markdown/csv get the empty-file write.
 
