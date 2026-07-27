@@ -1,6 +1,7 @@
 package meads
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sort"
@@ -52,11 +53,27 @@ func (r *IntegrateReport) empty() bool {
 // refspec (ordinary branches included): it is the fetch half of what a
 // user means by "pull", and costs one round-trip either way.
 func (g *GitStore) Pull() (*IntegrateReport, error) {
-	if err := g.git.Run("remote", "get-url", "origin"); err != nil {
+	return g.PullContext(context.Background())
+}
+
+// PullContext is Pull bounded by ctx. The FETCH is the half that talks to a
+// remote and so the half that can hang unboundedly (an unreachable host
+// costs the OS's TCP connect timeout otherwise - see ContextGit); it is
+// killed the moment ctx is done. Integrate, which follows, is purely local
+// git work and is not individually cancellable, so ctx is checked once more
+// before it starts rather than threaded through it.
+func (g *GitStore) PullContext(ctx context.Context) (*IntegrateReport, error) {
+	if err := runContext(ctx, g.git, "remote", "get-url", "origin"); err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
 		return &IntegrateReport{}, nil // no origin: nothing to pull
 	}
-	if err := g.git.Run("fetch", "origin"); err != nil {
+	if err := runContext(ctx, g.git, "fetch", "origin"); err != nil {
 		return nil, fmt.Errorf("fetching origin: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	return g.Integrate()
 }
@@ -87,34 +104,9 @@ func (g *GitStore) Pull() (*IntegrateReport, error) {
 // then runs its own batch as usual. refs/meads-remote/* itself is strictly
 // read-only input - it is owned by `git fetch`, never written here.
 func (g *GitStore) Integrate() (*IntegrateReport, error) {
-	report := &IntegrateReport{}
-	var lastErr error
-	for attempt := 0; attempt < maxCASRetries; attempt++ {
-		// Re-derive the plan from a fresh read on every attempt, into a
-		// FRESH report: a lost race must neither replay a stale plan nor
-		// accumulate duplicate report entries (see casUpdate's doc comment
-		// on the retry trap).
-		attemptReport := &IntegrateReport{}
-		updates, err := g.planIntegration(attemptReport)
-		if err != nil {
-			return nil, err
-		}
-		if len(updates) == 0 {
-			report = attemptReport
-			break
-		}
-		if err := g.refs.AtomicUpdate(updates); err != nil {
-			if !errors.Is(err, ErrCASConflict) {
-				return nil, err
-			}
-			lastErr = err // lost the race: loop and re-read
-			continue
-		}
-		report = attemptReport
-		break
-	}
-	if lastErr != nil {
-		return nil, fmt.Errorf("integrate: exhausted %d attempts: %w", maxCASRetries, lastErr)
+	report, err := g.integrateRefs()
+	if err != nil {
+		return nil, err
 	}
 
 	// The contended remainder: renumber local versions onto fresh ids and
@@ -125,6 +117,43 @@ func (g *GitStore) Integrate() (*IntegrateReport, error) {
 	}
 	report.Fixes = fixes
 	return report, nil
+}
+
+// integrateRefs runs the adopt/fast-forward batch - Integrate's first half,
+// split out so its retry loop can RETURN on success instead of breaking out
+// to a shared post-loop error check. That shape matters: a `lastErr` set by
+// a lost race on an early attempt must not outlive the attempt that then
+// succeeds, or a perfectly good integration is reported as
+// "exhausted N attempts" while its refs have in fact already moved - which
+// would abort Sync before its push and swallow the re-homing notice the
+// causing command is supposed to print. Every other CAS loop in this
+// package (casUpdate, Create, Doctor) returns from inside the loop for the
+// same reason.
+func (g *GitStore) integrateRefs() (*IntegrateReport, error) {
+	var lastErr error
+	for attempt := 0; attempt < maxCASRetries; attempt++ {
+		// Re-derive the plan from a fresh read on every attempt, into a
+		// FRESH report: a lost race must neither replay a stale plan nor
+		// accumulate duplicate report entries (see casUpdate's doc comment
+		// on the retry trap).
+		report := &IntegrateReport{}
+		updates, err := g.planIntegration(report)
+		if err != nil {
+			return nil, err
+		}
+		if len(updates) == 0 {
+			return report, nil
+		}
+		if err := g.refs.AtomicUpdate(updates); err != nil {
+			if !errors.Is(err, ErrCASConflict) {
+				return nil, err
+			}
+			lastErr = err // lost the race: loop and re-read
+			continue
+		}
+		return report, nil
+	}
+	return nil, fmt.Errorf("integrate: exhausted %d attempts: %w", maxCASRetries, lastErr)
 }
 
 // planIntegration computes the adopt/fast-forward half of one Integrate

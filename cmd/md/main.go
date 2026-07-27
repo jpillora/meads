@@ -167,7 +167,7 @@ func (g *globals) explicitTasksFile() bool {
 	return g.TasksFile != bareDefaultTasksFile()
 }
 
-// gitTaskRefsExist is the one cheap ref lookup mode() uses for
+// gitTaskRefsExist is the cheap, purely local ref lookup behind mode()'s
 // auto-detection: git mode is active iff the refs/meads/* namespace is
 // non-empty. A for-each-ref over an empty/absent namespace still exits 0 with
 // no output (see RefStore.ResolveRef's doc comment), and outside a git
@@ -180,6 +180,10 @@ func (g *globals) explicitTasksFile() bool {
 // report file mode, the first `md add` would write TASKS.md into the working
 // tree, and git mode could never bootstrap. `md init --git` writes the config
 // ref precisely so the namespace is non-empty from the start.
+//
+// It is mode()'s FALLBACK only: on its own it cannot see a fresh clone of a
+// git-mode repo, whose local namespace is empty until the one-shot clone
+// resolution adopts origin's refs - which is why mode() asks tasks() first.
 func (g *globals) gitTaskRefsExist() bool {
 	refs, err := meads.NewRefStore(g.git()).ListRefs(meads.RefNamespace)
 	if err != nil {
@@ -199,10 +203,27 @@ const (
 // mode resolves which backend this invocation should use, in priority order:
 //  1. --file, or an explicit tasks file (explicitTasksFile), forces file mode.
 //  2. --git, or MEADS_GIT via defaultGitMode, forces git mode.
-//  3. Otherwise auto-detect: git mode iff refs/meads/tasks/* exists.
+//  3. Otherwise auto-detect, through tasks().
 //
-// Outside a git repo, gitTaskRefsExist reports false, so an unforced
-// invocation always falls through to file mode without erroring.
+// Step 3 goes through tasks() - the same resolution every command that
+// reads or writes tasks already uses, cached in TaskStoreCache - rather
+// than probing refs directly, so mode() and tasks() can never disagree
+// about which backend a repo is in. They used to: tasks() gained the
+// one-shot clone resolution (a fresh clone of a git-mode repo has no local
+// refs/meads/* until origin's are adopted - see pkg/meads/clone.go) while
+// mode() kept the bare local ref probe, so the commands that dispatch on
+// mode() alone - doctor, beads-import, prime, auto-save/auto-delete, and
+// auto-push - all read a git-mode clone as file mode. For doctor and
+// beads-import that was destructive rather than merely wrong: their file
+// path creates TASKS.md, and an existing tasks file short-circuits the
+// clone resolution forever after, permanently pinning a git-mode clone to a
+// second, divergent task store (meads task 76's exact bug, through a
+// different door).
+//
+// A tasks() failure (only --git outside a repository, already excluded
+// above) folds to the local probe, so mode() still never errors: outside a
+// git repo gitTaskRefsExist reports false and an unforced invocation falls
+// through to file mode.
 func (g *globals) mode() taskStoreMode {
 	if g.FileMode || g.explicitTasksFile() {
 		return modeFile
@@ -210,7 +231,14 @@ func (g *globals) mode() taskStoreMode {
 	if g.GitMode {
 		return modeGit
 	}
-	if g.gitTaskRefsExist() {
+	ts, err := g.tasks()
+	if err != nil {
+		if g.gitTaskRefsExist() {
+			return modeGit
+		}
+		return modeFile
+	}
+	if ts.Backend() == meads.BackendGit {
 		return modeGit
 	}
 	return modeFile
@@ -243,8 +271,10 @@ func (g *globals) modeConflictErr() error {
 // branch delegates to meads.OpenTasks, which additionally runs the one-shot
 // clone resolution: a fresh clone of a git-mode repo is adopted (origin's
 // refs fetched) instead of silently falling back to file mode - see
-// pkg/meads/clone.go. mode() itself stays pure for the commands that only
-// dispatch on it (doctor, import, autoPush).
+// pkg/meads/clone.go. This is also the resolution mode() reports, so the
+// commands that only dispatch on mode() (doctor, beads-import, prime,
+// auto-save/auto-delete, auto-push) can never disagree with the store the
+// commands that read and write tasks actually use - see mode().
 //
 // Construction can fail where mode() alone cannot: forcing git mode (--git
 // or MEADS_GIT) outside a git repository has no cheap silent fallback the

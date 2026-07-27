@@ -1,6 +1,7 @@
 package meads
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -146,8 +147,10 @@ func InitTasks(dir string, b Backend) (InitResult, error) {
 		// the next push reject non-fast-forward over origin's real one, so
 		// adopt origin's refs instead (safe: the local namespace is empty,
 		// so there is nothing to lose).
-		if lsOut, err := originMeadsRefs(git); err == nil && strings.TrimSpace(lsOut) != "" {
-			tasks, outcome, err := adoptOriginRefs(git, lsOut)
+		ctx, cancel := context.WithTimeout(context.Background(), remoteProbeTimeout)
+		defer cancel()
+		if lsOut, err := originMeadsRefs(ctx, git); err == nil && strings.TrimSpace(lsOut) != "" {
+			tasks, outcome, err := adoptOriginRefs(ctx, git, lsOut)
 			if err != nil {
 				return InitResult{}, err
 			}

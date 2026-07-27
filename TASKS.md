@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-07-27T13:59:01Z
+* updated: 2026-07-27T21:41:49Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -855,21 +855,43 @@ not absolute, and look for refs there. Everything else stays as is.
 * status: open
 * priority: P1
 * type: feature
-* depends-on: 
+* depends-on: 87
 * created: 2026-07-26T12:14:55Z
-* updated: 2026-07-26T12:15:02Z
+* updated: 2026-07-27T14:04:35Z
 
-Absorb `cmd/md/push.go`'s push into `GitTasks.Sync(ctx)`:
+### Status: half done by #86
 
-* `git push --porcelain origin refs/meads/*:refs/meads/*` (`pushRefspec`, `push.go:24`) — explicit refspec at push time, never a configured `remote.origin.push`
-* the rejection classification in `divergenceMessage` (`push.go:188`), which matches only git's own porcelain reasons (`non-fast-forward`, `fetch first`, `stale info`) and never host free-text
-* **never** force-push
+`GitTasks.Sync(ctx)` now exists (`pkg/meads/tasks.go:315`) and is pull-then-push:
+`GitStore.Pull` (fetch + Integrate, re-homing contended ids) followed by an
+explicit-refspec `git push --porcelain origin refs/meads/*:refs/meads/*`.
+`FileTasks.Sync` no-ops (`tasks.go:198`). That is the part library callers
+(rais) needed, and it is done.
 
-`cmd/md/push.go:autoPush` keeps the cadence — `GitStore.ShouldPush`/`MarkPushed`, `gitCommonDir`, `pushTimeout` — and delegates the push itself. File backends no-op, so a caller can invoke `Sync` unconditionally without a backend check.
+### What remains: collapse the duplicate
 
-### Why
+`cmd/md/push.go` still carries its **own** pull-then-push — `fetchFunc` +
+`Integrate` + `pushFunc`/`runPush` with `pushRefspec` (`push.go:23,162-170,226-245`).
+So there are now two implementations of the same sequence, which will drift.
 
-rais pushes on every task write. Reimplementing the refspec and the porcelain rejection parsing on the rais side would be a second, drifting copy of the one piece of this that talks to a remote.
+`autoPush` should keep what genuinely belongs to the CLI and delegate the rest:
+
+* **keeps**: the cadence gate (`ShouldPush`/`MarkPushed` against `gitCommonDir`,
+  marking *before* the attempt), the `pushTimeout` context, and the stderr
+  reporting — `integrateMessage` (`push.go:164`) and `divergenceMessage`
+  (`:247`), which must not move into the library; `pkg/meads` never prints
+* **delegates**: the fetch + Integrate + push sequence itself → `Tasks.Sync`
+
+The blocker is that `Sync` returns only `error`, so `autoPush` cannot recover
+the `IntegrateReport` it needs for `integrateMessage`, nor the porcelain output
+`divergenceMessage` inspects. Fixing that is its own task (see "Sync discards
+the integrate report") — do that first, then this collapse is mechanical.
+
+### Note for library callers
+
+`Sync`'s error on a rejected push is currently a raw wrapped git error; the
+non-fast-forward classification (`divergenceMessage`) lives only in `cmd/md`.
+A library caller therefore cannot tell "diverged, will converge next interval"
+from "remote is broken" without the same report.
 
 ## 81. Rewire cmd/md onto meads.Tasks and delete cmd/md/taskstore.go
 
@@ -944,9 +966,9 @@ Not required by rais — its frontend never reads `task.meta` — but it is a re
 * status: open
 * priority: P1
 * type: task
-* depends-on: 81,82,83
+* depends-on: 81,82,83,87
 * created: 2026-07-26T12:14:55Z
-* updated: 2026-07-26T14:38:42Z
+* updated: 2026-07-27T14:04:35Z
 
 `go fmt ./...`, `go test ./...`, tag `v0.36.0` and push.
 
@@ -958,12 +980,60 @@ Call out in the release notes that this is a **breaking** v0 change:
 
 rais's integration work is blocked on this tag.
 
-## 86. auto-push becomes auto-sync: pull, renumber conflicts, push
+## 87. Tasks.Sync discards the integrate report, hiding id re-homes from library callers
 
-* status: closed
+* status: open
 * priority: P1
-* type: feature
-* created: 2026-07-27T12:32:49Z
-* updated: 2026-07-27T13:59:01Z
+* type: bug
+* created: 2026-07-27T14:04:30Z
 
-Every pushInterval, auto-push first pulls (fetch + integrate refs/meads-remote/*: import new ids, fast-forward, config adopt), then pushes. Contended tasks (diverged edit/edit or create/create duplicate) are resolved by doctor re-homing the LOCAL version at a fresh id and resetting the contended ref to origin's version, so the push converges with no force and no data loss.
+`Tasks.Sync(ctx) error` (`pkg/meads/tasks.go:315`) calls `GitStore.Pull`, which
+returns an `*IntegrateReport`, and then discards it:
+
+```go
+if _, err := t.gs.Pull(); err != nil {
+	return err
+}
+```
+
+Since #86, a sync can **renumber local tasks**: when two clones race the same
+id, the fetched-remote version keeps the id and the LOCAL version is re-homed at
+a fresh id with its content preserved. `cmd/md` surfaces this on stderr via
+`integrateMessage` (`cmd/md/push.go:164`), so a human running `md update` sees
+it. A library caller sees nothing at all — `Sync` returns `nil`.
+
+That is a correctness problem for any consumer holding task ids in durable state
+outside meads. rais does: agent task badges (`state.AgentMeads.TaskID`) and plan
+documents on disk at `<project>/.plans/<taskId>/vN.md`
+(`internal/app/machine/machine_meads_plan.go:48`). After a re-home, its badge
+points at content that moved and its plan directory is orphaned under an id that
+now belongs to a different task — silently.
+
+### Change
+
+Return what happened:
+
+```go
+Sync(ctx context.Context) (*SyncReport, error)
+```
+
+carrying at minimum the `IntegrateReport` (adopted / fast-forwarded / re-homed,
+with old→new id pairs for re-homes) and enough of the push outcome to classify a
+rejection the way `divergenceMessage` does. `FileTasks.Sync` returns an empty
+report.
+
+This also unblocks collapsing `cmd/md/push.go`'s duplicate pull-then-push onto
+`Tasks.Sync` (task 80), which currently cannot delegate precisely because the
+report and the porcelain output are unreachable through the interface.
+
+Breaking signature change, but meads is v0 and the only callers are `cmd/md` and
+rais's not-yet-written integration.
+
+## 88. auto-sync loads every task ref 4x per interval
+
+* status: open
+* priority: P2
+* type: task
+* created: 2026-07-27T21:41:34Z
+
+Each auto-sync now walks the whole task set four times: planIntegration reads local+remote-tracking (loadAllWithOIDs x2, gitpull.go) and planDoctorFixes reads both again (gitdoctor.go). With readTaskAtCommit spawning one git process per task (see task 73), that is ~4N+ subprocesses inside an interactive md add/update once per pushInterval - roughly 450 on a 113-task repo. It also sits between autoPush's fetch and push while sharing their single 10s budget, so a large repo can eat the push's share of the timeout. Fix is either to thread one snapshot through Integrate into Doctor (they read the same two namespaces back to back) or to land task 73's batched cat-file first.

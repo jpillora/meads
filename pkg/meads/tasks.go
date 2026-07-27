@@ -312,15 +312,24 @@ func (t GitTasks) Delete(id int) error {
 // remote.origin.push, which would replace git's default matching/simple
 // push behaviour for ordinary branches too (see cmd/md/push.go's
 // pushRefspec, the CLI auto-push path this shares the refspec shape with).
+//
+// ctx bounds both network halves for real - the fetch inside PullContext
+// and the push below are killed the moment it is done, so a caller passing
+// a deadline gets one (a remote git command is otherwise unbounded; see
+// ContextGit). The integration between them is local git work and is not
+// individually cancellable, so ctx is checked at that boundary instead.
 func (t GitTasks) Sync(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if _, err := t.gs.Pull(); err != nil {
+	if _, err := t.gs.PullContext(ctx); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 	refspec := RefNamespace + "*:" + RefNamespace + "*"
-	if err := t.gs.git.Run("push", "--porcelain", "origin", refspec); err != nil {
+	if err := runContext(ctx, t.gs.git, "push", "--porcelain", "origin", refspec); err != nil {
 		return fmt.Errorf("pushing %s to origin: %w", RefNamespace+"*", err)
 	}
 	return nil

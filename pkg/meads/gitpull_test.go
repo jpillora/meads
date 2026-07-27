@@ -1,6 +1,7 @@
 package meads
 
 import (
+	"fmt"
 	"slices"
 	"testing"
 )
@@ -286,5 +287,65 @@ func TestGitStore_Pull_TwoCloneRoundTrip(t *testing.T) {
 	}
 	if !second.empty() {
 		t.Errorf("clone2's second Pull = %+v, want empty (converged)", second)
+	}
+}
+
+// conflictOnceGit makes the FIRST `update-ref --stdin` (RefStore.
+// AtomicUpdate) fail the way a genuinely lost CAS race does: it moves one
+// of the refs the batch expected to create, then errors, so AtomicUpdate's
+// conflictError check finds a mismatched prev and reports ErrCASConflict.
+// Every later call passes straight through.
+type conflictOnceGit struct {
+	Git
+	fired   bool
+	refName string
+	refOID  OID
+}
+
+func (g *conflictOnceGit) OutputWithInput(stdin string, args ...string) (string, error) {
+	if !g.fired && len(args) >= 2 && args[0] == "update-ref" && args[1] == "--stdin" {
+		g.fired = true
+		if err := g.Git.Run("update-ref", g.refName, string(g.refOID)); err != nil {
+			return "", err
+		}
+		return "", fmt.Errorf("simulated lost race")
+	}
+	return g.Git.OutputWithInput(stdin, args...)
+}
+
+// TestGitStore_Integrate_SucceedsAfterALostRace: losing the CAS race on an
+// early attempt and winning on a later one is a SUCCESS. The retry loop
+// used to break out to a shared post-loop `if lastErr != nil` check, so the
+// error recorded by the lost attempt outlived the attempt that won and a
+// completed integration was reported as "exhausted N attempts" - with its
+// refs already moved. That silently aborts Sync before its push and
+// swallows the re-homing notice the causing command must print.
+func TestGitStore_Integrate_SucceedsAfterALostRace(t *testing.T) {
+	gs, rs, _ := newGitStoreRepo(t)
+	remoteOID2 := seedTaskAtRef(t, rs, remoteTaskRef(2), Task{ID: 2, Title: "from origin", Status: "open"})
+	seedTaskAtRef(t, rs, remoteTaskRef(3), Task{ID: 3, Title: "also from origin", Status: "open"})
+
+	gs.refs = NewRefStore(&conflictOnceGit{Git: gs.git, refName: gs.TaskRef(2), refOID: remoteOID2})
+
+	report, err := gs.Integrate()
+	if err != nil {
+		t.Fatalf("Integrate after one lost race: %v (the retry won; both refs are in place)", err)
+	}
+	if report == nil {
+		t.Fatal("Integrate returned a nil report on success")
+	}
+	// The winning attempt's report only - not the losing attempt's, and not
+	// both concatenated (see planIntegration's fresh-report-per-attempt).
+	if !slices.Equal(report.Imported, []int{3}) {
+		t.Errorf("Imported = %v, want [3]: task 2 was already local by the winning attempt", report.Imported)
+	}
+	for _, id := range []int{2, 3} {
+		if _, err := rs.ResolveRef(gs.TaskRef(id)); err != nil {
+			t.Errorf("task %d ref missing after Integrate: %v", id, err)
+		}
+	}
+	got, err := gs.Get(nil)
+	if err != nil || len(got) != 2 {
+		t.Fatalf("Get(nil) = %v, %v; want both integrated tasks", got, err)
 	}
 }

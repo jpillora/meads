@@ -252,6 +252,14 @@ func runPush(ctx context.Context, dir string) (string, error) {
 // (offline, auth, no remote - none of which are diagnostic of divergence),
 // or unparsable/absent input.
 //
+// Since task 86 a divergence is normally resolved automatically, by the
+// pull half of this very function's caller (fetch + meads.Integrate, whose
+// Doctor re-homes contended tasks at fresh ids). So a rejection reaching
+// here means that reconciliation did not happen or did not settle it -
+// origin moved again between this sync's fetch and its push, or the fetch
+// failed and was skipped - which is a "try again" situation, not the
+// permanent manual-attention dead end the message used to describe.
+//
 // It matches only on git's OWN client-side porcelain summary reasons -
 // "non-fast-forward", "fetch first", "stale info" (all three confirmed
 // experimentally against a real diverged push; git currently favours
@@ -273,10 +281,12 @@ func divergenceMessage(output string) string {
 			strings.Contains(lower, "fetch first") ||
 			strings.Contains(lower, "stale info") {
 			return "meads: push of refs/meads/* to origin was rejected: another " +
-				"clone has already pushed different changes (refs/meads/* has " +
-				"diverged). Your local changes are committed locally and are " +
-				"safe. Automatic reconciliation is not implemented yet (meads " +
-				"task 65) and will need manual attention; meads will NOT " +
+				"clone pushed different changes while this sync was running " +
+				"(refs/meads/* has diverged). Your local changes are committed " +
+				"locally and are safe. The next sync pulls origin's version " +
+				"first and reconciles automatically - re-homing any contended " +
+				"task at a fresh id rather than losing it - or run 'md doctor' " +
+				"after 'git fetch origin' to do it now. meads will NOT " +
 				"force-push."
 		}
 	}

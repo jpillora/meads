@@ -203,3 +203,73 @@ func TestIntegration_CloneOfPlainRepo_StaysFileMode(t *testing.T) {
 		t.Errorf("origin must never hold %s, got %q", meads.InitCheckRef, out)
 	}
 }
+
+// TestIntegration_Clone_DoctorDoesNotStartAFileStore: `md doctor` as the
+// FIRST command in a fresh clone of a git-mode repo must resolve to git
+// mode, exactly like `md list` does.
+//
+// It is the destructive case of mode() and tasks() disagreeing: doctor
+// dispatches on mode(), whose bare local ref probe cannot see a git-mode
+// clone (the local refs/meads/* namespace is empty until origin's refs are
+// adopted), so it took the file path - whose Store.Doctor calls ensureFile
+// and CREATES TASKS.md. That is permanent, not transient: an existing tasks
+// file short-circuits the clone resolution, so every later command reads
+// file mode too and `md add` starts a second, divergent store with ids that
+// collide with origin's. Task 76's exact bug, through a different door.
+func TestIntegration_Clone_DoctorDoesNotStartAFileStore(t *testing.T) {
+	origin := seedGitModeOrigin(t, "lives in git mode")
+	g, dir := cloneGlobals(t, origin)
+
+	out, err := captureStdout(t, (&doctorCmd{globals: g}).Run)
+	if err != nil {
+		t.Fatalf("doctor in a fresh clone: %v", err)
+	}
+	if !strings.Contains(out, "no issues found") {
+		t.Errorf("doctor output = %q, want 'no issues found'", out)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "TASKS.md")); err == nil {
+		t.Fatal("doctor created TASKS.md in a git-mode clone: the clone is now pinned to file mode forever")
+	}
+	if g.mode() != modeGit {
+		t.Errorf("mode() = %v, want modeGit after the clone resolution adopted origin's refs", g.mode())
+	}
+
+	// And the adoption really happened, so the follow-up commands a
+	// teammate would run see origin's tasks and allocate non-colliding ids.
+	fresh := &globals{Git: &meads.ExecGit{Dir: dir}, Dir: dir, TasksFile: "TASKS.md"}
+	listOut, err := captureStdout(t, (&listCmd{globals: fresh}).Run)
+	if err != nil {
+		t.Fatalf("list after doctor: %v", err)
+	}
+	if !strings.Contains(listOut, "lives in git mode") {
+		t.Errorf("list output = %q, want origin's task", listOut)
+	}
+	ts, err := fresh.tasks()
+	if err != nil {
+		t.Fatalf("tasks(): %v", err)
+	}
+	id, err := ts.Add(meads.Task{Title: "teammate adds one", Status: "open"})
+	if err != nil {
+		t.Fatalf("Add after doctor: %v", err)
+	}
+	if id == 1 {
+		t.Errorf("new task id = 1, colliding with origin's id 1; want a fresh id")
+	}
+}
+
+// TestIntegration_Clone_BeadsImportRefusesGitMode: beads-import is the
+// other command that dispatches on mode() and would otherwise write through
+// the file store - it must refuse in a git-mode clone rather than import
+// into a TASKS.md the clone should never have.
+func TestIntegration_Clone_BeadsImportRefusesGitMode(t *testing.T) {
+	origin := seedGitModeOrigin(t, "lives in git mode")
+	g, dir := cloneGlobals(t, origin)
+
+	err := (&beadsImportCmd{globals: g}).Run()
+	if err == nil || !strings.Contains(err.Error(), "not supported in git mode") {
+		t.Errorf("beads-import in a git-mode clone: err = %v, want the git-mode refusal", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "TASKS.md")); err == nil {
+		t.Error("beads-import created TASKS.md in a git-mode clone")
+	}
+}
