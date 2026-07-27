@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-07-27T23:50:00Z
+* updated: 2026-07-27T23:50:52Z
 * max-id: 88
 * next-id: 13
 
@@ -790,23 +790,6 @@ not absolute, and look for refs there. Everything else stays as is.
   commands, matching the main checkout
 - A test covers the worktree layout
 
-## 81. Rewire cmd/md onto meads.Tasks and delete cmd/md/taskstore.go
-
-* status: open
-* priority: P1
-* type: task
-* depends-on: 
-* created: 2026-07-26T12:14:55Z
-* updated: 2026-07-26T12:15:02Z
-
-`globals.mode()` / `gitTaskRefsExist` / `tasks()` (`main.go:183,206,244`) delegate to `Detect` and the `OpenTasks*` family, keeping the `--file` / `--git` / `explicitTasksFile` precedence layered on top. One detection implementation means `md` and library consumers (rais) can never disagree about which store a project uses.
-
-Delete the private `taskStore` interface and both adapters from `cmd/md/taskstore.go`. Move `errGitModeUnsupported` to `import.go`, its only remaining caller (`beads-import`).
-
-`doctor.go`'s mode switch collapses onto `Tasks.Doctor()` — both backends already have a `Doctor` returning `[]DoctorFix`. Only the git-only divergence report (`GitStore.Diverged`) still type-asserts.
-
-Everything wired through the old seam must behave identically afterwards: `get`, `list`, `ready`, `add`/`create`, `update`, `set-status`, `add-dep`, `rm-dep`, `del`, plus `mcp`, `webui`, `prime`, `convert`. `auto-save`/`auto-delete` stay no-ops in git mode (checked before the file-existence test, so a stray leftover `TASKS.md` is never staged or pruned), and stay hidden from help via `hiddenCommands()` rather than unregistered — the installed pre-commit hook runs them unconditionally.
-
 ## 82. Rewire pkg/webui and pkg/mcp onto Tasks, deleting the type-assert seams
 
 * status: open
@@ -863,7 +846,7 @@ Not required by rais — its frontend never reads `task.meta` — but it is a re
 * status: open
 * priority: P1
 * type: task
-* depends-on: 81,82,83
+* depends-on: 82,83
 * created: 2026-07-26T12:14:55Z
 * updated: 2026-07-27T14:04:35Z
 
