@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -23,7 +24,7 @@ import (
 // t.TempDir() rather than fakes - what's under test (a real non-fast-forward
 // rejection, a real push landing on a real remote) is precisely what a fake
 // would rubber-stamp without exercising. The one deliberate exception is
-// pushFunc itself, which IS a seam (see push.go) specifically so the
+// syncFunc itself, which IS a seam (see push.go) specifically so the
 // "bounded by pushTimeout" requirement can be proven without a real hung
 // network.
 
@@ -74,14 +75,14 @@ func lastPushPath(commonDir string) string {
 func TestAutoPush_BoundedByTimeout(t *testing.T) {
 	h := gitModeHarness(t)
 
-	orig := pushFunc
-	t.Cleanup(func() { pushFunc = orig })
-	pushFunc = func(ctx context.Context, dir string) (string, error) {
+	orig := syncFunc
+	t.Cleanup(func() { syncFunc = orig })
+	syncFunc = func(ctx context.Context, _ *globals) (*meads.SyncReport, error) {
 		select {
 		case <-ctx.Done():
-			return "", ctx.Err()
+			return &meads.SyncReport{Integrate: &meads.IntegrateReport{}}, ctx.Err()
 		case <-time.After(time.Hour): // far longer than pushTimeout; must never actually be reached
-			return "unreachable: pushFunc should have been cancelled at the deadline", nil
+			return nil, errors.New("unreachable: syncFunc should have been cancelled at the deadline")
 		}
 	}
 
@@ -130,11 +131,11 @@ func TestAutoPush_FiresOnlyWhenIntervalElapsed(t *testing.T) {
 	}
 
 	var calls int32
-	orig := pushFunc
-	t.Cleanup(func() { pushFunc = orig })
-	pushFunc = func(ctx context.Context, dir string) (string, error) {
+	orig := syncFunc
+	t.Cleanup(func() { syncFunc = orig })
+	syncFunc = func(context.Context, *globals) (*meads.SyncReport, error) {
 		atomic.AddInt32(&calls, 1)
-		return "", nil
+		return &meads.SyncReport{Integrate: &meads.IntegrateReport{}}, nil
 	}
 
 	// First-ever mutation: no last-push record at all yet -> due.
@@ -142,7 +143,7 @@ func TestAutoPush_FiresOnlyWhenIntervalElapsed(t *testing.T) {
 		t.Fatalf("add (1st): %v", err)
 	}
 	if got := atomic.LoadInt32(&calls); got != 1 {
-		t.Fatalf("pushFunc calls after 1st add = %d, want 1 (no prior record -> due)", got)
+		t.Fatalf("syncFunc calls after 1st add = %d, want 1 (no prior record -> due)", got)
 	}
 
 	// Second mutation immediately after: last-push was just marked, interval
@@ -151,7 +152,7 @@ func TestAutoPush_FiresOnlyWhenIntervalElapsed(t *testing.T) {
 		t.Fatalf("add (2nd): %v", err)
 	}
 	if got := atomic.LoadInt32(&calls); got != 1 {
-		t.Fatalf("pushFunc calls after 2nd add = %d, want still 1 (interval has not elapsed)", got)
+		t.Fatalf("syncFunc calls after 2nd add = %d, want still 1 (interval has not elapsed)", got)
 	}
 
 	// Manually backdate the last-push record beyond the interval: the next
@@ -168,7 +169,7 @@ func TestAutoPush_FiresOnlyWhenIntervalElapsed(t *testing.T) {
 		t.Fatalf("add (3rd): %v", err)
 	}
 	if got := atomic.LoadInt32(&calls); got != 2 {
-		t.Fatalf("pushFunc calls after 3rd add (post-backdate) = %d, want 2 (interval has now elapsed)", got)
+		t.Fatalf("syncFunc calls after 3rd add (post-backdate) = %d, want 2 (interval has now elapsed)", got)
 	}
 }
 
@@ -278,12 +279,14 @@ func setupDivergedGitModeClones(t *testing.T) (g1, g2 *globals, clone1, clone2, 
 	// trigger and observe itself. Suppress the actual push for the
 	// duration of setup (autoPush's ShouldPush/MarkPushed bookkeeping still
 	// runs normally either way - see the cleanup loop below), restoring the
-	// real pushFunc via a plain defer - NOT t.Cleanup, which would only
+	// real syncFunc via a plain defer - NOT t.Cleanup, which would only
 	// restore at the whole test's end - so callers get the real pipeline
 	// for anything they do AFTER this helper returns.
-	realPushFunc := pushFunc
-	pushFunc = func(ctx context.Context, dir string) (string, error) { return "", nil }
-	defer func() { pushFunc = realPushFunc }()
+	realSyncFunc := syncFunc
+	syncFunc = func(context.Context, *globals) (*meads.SyncReport, error) {
+		return &meads.SyncReport{Integrate: &meads.IntegrateReport{}}, nil
+	}
+	defer func() { syncFunc = realSyncFunc }()
 
 	bareDir = t.TempDir()
 	runGit(t, bareDir, "init", "--bare", "-b", "main")
@@ -325,7 +328,7 @@ func setupDivergedGitModeClones(t *testing.T) (g1, g2 *globals, clone1, clone2, 
 	}
 
 	// autoPush's decision logic (ShouldPush/MarkPushed) ran on every
-	// add/update above even with pushFunc suppressed - clear both clones'
+	// add/update above even with the sync suppressed - clear both clones'
 	// push state so a caller's own next mutation is correctly seen as due,
 	// rather than silently skipped as "too recent to push".
 	for _, g := range []*globals{g1, g2} {
@@ -357,7 +360,7 @@ func TestDivergenceMessage_RealDivergedPushIsRecognized(t *testing.T) {
 	}
 	t.Logf("real diverged push output:\n%s", output)
 
-	msg := divergenceMessage(string(output))
+	msg := divergenceMessage(&meads.SyncReport{PushOutput: string(output), Rejected: meads.PushRejected(string(output))})
 	if msg == "" {
 		t.Fatalf("divergenceMessage did not recognize a real diverged-push rejection; raw output:\n%s", output)
 	}
@@ -370,7 +373,7 @@ func TestDivergenceMessage_RealDivergedPushIsRecognized(t *testing.T) {
 }
 
 // TestAutoPush_DivergenceWarningSurfacesOnSameCommand drives the REAL,
-// synchronous pipeline (autoPush -> runPush -> a real `git push`) against
+// synchronous pipeline (autoPush -> meads.Tasks.Sync -> a real `git push`) against
 // the manufactured divergence and proves the warning appears on stderr of
 // THE SAME COMMAND that triggered the rejected push - not a later one. This
 // is the whole point of going synchronous: the earlier async design could
@@ -415,7 +418,7 @@ func TestDivergenceMessage_TableDriven(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := divergenceMessage(tt.output)
+			got := divergenceMessage(&meads.SyncReport{PushOutput: tt.output, Rejected: meads.PushRejected(tt.output)})
 			if (got != "") != tt.wantMessage {
 				t.Errorf("divergenceMessage(%q) = %q, want non-empty=%v", tt.output, got, tt.wantMessage)
 			}
@@ -458,18 +461,18 @@ func TestAutoPush_FileModeUnaffected(t *testing.T) {
 	h := newHarness(t) // absolute TasksFile -> explicit -> file mode (see mode_test.go)
 
 	var calls int32
-	orig := pushFunc
-	t.Cleanup(func() { pushFunc = orig })
-	pushFunc = func(ctx context.Context, dir string) (string, error) {
+	orig := syncFunc
+	t.Cleanup(func() { syncFunc = orig })
+	syncFunc = func(context.Context, *globals) (*meads.SyncReport, error) {
 		atomic.AddInt32(&calls, 1)
-		return "", nil
+		return &meads.SyncReport{Integrate: &meads.IntegrateReport{}}, nil
 	}
 
 	if err := (&addCmd{globals: h.globals, Args: []string{"file mode task"}}).Run(); err != nil {
 		t.Fatalf("add: %v", err)
 	}
 	if got := atomic.LoadInt32(&calls); got != 0 {
-		t.Fatalf("pushFunc called %d times in file mode, want 0", got)
+		t.Fatalf("syncFunc called %d times in file mode, want 0", got)
 	}
 
 	commonDir, err := gitCommonDir(h.globals)

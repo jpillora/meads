@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -12,15 +11,6 @@ import (
 
 	"github.com/jpillora/meads/pkg/meads"
 )
-
-// pushRefspec is the explicit refspec every meads auto-push uses to send
-// refs/meads/* to origin. It is passed explicitly on every push invocation
-// rather than configured as remote.origin.push, which would replace git's
-// default matching/simple push behaviour for ordinary branches too - see
-// meads.EnsureFetchRefspec's doc comment and
-// TestIntegration_InitGit_DoesNotBreakNormalPush. Mirrors meads.FetchRefspec
-// (pkg/meads/init.go), which is the same kind of remote-plumbing constant.
-const pushRefspec = meads.RefNamespace + "*:" + meads.RefNamespace + "*"
 
 // pushTimeout bounds how long autoPush will wait for `git push` before
 // giving up and letting the command return anyway.
@@ -70,40 +60,30 @@ func gitCommonDir(g *globals) (string, error) {
 	return filepath.Join(base, out), nil
 }
 
-// pushFunc is the seam autoPush uses to actually run a push: given a
-// context already carrying pushTimeout's deadline (see autoPush) and the
-// repo's working directory, it runs the push and returns its combined
-// output (used by divergenceMessage regardless of success/failure) and an
-// error.
+// syncFunc is the seam autoPush uses to actually run the sync: given a
+// context already carrying pushTimeout's deadline (see autoPush), it pulls
+// and pushes and returns what happened.
+//
+// It replaced a pair of pushFunc/fetchFunc seams wrapping cmd/md's own
+// fetch/Integrate/push, which duplicated meads.Tasks.Sync exactly (task
+// 80). There is one sequence now, in the library, so the CLI and any other
+// embedder cannot drift apart on it; what stays here is what genuinely
+// belongs to a CLI - the cadence gate, the timeout budget, and the stderr
+// rendering below, since nothing under pkg/meads prints.
 //
 // Implementations MUST respect ctx - returning once it is done rather than
-// actually blocking past its deadline - exactly as runPush does by handing
-// ctx straight to exec.CommandContext. Tests override this var (restoring
-// it via t.Cleanup) with a fake that behaves the same way (selecting on
-// ctx.Done() instead of a real subprocess) to prove pushTimeout's context is
-// what bounds autoPush - not a coincidence of how fast a local push happens
-// to be - without needing a real hung network; see
-// TestAutoPush_BoundedByTimeout in push_test.go. Production always uses
-// runPush.
-var pushFunc = runPush
+// actually blocking past its deadline - exactly as meads.Tasks.Sync does by
+// handing ctx to git. Tests override this var (restoring it via t.Cleanup)
+// with a fake that behaves the same way (selecting on ctx.Done() instead of
+// a real subprocess) to prove pushTimeout's context is what bounds autoPush
+// - not a coincidence of how fast a local push happens to be - without
+// needing a real hung network; see TestAutoPush_BoundedByTimeout in
+// push_test.go. Production always uses runSync.
+var syncFunc = runSync
 
-// fetchFunc is fetch's analogue of pushFunc: the seam autoPush uses to run
-// the pull half's `git fetch origin`, bounded by the same ctx (the same
-// pushTimeout budget covers both network calls). Tests override it with a
-// ctx-respecting fake for the same reason as pushFunc. Production always
-// uses runFetch.
-var fetchFunc = runFetch
-
-// runFetch runs `git fetch origin` in dir, bounded by ctx - the fetch half
-// of the pull (landing refs/meads/* in refs/meads-remote/* via the
-// configured fetch refspec, meads.FetchRefspec). A plain fetch of every
-// configured refspec, exactly the fetch half of what a user means by
-// "pull"; meads.Integrate then reconciles the task refs locally.
-func runFetch(ctx context.Context, dir string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", "fetch", "origin")
-	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
-	return string(out), err
+// runSync pulls-then-pushes refs/meads/* via the library, bounded by ctx.
+func runSync(ctx context.Context, g *globals) (*meads.SyncReport, error) {
+	return meads.NewGitTasks(g.gitStore()).Sync(ctx)
 }
 
 // autoPush is called after every successful git-mode mutation
@@ -155,19 +135,22 @@ func autoPush(g *globals) {
 	ctx, cancel := context.WithTimeout(context.Background(), pushTimeout)
 	defer cancel()
 
-	// Pull first (task 86), bounded by the same timeout budget. Integrate
-	// runs only when the fetch SUCCEEDED: a failed fetch leaves
-	// remote-tracking state stale, and integrating against stale state
-	// could renumber against facts that are no longer true.
-	if _, fetchErr := fetchFunc(ctx, g.Dir); fetchErr == nil {
-		if report, err := g.gitStore().Integrate(); err == nil {
-			if msg := integrateMessage(report); msg != "" {
-				fmt.Fprint(os.Stderr, msg)
-			}
+	// One call does the pull (task 86) and the push, both bounded by the
+	// same budget. The error is deliberately ignored: every failure here is
+	// non-fatal to the mutation that triggered it, and the three outcomes
+	// worth telling the user about are read off the report below instead.
+	report, _ := syncFunc(ctx, g)
+
+	// What the pull integrated - most importantly a contended task re-homed
+	// at a fresh id, which renames a task the user may have just been
+	// looking at and so must never be silent. Printed before the timeout
+	// check because a pull that landed still happened even if the push that
+	// followed then ran out of budget.
+	if report != nil {
+		if msg := integrateMessage(report.Integrate); msg != "" {
+			fmt.Fprint(os.Stderr, msg)
 		}
 	}
-
-	output, _ := pushFunc(ctx, g.Dir)
 
 	if ctx.Err() == context.DeadlineExceeded {
 		fmt.Fprintf(os.Stderr, "meads: sync of refs/meads/* with origin timed out after %s; local changes are safe, will retry next interval\n", pushTimeout)
@@ -175,9 +158,9 @@ func autoPush(g *globals) {
 	}
 	// Any other failure (offline, auth, no remote gone stale since the
 	// check above, etc.) is also non-fatal and, unlike a timeout or a
-	// divergence, not worth a dedicated message - divergenceMessage below
-	// returns "" for it and autoPush simply says nothing further.
-	if msg := divergenceMessage(output); msg != "" {
+	// divergence, not worth a dedicated message - Rejected is false for it
+	// and autoPush simply says nothing further.
+	if msg := divergenceMessage(report); msg != "" {
 		fmt.Fprintln(os.Stderr, msg)
 	}
 }
@@ -223,72 +206,34 @@ func joinInts(ids []int) string {
 	return strings.Join(parts, ", ")
 }
 
-// runPush runs `git push --porcelain origin <pushRefspec>` in dir, bounded
-// by ctx (pushTimeout, applied by autoPush), and returns its combined
-// output regardless of whether it succeeded - divergenceMessage inspects
-// this directly.
+// divergenceMessage renders a rejected push as a clear, actionable
+// explanation of what that means - rather than leaving git's bare
+// "! ... [rejected] (fetch first)" to speak for itself. Returns "" for a
+// clean push, or a different kind of failure (offline, auth, no remote -
+// none of which are diagnostic of divergence).
 //
-// exec.CommandContext kills the process the moment ctx's deadline fires
-// (confirmed experimentally: a `sleep 30` bounded by a 1s context returns
-// in ~1s with no leftover process - CombinedOutput already waits on the
-// killed process internally, so there is nothing extra to clean up here),
-// so a black-holed remote costs at most pushTimeout, never the OS's own
-// much longer TCP connect timeout. The error CombinedOutput returns on a
-// timeout is an unhelpful "signal: killed", not context.DeadlineExceeded
-// itself, which is why autoPush checks ctx.Err() afterward rather than the
-// returned error to detect a timeout.
-func runPush(ctx context.Context, dir string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", "push", "--porcelain", "origin", pushRefspec)
-	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
-	return string(out), err
-}
-
-// divergenceMessage inspects the combined output of a `git push --porcelain
-// <pushRefspec>` attempt and, if it shows a non-fast-forward style
-// rejection, returns a clear, actionable explanation of what that means -
-// rather than leaving git's bare "! ... [rejected] (fetch first)" to speak
-// for itself. Returns "" for a clean push, a different kind of failure
-// (offline, auth, no remote - none of which are diagnostic of divergence),
-// or unparsable/absent input.
+// The DETECTION lives in meads.PushRejected, over git's own porcelain
+// reasons, so every caller of Tasks.Sync classifies a rejection
+// identically; only this rendering is CLI-specific, because nothing under
+// pkg/meads prints.
 //
 // Since task 86 a divergence is normally resolved automatically, by the
-// pull half of this very function's caller (fetch + meads.Integrate, whose
-// Doctor re-homes contended tasks at fresh ids). So a rejection reaching
-// here means that reconciliation did not happen or did not settle it -
-// origin moved again between this sync's fetch and its push, or the fetch
-// failed and was skipped - which is a "try again" situation, not the
+// pull half of the sync itself (fetch + Integrate, whose Doctor re-homes
+// contended tasks at fresh ids). So a rejection reaching here means that
+// reconciliation did not happen or did not settle it - origin moved again
+// between this sync's fetch and its push, or the fetch failed and the
+// integration was skipped - which is a "try again" situation, not the
 // permanent manual-attention dead end the message used to describe.
-//
-// It matches only on git's OWN client-side porcelain summary reasons -
-// "non-fast-forward", "fetch first", "stale info" (all three confirmed
-// experimentally against a real diverged push; git currently favours
-// "fetch first" for the plain two-clones-diverged case, but the other two
-// are long-standing synonyms from older/other rejection paths) - which are
-// stable across git versions because --porcelain exists specifically for
-// scripts to parse. It never matches on a remote host's free-text rejection
-// reason, which task 57's design doc found varies by host (GitHub vs
-// Gitea) and which nothing else in this codebase parses either (see
-// pkg/meads/refstore.go's conflictError doc comment).
-func divergenceMessage(output string) string {
-	for _, line := range strings.Split(output, "\n") {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "!") {
-			continue
-		}
-		lower := strings.ToLower(line)
-		if strings.Contains(lower, "non-fast-forward") ||
-			strings.Contains(lower, "fetch first") ||
-			strings.Contains(lower, "stale info") {
-			return "meads: push of refs/meads/* to origin was rejected: another " +
-				"clone pushed different changes while this sync was running " +
-				"(refs/meads/* has diverged). Your local changes are committed " +
-				"locally and are safe. The next sync pulls origin's version " +
-				"first and reconciles automatically - re-homing any contended " +
-				"task at a fresh id rather than losing it - or run 'md doctor' " +
-				"after 'git fetch origin' to do it now. meads will NOT " +
-				"force-push."
-		}
+func divergenceMessage(r *meads.SyncReport) string {
+	if r == nil || !r.Rejected {
+		return ""
 	}
-	return ""
+	return "meads: push of refs/meads/* to origin was rejected: another " +
+		"clone pushed different changes while this sync was running " +
+		"(refs/meads/* has diverged). Your local changes are committed " +
+		"locally and are safe. The next sync pulls origin's version " +
+		"first and reconciles automatically - re-homing any contended " +
+		"task at a fresh id rather than losing it - or run 'md doctor' " +
+		"after 'git fetch origin' to do it now. meads will NOT " +
+		"force-push."
 }

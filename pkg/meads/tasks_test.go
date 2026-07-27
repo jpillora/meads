@@ -2,10 +2,12 @@ package meads
 
 import (
 	"context"
+	"errors"
 	"hash/fnv"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/go-git/go-billy/v5/memfs"
@@ -382,5 +384,86 @@ func TestPushRejected(t *testing.T) {
 				t.Errorf("PushRejected(%q) = %v, want %v", c.output, got, c.want)
 			}
 		})
+	}
+}
+
+// fetchFailingGit fails every `git fetch` and counts every `git push`,
+// delegating everything else. It deliberately implements NEITHER ContextGit
+// NOR CombinedOutputGit, so runContext/combinedOutputContext take their
+// documented fallbacks through Run/Output - which is exactly how the
+// overrides below get to see the fetch and the push.
+type fetchFailingGit struct {
+	Git
+	mu        sync.Mutex
+	pushCalls int
+}
+
+var errSimulatedFetch = errors.New("simulated fetch failure")
+
+func (g *fetchFailingGit) Run(args ...string) error {
+	if len(args) > 0 && args[0] == "fetch" {
+		return errSimulatedFetch
+	}
+	return g.Git.Run(args...)
+}
+
+func (g *fetchFailingGit) Output(args ...string) (string, error) {
+	if len(args) > 0 && args[0] == "fetch" {
+		return "", errSimulatedFetch
+	}
+	if len(args) > 0 && args[0] == "push" {
+		g.mu.Lock()
+		g.pushCalls++
+		g.mu.Unlock()
+	}
+	return g.Git.Output(args...)
+}
+
+func (g *fetchFailingGit) pushes() int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.pushCalls
+}
+
+// TestGitTasks_Sync_FailedPullStillPushes pins the policy Sync inherited
+// from cmd/md's auto-push when the two were merged (task 80): a fetch that
+// fails must NOT cost this clone the chance to publish work it has already
+// committed. The fetch is the half most likely to fail for a reason the
+// push does not share, and a rejected push is now reported and reconciled
+// by the next sync rather than being a dead end.
+//
+// What a failed pull DOES skip is the integration - reconciling against
+// remote-tracking refs a failed fetch just left stale could renumber
+// against facts that are no longer true - so the report comes back empty.
+func TestGitTasks_Sync_FailedPullStillPushes(t *testing.T) {
+	bare := t.TempDir()
+	runGit(t, bare, "init", "--bare", "-b", "main")
+
+	dir := newDetectRepo(t)
+	runGit(t, dir, "remote", "add", "origin", bare)
+	spy := &fetchFailingGit{Git: &ExecGit{Dir: dir}}
+	gs := NewGitStore(spy)
+	if err := gs.SetConfig(DefaultConfig()); err != nil {
+		t.Fatalf("SetConfig: %v", err)
+	}
+	if _, err := gs.Create(Task{Title: "committed locally", Status: "open"}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	report, err := NewGitTasks(gs).Sync(t.Context())
+	if !errors.Is(err, errSimulatedFetch) {
+		t.Fatalf("Sync err = %v, want it to carry the fetch failure", err)
+	}
+	if spy.pushes() != 1 {
+		t.Errorf("push attempts = %d, want 1: a failed fetch must not skip the push", spy.pushes())
+	}
+	if report == nil || !report.Integrate.empty() {
+		t.Errorf("Integrate = %+v, want empty: integration is skipped against a stale fetch", report)
+	}
+	// The push really landed, so "publish anyway" is a real outcome and not
+	// just an attempted one.
+	out, _ := (&ExecGit{Dir: bare}).Output("for-each-ref", "--format=%(refname)", TasksRefPrefix)
+	if !strings.Contains(out, TasksRefPrefix+"1") {
+		t.Errorf("origin task refs = %q, want the locally committed task pushed", out)
 	}
 }

@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-07-27T23:43:15Z
+* updated: 2026-07-27T23:50:00Z
 * max-id: 88
 * next-id: 13
 
@@ -790,55 +790,12 @@ not absolute, and look for refs there. Everything else stays as is.
   commands, matching the main checkout
 - A test covers the worktree layout
 
-## 80. Move the push body into GitTasks.Sync
-
-* status: open
-* priority: P1
-* type: feature
-* depends-on: 
-* created: 2026-07-26T12:14:55Z
-* updated: 2026-07-27T14:04:35Z
-
-### Status: half done by #86
-
-`GitTasks.Sync(ctx)` now exists (`pkg/meads/tasks.go:315`) and is pull-then-push:
-`GitStore.Pull` (fetch + Integrate, re-homing contended ids) followed by an
-explicit-refspec `git push --porcelain origin refs/meads/*:refs/meads/*`.
-`FileTasks.Sync` no-ops (`tasks.go:198`). That is the part library callers
-(rais) needed, and it is done.
-
-### What remains: collapse the duplicate
-
-`cmd/md/push.go` still carries its **own** pull-then-push — `fetchFunc` +
-`Integrate` + `pushFunc`/`runPush` with `pushRefspec` (`push.go:23,162-170,226-245`).
-So there are now two implementations of the same sequence, which will drift.
-
-`autoPush` should keep what genuinely belongs to the CLI and delegate the rest:
-
-* **keeps**: the cadence gate (`ShouldPush`/`MarkPushed` against `gitCommonDir`,
-  marking *before* the attempt), the `pushTimeout` context, and the stderr
-  reporting — `integrateMessage` (`push.go:164`) and `divergenceMessage`
-  (`:247`), which must not move into the library; `pkg/meads` never prints
-* **delegates**: the fetch + Integrate + push sequence itself → `Tasks.Sync`
-
-The blocker is that `Sync` returns only `error`, so `autoPush` cannot recover
-the `IntegrateReport` it needs for `integrateMessage`, nor the porcelain output
-`divergenceMessage` inspects. Fixing that is its own task (see "Sync discards
-the integrate report") — do that first, then this collapse is mechanical.
-
-### Note for library callers
-
-`Sync`'s error on a rejected push is currently a raw wrapped git error; the
-non-fast-forward classification (`divergenceMessage`) lives only in `cmd/md`.
-A library caller therefore cannot tell "diverged, will converge next interval"
-from "remote is broken" without the same report.
-
 ## 81. Rewire cmd/md onto meads.Tasks and delete cmd/md/taskstore.go
 
 * status: open
 * priority: P1
 * type: task
-* depends-on: 80
+* depends-on: 
 * created: 2026-07-26T12:14:55Z
 * updated: 2026-07-26T12:15:02Z
 

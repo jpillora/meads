@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -102,16 +101,17 @@ func TestDoctor_NoCycle_NoIssues(t *testing.T) {
 // shared task's id.
 func setupDoctorDivergenceClones(t *testing.T) (g2 *globals, sharedID int) {
 	t.Helper()
-	// Suppress BOTH network halves of autoPush for setup: the push (see
-	// setupDivergedGitModeClones's identical comment) AND the fetch - since
-	// task 86, autoPush pulls first, and a real fetch+Integrate here would
-	// resolve the divergence at update time, before `md doctor` ever runs
-	// (that auto-resolution is the feature; this test needs the raw
-	// divergence to survive until doctor).
-	realPushFunc, realFetchFunc := pushFunc, fetchFunc
-	pushFunc = func(ctx context.Context, dir string) (string, error) { return "", nil }
-	fetchFunc = func(ctx context.Context, dir string) (string, error) { return "", errFakeOffline }
-	defer func() { pushFunc, fetchFunc = realPushFunc, realFetchFunc }()
+	// Suppress autoPush's whole sync for setup (see
+	// setupDivergedGitModeClones's identical comment): since task 86 it
+	// pulls before it pushes, and a real fetch+Integrate here would resolve
+	// the divergence at update time, before `md doctor` ever runs (that
+	// auto-resolution is the feature; this test needs the raw divergence to
+	// survive until doctor).
+	realSyncFunc := syncFunc
+	syncFunc = func(context.Context, *globals) (*meads.SyncReport, error) {
+		return &meads.SyncReport{Integrate: &meads.IntegrateReport{}}, nil
+	}
+	defer func() { syncFunc = realSyncFunc }()
 
 	bareDir := t.TempDir()
 	runGit(t, bareDir, "init", "--bare", "-b", "main")
@@ -171,7 +171,7 @@ func setupDoctorDivergenceClones(t *testing.T) (g2 *globals, sharedID int) {
 	runGit(t, clone2, "fetch", "origin")
 
 	// autoPush's decision logic ran on every add/update above even with
-	// pushFunc suppressed; clear both clones' push state so it can't
+	// the sync suppressed; clear both clones' push state so it can't
 	// interfere with anything a caller does after this helper returns (see
 	// setupDivergedGitModeClones's identical cleanup in push_test.go).
 	for _, g := range []*globals{g1, g2} {
@@ -186,12 +186,6 @@ func setupDoctorDivergenceClones(t *testing.T) (g2 *globals, sharedID int) {
 
 	return g2, sharedID
 }
-
-// errFakeOffline makes a stubbed fetchFunc fail as if the network were
-// down, so autoPush skips the pull's Integrate (see push.go: a failed
-// fetch leaves remote-tracking stale and integrating against it is
-// deliberately skipped).
-var errFakeOffline = errors.New("fake offline")
 
 // TestIntegration_GitMode_DoctorResolvesDivergence proves `md doctor`'s
 // git-mode path resolves an edit/edit divergence end to end (task 86): it
@@ -244,9 +238,11 @@ func TestIntegration_GitMode_DoctorResolvesDivergence(t *testing.T) {
 // re-homed at a fresh id (task 86's convergent policy), so the next push
 // succeeds.
 func TestIntegration_GitMode_DoctorRenumbersCrossClonedDuplicate(t *testing.T) {
-	realPushFunc := pushFunc
-	pushFunc = func(ctx context.Context, dir string) (string, error) { return "", nil }
-	defer func() { pushFunc = realPushFunc }()
+	realSyncFunc := syncFunc
+	syncFunc = func(context.Context, *globals) (*meads.SyncReport, error) {
+		return &meads.SyncReport{Integrate: &meads.IntegrateReport{}}, nil
+	}
+	defer func() { syncFunc = realSyncFunc }()
 
 	bareDir := t.TempDir()
 	runGit(t, bareDir, "init", "--bare", "-b", "main")
