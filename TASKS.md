@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-07-27T10:20:39Z
+* updated: 2026-07-27T10:25:05Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -1052,38 +1052,12 @@ only at `/` boundaries, so `refs/meads/` can never match `refs/meads-init-check`
 (`-` is not `/`). The design's choice to put the marker outside the namespace
 rather than inside it is sound, and does not depend on ordering or filtering.
 
-## 78. Add Detect and the OpenTasks entry points
-
-* status: open
-* priority: P0
-* type: feature
-* depends-on: 
-* created: 2026-07-26T12:14:55Z
-* updated: 2026-07-27T09:50:00Z
-
-```go
-func Detect(dir string) (Backend, error)
-func OpenTasks(dir string) (Tasks, error)                         // THE entry point
-func OpenTasksBackend(dir string, b Backend) (Tasks, error)       // forced --git/--file
-func OpenTasksFile(file string) (Tasks, error)                    // explicit --tasks-file
-func OpenTasksFS(fs billy.Filesystem, file string) (Tasks, error) // keeps memfs testing working
-func InitTasks(dir string, b Backend) (Tasks, error)
-```
-
-`Detect` is the body of `cmd/md/main.go:183` `gitTaskRefsExist`, then `bareDefaultTasksFile` (`main.go:20`): git iff `ListRefs(RefNamespace)` is non-empty, else csv iff `TASKS.csv` exists, else markdown.
-
-It probes the **whole** `refs/meads/` namespace, not just `refs/meads/tasks/*` — a fresh `init --git` has no tasks, and a tasks-only probe would mean git mode could never bootstrap (the first `add` would write `TASKS.md` into the working tree). Any git failure, including "not a repository", folds to a file backend, so detection never errors.
-
-`OpenTasks(dir)` always returns a usable store; "nothing initialised yet" is `Exists() == false`, **not** an error — consumers (rais's project scan) need to tell those apart cheaply.
-
-`OpenTasksFS` exists so `pkg/webui` and `pkg/mcp` tests keep their memfs-backed stores after `meads.NewStore(memfs.New(), ...)` stops being the entry point.
-
 ## 79. Move the init --git body into pkg/meads.InitTasks
 
 * status: open
 * priority: P0
 * type: feature
-* depends-on: 78
+* depends-on: 
 * created: 2026-07-26T12:14:55Z
 * updated: 2026-07-27T09:50:00Z
 
@@ -1141,7 +1115,7 @@ Everything wired through the old seam must behave identically afterwards: `get`,
 * status: open
 * priority: P1
 * type: task
-* depends-on: 78
+* depends-on: 
 * created: 2026-07-26T12:14:55Z
 * updated: 2026-07-26T12:15:02Z
 
