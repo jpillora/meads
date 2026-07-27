@@ -12,7 +12,9 @@ import (
 // "offline divergence" problem - two clones each changed the SAME task
 // while disconnected; each built a commit chain from a common parent, and
 // the second one to push was rejected non-fast-forward (see cmd/md/push.go's
-// divergenceMessage, which classifies that rejection and points here).
+// divergenceMessage, which classifies that rejection). Since task 86 the
+// repair is GitStore.Doctor's convergent renumbering, which the auto-pull
+// path runs on every sync (see GitStore.Integrate).
 //
 // MergeBase is the shared ancestor commit - useful for anyone who wants to
 // inspect the pre-divergence state directly, e.g. `git show
@@ -30,21 +32,17 @@ type Divergence struct {
 
 // Diverged reports every diverging task - see Divergence's doc comment. An
 // id present on only one side, whose two sides are byte-identical, whose
-// histories are unrelated (a create/create id collision - GitStore.Doctor's
-// job, not a divergence), or where one side is a plain fast-forward of the
-// other, is not a divergence and is omitted.
+// histories are unrelated (a create/create id collision), or where one side
+// is a plain fast-forward of the other, is not a divergence and is omitted.
 //
 // Diverged is a pure READ: it resolves refs and reads blobs but writes
 // nothing, and in particular it never touches refs/meads/tasks/* itself.
-// That is deliberate and load-bearing, not an oversight: reconciling a
-// divergence means genuinely merging two edited versions of one task, and
-// task 65's MVP requires failing loudly rather than guessing - a wrong
-// automatic merge silently discards whichever side it didn't pick, which is
-// worse than making the caller resolve it by hand. Actual merge policy is
-// left to future work; callers can rely on Diverged (and on a plain `git
-// fetch`, now that cmd/md/init.go's meadsFetchRefspec lands in
-// RemoteRefNamespace rather than overwriting refs/meads/* directly - see
-// that constant's doc comment) to never disturb local task state.
+// The corresponding REPAIR lives in GitStore.Doctor (task 86): a diverged
+// task's local version is re-homed at a fresh id and the id itself takes
+// the fetched-remote version - no merge, no force-push, no data loss - so
+// after a successful Doctor (or an auto-pull's Integrate) Diverged reports
+// nothing. Diverged remains the read-only way to inspect a divergence
+// before choosing to repair it.
 func (g *GitStore) Diverged() ([]Divergence, error) {
 	local, localOIDs, err := g.loadAllWithOIDs(TasksRefPrefix)
 	if err != nil {

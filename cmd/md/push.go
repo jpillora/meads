@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -86,17 +87,41 @@ func gitCommonDir(g *globals) (string, error) {
 // runPush.
 var pushFunc = runPush
 
+// fetchFunc is fetch's analogue of pushFunc: the seam autoPush uses to run
+// the pull half's `git fetch origin`, bounded by the same ctx (the same
+// pushTimeout budget covers both network calls). Tests override it with a
+// ctx-respecting fake for the same reason as pushFunc. Production always
+// uses runFetch.
+var fetchFunc = runFetch
+
+// runFetch runs `git fetch origin` in dir, bounded by ctx - the fetch half
+// of the pull (landing refs/meads/* in refs/meads-remote/* via the
+// configured fetch refspec, meads.FetchRefspec). A plain fetch of every
+// configured refspec, exactly the fetch half of what a user means by
+// "pull"; meads.Integrate then reconciles the task refs locally.
+func runFetch(ctx context.Context, dir string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", "fetch", "origin")
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
 // autoPush is called after every successful git-mode mutation
 // (add/update/set-status/add-dep/rm-dep/del - the same call sites as
-// postWebhook, right after it). Every exit besides the final push attempt is
-// a silent, best-effort skip: a push is a nice-to-have that must never turn
+// postWebhook, right after it). Every exit besides the final sync attempt is
+// a silent, best-effort skip: syncing is a nice-to-have that must never turn
 // into a reason the command itself fails.
 //
-// It pushes synchronously and reports on THIS SAME invocation - both a
-// timeout and a divergence are surfaced here, in the command that triggered
-// the push, using the output that push produced, rather than deferred to a
-// later command (the earlier async design's "surfaced one command late" was
-// exactly the confusing UX this synchronous design avoids).
+// Once per pushInterval it PULLS, then PUSHES (task 86): the pull fetches
+// origin and integrates what arrived - adopting other clones' tasks,
+// fast-forwarding unmoved ones, and re-homing contended local tasks at
+// fresh ids via Doctor - so the push that follows converges instead of
+// rejecting non-fast-forward. It syncs synchronously and reports on THIS
+// SAME invocation - a timeout, a pull summary, and a divergence are all
+// surfaced here, in the command that triggered the sync, rather than
+// deferred to a later command (the earlier async design's "surfaced one
+// command late" was exactly the confusing UX this synchronous design
+// avoids).
 func autoPush(g *globals) {
 	if g == nil || g.mode() != modeGit {
 		return // git mode only - file mode has no refs/meads/* to push
@@ -116,10 +141,10 @@ func autoPush(g *globals) {
 	if err != nil || !should {
 		return
 	}
-	// Mark BEFORE attempting the push, not after it succeeds: a failing or
+	// Mark BEFORE attempting the sync, not after it succeeds: a failing or
 	// timed-out remote must not be retried on every single subsequent
 	// command, only once pushInterval has elapsed again - see MarkPushed's
-	// doc comment. The trade-off (a genuinely failed/timed-out push also
+	// doc comment. The trade-off (a genuinely failed/timed-out sync also
 	// waits a full interval before the next attempt) is accepted for the
 	// same reason it always was: never piling up redundant pushes against a
 	// remote that isn't currently working.
@@ -129,10 +154,23 @@ func autoPush(g *globals) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), pushTimeout)
 	defer cancel()
+
+	// Pull first (task 86), bounded by the same timeout budget. Integrate
+	// runs only when the fetch SUCCEEDED: a failed fetch leaves
+	// remote-tracking state stale, and integrating against stale state
+	// could renumber against facts that are no longer true.
+	if _, fetchErr := fetchFunc(ctx, g.Dir); fetchErr == nil {
+		if report, err := g.gitStore().Integrate(); err == nil {
+			if msg := integrateMessage(report); msg != "" {
+				fmt.Fprint(os.Stderr, msg)
+			}
+		}
+	}
+
 	output, _ := pushFunc(ctx, g.Dir)
 
 	if ctx.Err() == context.DeadlineExceeded {
-		fmt.Fprintf(os.Stderr, "meads: push of refs/meads/* to origin timed out after %s; local changes are safe, will retry next interval\n", pushTimeout)
+		fmt.Fprintf(os.Stderr, "meads: sync of refs/meads/* with origin timed out after %s; local changes are safe, will retry next interval\n", pushTimeout)
 		return
 	}
 	// Any other failure (offline, auth, no remote gone stale since the
@@ -142,6 +180,47 @@ func autoPush(g *globals) {
 	if msg := divergenceMessage(output); msg != "" {
 		fmt.Fprintln(os.Stderr, msg)
 	}
+}
+
+// integrateMessage renders an IntegrateReport as stderr lines ("" when
+// nothing happened, the common case): one summary each for adopted and
+// fast-forwarded tasks, and one line per Doctor repair - most importantly
+// the contended-task re-homings, which rename a local task the user may
+// have just been looking at and so must never be silent.
+func integrateMessage(r *meads.IntegrateReport) string {
+	if r == nil {
+		return ""
+	}
+	var b strings.Builder
+	if len(r.Imported) > 0 {
+		fmt.Fprintf(&b, "meads: pulled %d new task(s) from origin (ids %s)\n", len(r.Imported), joinInts(r.Imported))
+	}
+	if len(r.FastForwarded) > 0 {
+		fmt.Fprintf(&b, "meads: updated %d task(s) from origin (ids %s)\n", len(r.FastForwarded), joinInts(r.FastForwarded))
+	}
+	if r.ConfigUpdated {
+		b.WriteString("meads: updated meads config from origin\n")
+	}
+	for _, fix := range r.Fixes {
+		switch fix.Kind {
+		case meads.DoctorFixMismatch:
+			fmt.Fprintf(&b, "meads: repaired task %d id mismatch (ref vs stored content)\n", fix.OldID)
+		case meads.DoctorFixDiverged:
+			fmt.Fprintf(&b, "meads: task %d diverged with origin; your version moved to task %d (the id now holds origin's version)\n", fix.OldID, fix.NewID)
+		default:
+			fmt.Fprintf(&b, "meads: task %d collided with a different task on origin; your version moved to task %d (the id now holds origin's version)\n", fix.OldID, fix.NewID)
+		}
+	}
+	return b.String()
+}
+
+// joinInts renders ids as a comma-separated list for integrateMessage.
+func joinInts(ids []int) string {
+	parts := make([]string, len(ids))
+	for i, id := range ids {
+		parts[i] = strconv.Itoa(id)
+	}
+	return strings.Join(parts, ", ")
 }
 
 // runPush runs `git push --porcelain origin <pushRefspec>` in dir, bounded

@@ -108,8 +108,10 @@ type Tasks interface {
 	// Delete soft-deletes task id.
 	Delete(id int) error
 
-	// Sync publishes local state: git pushes refs/meads/* to origin; file
-	// backends have nothing to publish and no-op.
+	// Sync synchronises with origin: git PULLS first (fetch + integrate,
+	// re-homing contended local tasks at fresh ids - see GitStore.Pull and
+	// GitStore.Doctor), then pushes refs/meads/*; file backends have
+	// nothing to sync and no-op.
 	Sync(ctx context.Context) error
 }
 
@@ -302,13 +304,19 @@ func (t GitTasks) Delete(id int) error {
 	return err
 }
 
-// Sync pushes refs/meads/* to origin with an explicit refspec at push time -
-// never a configured remote.origin.push, which would replace git's default
-// matching/simple push behaviour for ordinary branches too (see
-// cmd/md/push.go's pushRefspec, the CLI auto-push path this shares the
-// refspec shape with).
+// Sync pulls, then pushes. The pull (GitStore.Pull) fetches origin and
+// integrates what arrived - adopting new tasks, fast-forwarding unmoved
+// ones, and re-homing contended local tasks at fresh ids via Doctor - so
+// the push that follows converges instead of rejecting non-fast-forward.
+// The push uses an explicit refspec at push time - never a configured
+// remote.origin.push, which would replace git's default matching/simple
+// push behaviour for ordinary branches too (see cmd/md/push.go's
+// pushRefspec, the CLI auto-push path this shares the refspec shape with).
 func (t GitTasks) Sync(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if _, err := t.gs.Pull(); err != nil {
 		return err
 	}
 	refspec := RefNamespace + "*:" + RefNamespace + "*"

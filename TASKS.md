@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-07-27T12:11:00Z
+* updated: 2026-07-27T13:59:01Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -957,3 +957,13 @@ Call out in the release notes that this is a **breaking** v0 change:
 * `meads.NewStore` / `meads.NewFileStore` are no longer the entry point — use `meads.OpenTasks(dir)`, `meads.OpenTasksFile(file)` or `meads.OpenTasksFS(fs, file)`
 
 rais's integration work is blocked on this tag.
+
+## 86. auto-push becomes auto-sync: pull, renumber conflicts, push
+
+* status: closed
+* priority: P1
+* type: feature
+* created: 2026-07-27T12:32:49Z
+* updated: 2026-07-27T13:59:01Z
+
+Every pushInterval, auto-push first pulls (fetch + integrate refs/meads-remote/*: import new ids, fast-forward, config adopt), then pushes. Contended tasks (diverged edit/edit or create/create duplicate) are resolved by doctor re-homing the LOCAL version at a fresh id and resetting the contended ref to origin's version, so the push converges with no force and no data loss.

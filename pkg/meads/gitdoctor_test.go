@@ -165,12 +165,12 @@ func TestGitStore_Doctor_NoMismatch_NotReported(t *testing.T) {
 	}
 }
 
-// --- 3. cross-namespace duplicate: local wins, remote-tracking imported at a fresh id ---
+// --- 3. cross-namespace duplicate: remote keeps the id, local re-homed at a fresh id ---
 
-func TestGitStore_Doctor_CrossNamespaceDuplicate_RemoteImportedAtFreshID(t *testing.T) {
+func TestGitStore_Doctor_CrossNamespaceDuplicate_LocalReHomedAtFreshID(t *testing.T) {
 	gs, rs, _ := newGitStoreRepo(t)
-	localOID := seedTaskAtRef(t, rs, gs.TaskRef(58), Task{ID: 58, Title: "kept (local)", Status: "open"})
-	seedTaskAtRef(t, rs, remoteTaskRef(58), Task{ID: 58, Title: "duplicate (remote)", Status: "open"})
+	seedTaskAtRef(t, rs, gs.TaskRef(58), Task{ID: 58, Title: "local version", Status: "open"})
+	remoteOID := seedTaskAtRef(t, rs, remoteTaskRef(58), Task{ID: 58, Title: "kept (remote)", Status: "open"})
 
 	fixes, err := gs.Doctor()
 	if err != nil {
@@ -179,23 +179,27 @@ func TestGitStore_Doctor_CrossNamespaceDuplicate_RemoteImportedAtFreshID(t *test
 	if len(fixes) != 1 || fixes[0].OldID != 58 || fixes[0].NewID != 59 {
 		t.Fatalf("Doctor() fixes = %v, want exactly one {OldID:58 NewID:59}", fixes)
 	}
+	if fixes[0].Kind != DoctorFixDuplicate {
+		t.Errorf("fix Kind = %v, want DoctorFixDuplicate", fixes[0].Kind)
+	}
 
-	// Local task 58 is untouched - not even a new commit.
-	if oid, err := rs.ResolveRef(gs.TaskRef(58)); err != nil || oid != localOID {
-		t.Errorf("local task 58 ref = %v (err=%v), want unchanged %s", oid, err, localOID)
+	// The contended ref takes the fetched-remote version - the exact reset
+	// that lets the next push converge with no force-push.
+	if oid, err := rs.ResolveRef(gs.TaskRef(58)); err != nil || oid != remoteOID {
+		t.Errorf("task 58 ref = %v (err=%v), want reset to the remote-tracking oid %s", oid, err, remoteOID)
 	}
 	kept, err := gs.Get([]int{58})
-	if err != nil || kept[0].Title != "kept (local)" {
-		t.Fatalf("Get(58) = %+v (err=%v), want the original local task, untouched", kept, err)
+	if err != nil || kept[0].Title != "kept (remote)" {
+		t.Fatalf("Get(58) = %+v (err=%v), want the remote version (the id follows origin)", kept, err)
 	}
 
-	// The remote-tracking duplicate was imported as a new local task at 59.
-	imported, err := gs.Get([]int{59})
+	// The local version is re-homed as a new task at 59, content preserved.
+	moved, err := gs.Get([]int{59})
 	if err != nil {
 		t.Fatalf("Get(59) after Doctor: %v", err)
 	}
-	if len(imported) != 1 || imported[0].ID != 59 || imported[0].Title != "duplicate (remote)" {
-		t.Fatalf("Get(59) = %+v, want the imported duplicate with id=59", imported)
+	if len(moved) != 1 || moved[0].ID != 59 || moved[0].Title != "local version" {
+		t.Fatalf("Get(59) = %+v, want the re-homed local version with id=59", moved)
 	}
 
 	// refs/meads-remote/* itself is read-only input, never written by Doctor.
@@ -211,16 +215,16 @@ func TestGitStore_Doctor_CrossNamespaceDuplicate_RemoteImportedAtFreshID(t *test
 // TestGitStore_Doctor_FreshIDAvoidsUninvolvedRemoteIDsToo guards a subtler
 // bug: a fresh id must never be picked from a number remote-tracking ALSO
 // happens to be using, even for a task that isn't colliding with anything
-// local (and so this run correctly leaves it alone entirely - importing it
-// is out of scope, see GitStore.Diverged's doc comment). If freshID only
-// avoided LOCAL ids, importing the actual duplicate here (58) could land on
-// id 59 - which is "free" locally but already means something else on
-// remote-tracking - manufacturing a BRAND NEW collision this very run
-// wouldn't itself notice or fix.
+// local (and so this run correctly leaves it alone entirely - adopting it
+// is Integrate's job, not a repair). If freshID only avoided LOCAL ids,
+// re-homing the actual duplicate here (58) could land on id 59 - which is
+// "free" locally but already means something else on remote-tracking -
+// manufacturing a BRAND NEW collision this very run wouldn't itself notice
+// or fix.
 func TestGitStore_Doctor_FreshIDAvoidsUninvolvedRemoteIDsToo(t *testing.T) {
 	gs, rs, _ := newGitStoreRepo(t)
-	seedTaskAtRef(t, rs, gs.TaskRef(58), Task{ID: 58, Title: "kept (local)", Status: "open"})
-	seedTaskAtRef(t, rs, remoteTaskRef(58), Task{ID: 58, Title: "duplicate (remote)", Status: "open"})
+	seedTaskAtRef(t, rs, gs.TaskRef(58), Task{ID: 58, Title: "local version", Status: "open"})
+	seedTaskAtRef(t, rs, remoteTaskRef(58), Task{ID: 58, Title: "kept (remote)", Status: "open"})
 	// Present only on remote-tracking, not colliding with anything local -
 	// correctly out of scope for this run, but its NUMBER must still not be
 	// handed out as a "fresh" id.
@@ -237,12 +241,12 @@ func TestGitStore_Doctor_FreshIDAvoidsUninvolvedRemoteIDsToo(t *testing.T) {
 		t.Fatalf("Doctor() assigned fresh id 59, which remote-tracking is ALREADY using for an unrelated task - want it skipped")
 	}
 
-	imported, err := gs.Get([]int{fixes[0].NewID})
-	if err != nil || imported[0].Title != "duplicate (remote)" {
-		t.Fatalf("Get(%d) = %+v (err=%v), want the imported duplicate", fixes[0].NewID, imported, err)
+	moved, err := gs.Get([]int{fixes[0].NewID})
+	if err != nil || moved[0].Title != "local version" {
+		t.Fatalf("Get(%d) = %+v (err=%v), want the re-homed local version", fixes[0].NewID, moved, err)
 	}
 	// The uninvolved remote-only task must still be left alone: no local
-	// ref exists for it at all (it was never imported), and its
+	// ref exists for it at all (Doctor never adopts), and its
 	// remote-tracking ref is untouched.
 	if _, err := gs.Get([]int{59}); err == nil {
 		t.Fatalf("Get(59) after Doctor unexpectedly succeeded; task 59 should not exist locally")
@@ -256,18 +260,19 @@ func TestGitStore_Doctor_FreshIDAvoidsUninvolvedRemoteIDsToo(t *testing.T) {
 	}
 }
 
-// --- 4. DependsOn rewritten for sibling duplicates imported in the same run ---
+// --- 4. DependsOn rewritten for sibling local tasks re-homed in the same run ---
 
 func TestGitStore_Doctor_DependsOnRewrittenForSiblingDuplicates(t *testing.T) {
 	gs, rs, _ := newGitStoreRepo(t)
-	// Local keeps 58 and 60. Remote-tracking independently created 58 and a
-	// 60 that (in the remote's own numbering) depends on 58 - processed in
-	// ascending id order, so by the time 60's duplicate is imported, the
-	// remap from 58's import is already known (see planDoctorFixes's doc
-	// comment on why this ordering is what makes the remap visible, mirroring
-	// the file backend's identical ordering assumption in mutate.go).
+	// Local created 58 and a 60 that depends on it; remote-tracking
+	// independently created its own 58 and 60. Both local tasks are
+	// re-homed; processed in ascending id order, so by the time 60's move is
+	// planned, the remap from 58's move is already known (see
+	// planDoctorFixes's doc comment on why this ordering is what makes the
+	// remap visible, mirroring the file backend's identical ordering
+	// assumption in mutate.go).
 	seedTaskAtRef(t, rs, gs.TaskRef(58), Task{ID: 58, Title: "local A", Status: "open"})
-	seedTaskAtRef(t, rs, gs.TaskRef(60), Task{ID: 60, Title: "local C", Status: "open"})
+	seedTaskAtRef(t, rs, gs.TaskRef(60), Task{ID: 60, Title: "local C", Status: "open", DependsOn: []int{58}})
 	seedTaskAtRef(t, rs, remoteTaskRef(58), Task{ID: 58, Title: "remote B", Status: "open"})
 	seedTaskAtRef(t, rs, remoteTaskRef(60), Task{ID: 60, Title: "remote D", Status: "open", DependsOn: []int{58}})
 
@@ -295,21 +300,29 @@ func TestGitStore_Doctor_DependsOnRewrittenForSiblingDuplicates(t *testing.T) {
 		byTitle[task.Title] = task
 	}
 
-	localA, localC := byTitle["local A"], byTitle["local C"]
-	if localA.ID != 58 || localC.ID != 60 {
-		t.Fatalf("local tasks renumbered (A=%d C=%d), want unchanged (58, 60)", localA.ID, localC.ID)
-	}
+	// The remote versions keep the ids.
 	remoteB, remoteD := byTitle["remote B"], byTitle["remote D"]
-	if remoteB.ID == 58 || remoteB.ID == 60 {
-		t.Fatalf("remote B kept a colliding id %d, want a fresh one", remoteB.ID)
+	if remoteB.ID != 58 || remoteD.ID != 60 {
+		t.Fatalf("remote tasks renumbered (B=%d D=%d), want unchanged (58, 60)", remoteB.ID, remoteD.ID)
 	}
-	if remoteD.ID == 58 || remoteD.ID == 60 {
-		t.Fatalf("remote D kept a colliding id %d, want a fresh one", remoteD.ID)
+	// Remote D's dependency was always on the remote's own 58, which never
+	// moved - untouched.
+	if want := []int{58}; !slices.Equal(remoteD.DependsOn, want) {
+		t.Errorf("remote D DependsOn = %v, want %v (its own sibling never moved)", remoteD.DependsOn, want)
 	}
-	// The crux: remote D's DependsOn must follow remote B to its NEW id, not
-	// stay pointing at 58 (which now unambiguously means local A).
-	if want := []int{remoteB.ID}; !slices.Equal(remoteD.DependsOn, want) {
-		t.Errorf("remote D DependsOn = %v, want %v (remapped to remote B's new id, not local A's original 58)", remoteD.DependsOn, want)
+
+	// The local versions move to fresh ids...
+	localA, localC := byTitle["local A"], byTitle["local C"]
+	if localA.ID == 58 || localA.ID == 60 {
+		t.Fatalf("local A kept a contended id %d, want a fresh one", localA.ID)
+	}
+	if localC.ID == 58 || localC.ID == 60 {
+		t.Fatalf("local C kept a contended id %d, want a fresh one", localC.ID)
+	}
+	// ...and the crux: local C's DependsOn must follow local A to its NEW
+	// id, not stay pointing at 58 (which now unambiguously means remote B).
+	if want := []int{localA.ID}; !slices.Equal(localC.DependsOn, want) {
+		t.Errorf("local C DependsOn = %v, want %v (remapped to local A's new id, not remote B's 58)", localC.DependsOn, want)
 	}
 }
 
@@ -318,7 +331,7 @@ func TestGitStore_Doctor_DependsOnRewrittenForSiblingDuplicates(t *testing.T) {
 func TestGitStore_Doctor_SoftDeletedIDs_NeverReusedNeverClobbered(t *testing.T) {
 	gs, rs, _ := newGitStoreRepo(t)
 	deletedOID := seedTaskAtRef(t, rs, gs.TaskRef(3), Task{ID: 3, Title: "long gone", Status: "closed", Deleted: true})
-	seedTaskAtRef(t, rs, gs.TaskRef(5), Task{ID: 5, Title: "kept", Status: "open"})
+	seedTaskAtRef(t, rs, gs.TaskRef(5), Task{ID: 5, Title: "local version", Status: "open"})
 	seedTaskAtRef(t, rs, remoteTaskRef(5), Task{ID: 5, Title: "duplicate", Status: "open"})
 
 	fixes, err := gs.Doctor()
@@ -326,7 +339,7 @@ func TestGitStore_Doctor_SoftDeletedIDs_NeverReusedNeverClobbered(t *testing.T) 
 		t.Fatalf("Doctor: %v", err)
 	}
 	if len(fixes) != 1 || fixes[0].NewID != 6 {
-		t.Fatalf("Doctor() fixes = %v, want the duplicate renumbered to 6 (3 is deleted but still allocated, so max is 5)", fixes)
+		t.Fatalf("Doctor() fixes = %v, want the local version re-homed to 6 (3 is deleted but still allocated, so max is 5)", fixes)
 	}
 
 	// The deleted task's ref must be completely untouched.
@@ -339,10 +352,12 @@ func TestGitStore_Doctor_SoftDeletedIDs_NeverReusedNeverClobbered(t *testing.T) 
 	}
 }
 
-func TestGitStore_Doctor_ImportedDuplicate_PreservesDeletedFlag(t *testing.T) {
+func TestGitStore_Doctor_ReHomedDuplicate_PreservesDeletedFlag(t *testing.T) {
 	gs, rs, _ := newGitStoreRepo(t)
-	seedTaskAtRef(t, rs, gs.TaskRef(5), Task{ID: 5, Title: "kept active", Status: "open"})
-	seedTaskAtRef(t, rs, remoteTaskRef(5), Task{ID: 5, Title: "duplicate but deleted", Status: "closed", Deleted: true})
+	// The LOCAL side of the collision is the soft-deleted one: re-homing it
+	// must carry the tombstone over, not resurrect it.
+	seedTaskAtRef(t, rs, gs.TaskRef(5), Task{ID: 5, Title: "local but deleted", Status: "closed", Deleted: true})
+	seedTaskAtRef(t, rs, remoteTaskRef(5), Task{ID: 5, Title: "kept active (remote)", Status: "open"})
 
 	fixes, err := gs.Doctor()
 	if err != nil {
@@ -353,28 +368,29 @@ func TestGitStore_Doctor_ImportedDuplicate_PreservesDeletedFlag(t *testing.T) {
 	}
 	newID := fixes[0].NewID
 
-	imported, err := gs.GetWithHistory([]int{newID})
+	moved, err := gs.GetWithHistory([]int{newID})
 	if err != nil {
 		t.Fatalf("GetWithHistory(%d): %v", newID, err)
 	}
-	if len(imported) != 1 || !imported[0].Deleted || imported[0].Title != "duplicate but deleted" {
-		t.Fatalf("imported duplicate = %+v, want Deleted=true preserved", imported)
+	if len(moved) != 1 || !moved[0].Deleted || moved[0].Title != "local but deleted" {
+		t.Fatalf("re-homed duplicate = %+v, want Deleted=true preserved", moved)
 	}
 	// And it must never resurface via Get (deleted tasks are excluded there).
 	if _, err := gs.Get([]int{newID}); err == nil {
-		t.Errorf("Get(%d) on the imported-but-deleted duplicate = nil error, want not found", newID)
+		t.Errorf("Get(%d) on the re-homed-but-deleted duplicate = nil error, want not found", newID)
 	}
 }
 
-// --- 6. related histories (fast-forward or genuine divergence) are never
-// treated as duplicates ---
+// --- 6. related histories: fast-forwards are Integrate's job (no fix);
+// genuine divergences are re-homed like duplicates, with a distinct Kind ---
 
 func TestGitStore_Doctor_FastForwardRelated_NotADuplicate(t *testing.T) {
 	gs, rs, _ := newGitStoreRepo(t)
 	localOID := seedTaskAtRef(t, rs, gs.TaskRef(9), Task{ID: 9, Title: "v1", Status: "open"})
 	// Remote-tracking is a further version of the SAME task (parented on
-	// localOID), not an independently created one - related, not a
-	// duplicate, even though both exist under the same id.
+	// localOID), not an independently created one - a plain fast-forward,
+	// which Integrate (not Doctor) applies, even though both exist under
+	// the same id.
 	commitTaskWithParent(t, rs, remoteTaskRef(9), Task{ID: 9, Title: "v2 (remote ahead)", Status: "open"}, localOID, ZeroOID)
 
 	fixes, err := gs.Doctor()
@@ -382,14 +398,19 @@ func TestGitStore_Doctor_FastForwardRelated_NotADuplicate(t *testing.T) {
 		t.Fatalf("Doctor: %v", err)
 	}
 	if len(fixes) != 0 {
-		t.Fatalf("Doctor() on a fast-forward-related pair = %v, want no fixes (not a duplicate)", fixes)
+		t.Fatalf("Doctor() on a fast-forward-related pair = %v, want no fixes (Integrate's job, not a repair)", fixes)
 	}
 	if oid, err := rs.ResolveRef(gs.TaskRef(9)); err != nil || oid != localOID {
 		t.Errorf("local task 9 ref = %v (err=%v), want unchanged %s", oid, err, localOID)
 	}
 }
 
-func TestGitStore_Doctor_GenuineDivergence_NotRenumbered(t *testing.T) {
+// TestGitStore_Doctor_GenuineDivergence_ReHomed pins task 86's convergent
+// divergence policy: both sides edited the SAME task since a shared base,
+// so the remote version keeps the id and the local edit is re-homed at a
+// fresh id - reported with Kind DoctorFixDiverged, distinct from a
+// create/create duplicate.
+func TestGitStore_Doctor_GenuineDivergence_ReHomed(t *testing.T) {
 	gs, rs, _ := newGitStoreRepo(t)
 	baseOID := seedTaskAtRef(t, rs, gs.TaskRef(9), Task{ID: 9, Title: "base", Status: "open"})
 
@@ -398,23 +419,39 @@ func TestGitStore_Doctor_GenuineDivergence_NotRenumbered(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	localOID, err := rs.CommitFile(gs.TaskRef(9), TaskFileName, localData, baseOID, "local: edit")
-	if err != nil {
+	if _, err := rs.CommitFile(gs.TaskRef(9), TaskFileName, localData, baseOID, "local: edit"); err != nil {
 		t.Fatalf("CommitFile local edit: %v", err)
 	}
 
 	// ...and so does the fetched remote-tracking copy, independently.
-	commitTaskWithParent(t, rs, remoteTaskRef(9), Task{ID: 9, Title: "remote edit", Status: "open"}, baseOID, ZeroOID)
+	remoteOID := commitTaskWithParent(t, rs, remoteTaskRef(9), Task{ID: 9, Title: "remote edit", Status: "open"}, baseOID, ZeroOID)
 
 	fixes, err := gs.Doctor()
 	if err != nil {
 		t.Fatalf("Doctor: %v", err)
 	}
-	if len(fixes) != 0 {
-		t.Fatalf("Doctor() on a genuinely diverged pair = %v, want no fixes (GitStore.Diverged's job, not a renumber)", fixes)
+	if len(fixes) != 1 || fixes[0].OldID != 9 || fixes[0].NewID != 10 {
+		t.Fatalf("Doctor() fixes = %v, want exactly one {OldID:9 NewID:10}", fixes)
 	}
-	if oid, err := rs.ResolveRef(gs.TaskRef(9)); err != nil || oid != localOID {
-		t.Errorf("local task 9 ref = %v (err=%v), want unchanged %s (Doctor must never touch a diverged task)", oid, err, localOID)
+	if fixes[0].Kind != DoctorFixDiverged {
+		t.Errorf("fix Kind = %v, want DoctorFixDiverged", fixes[0].Kind)
+	}
+
+	// The id takes the remote version; the local edit is preserved at 10.
+	if oid, err := rs.ResolveRef(gs.TaskRef(9)); err != nil || oid != remoteOID {
+		t.Errorf("task 9 ref = %v (err=%v), want reset to the remote-tracking oid %s", oid, err, remoteOID)
+	}
+	kept, err := gs.Get([]int{9})
+	if err != nil || kept[0].Title != "remote edit" {
+		t.Fatalf("Get(9) = %+v (err=%v), want the remote version", kept, err)
+	}
+	moved, err := gs.Get([]int{10})
+	if err != nil || len(moved) != 1 || moved[0].Title != "local edit" {
+		t.Fatalf("Get(10) = %+v (err=%v), want the re-homed local edit", moved, err)
+	}
+	// And the divergence is fully resolved: Diverged must find nothing.
+	if dv, err := gs.Diverged(); err != nil || len(dv) != 0 {
+		t.Errorf("Diverged() after Doctor = %v, %v; want none (the re-homing resolved it)", dv, err)
 	}
 }
 
@@ -424,8 +461,10 @@ func TestGitStore_Doctor_AtomicBatchLeavesNothingPartiallyMoved(t *testing.T) {
 	gs, rs, _ := newGitStoreRepo(t)
 	// Fix A: a content/ref-name mismatch on an EXISTING ref (prev = its real oid).
 	mismatchOID := seedTaskAtRef(t, rs, gs.TaskRef(1), Task{ID: 99, Title: "mismatched", Status: "open"})
-	// Fix B: a cross-namespace duplicate, imported onto a brand-new ref (prev = ZeroOID).
-	seedTaskAtRef(t, rs, gs.TaskRef(58), Task{ID: 58, Title: "kept", Status: "open"})
+	// Fix B: a cross-namespace duplicate, re-homed onto a brand-new ref
+	// (prev = ZeroOID) plus a reset of the contended ref itself (prev = the
+	// local tip): two updates for one fix.
+	local58OID := seedTaskAtRef(t, rs, gs.TaskRef(58), Task{ID: 58, Title: "local version", Status: "open"})
 	seedTaskAtRef(t, rs, remoteTaskRef(58), Task{ID: 58, Title: "duplicate", Status: "open"})
 
 	local, localOIDs, err := gs.loadAllWithOIDs(TasksRefPrefix)
@@ -440,8 +479,8 @@ func TestGitStore_Doctor_AtomicBatchLeavesNothingPartiallyMoved(t *testing.T) {
 	if err != nil {
 		t.Fatalf("planDoctorFixes: %v", err)
 	}
-	if len(fixes) != 2 || len(updates) != 2 {
-		t.Fatalf("planDoctorFixes fixes=%v updates=%v, want 2 of each", fixes, updates)
+	if len(fixes) != 2 || len(updates) != 3 {
+		t.Fatalf("planDoctorFixes fixes=%v updates=%v, want 2 fixes and 3 updates (mismatch + re-home + reset)", fixes, updates)
 	}
 
 	// Simulate a concurrent writer landing on the MISMATCH fix's target ref
@@ -482,9 +521,9 @@ func TestGitStore_Doctor_AtomicBatchLeavesNothingPartiallyMoved(t *testing.T) {
 	if _, rerr := rs.ResolveRef(gs.TaskRef(newID)); !errors.Is(rerr, ErrRefNotFound) {
 		t.Errorf("ResolveRef(TaskRef(%d)) = %v, want ErrRefNotFound (a valid-in-isolation new ref must not be created when its batch-mate fails)", newID, rerr)
 	}
-	// And task 58 itself (the "kept" local original) must be untouched too.
-	kept, err := gs.Get([]int{58})
-	if err != nil || kept[0].Title != "kept" {
-		t.Fatalf("Get(58) after the failed batch = %+v (err=%v), want the original, untouched", kept, err)
+	// And the contended ref itself must NOT have been reset either: it
+	// still holds the local version's commit, not the remote's.
+	if got, rerr := rs.ResolveRef(gs.TaskRef(58)); rerr != nil || got != local58OID {
+		t.Errorf("task 58 ref = %v (err=%v), want the original local commit %s (no partial reset)", got, rerr, local58OID)
 	}
 }

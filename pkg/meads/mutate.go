@@ -219,10 +219,33 @@ func (s *Store) DeleteMany(ids []int) error {
 	return nil
 }
 
+// DoctorFixKind identifies which kind of repair a DoctorFix describes. The
+// zero value is DoctorFixDuplicate - the file backend's only kind, so its
+// fixes need no explicit Kind.
+type DoctorFixKind int
+
+const (
+	// DoctorFixDuplicate: an id held by two unrelated tasks (the file
+	// backend's in-file duplicate, or git mode's create/create collision
+	// across clones); the duplicate was renumbered to NewID.
+	DoctorFixDuplicate DoctorFixKind = iota
+	// DoctorFixMismatch: git mode only - a task ref's stored content
+	// disagreed with its own ref name; repaired in place (OldID == NewID,
+	// not a renumber).
+	DoctorFixMismatch
+	// DoctorFixDiverged: git mode only - one task edited on both sides of a
+	// partition; the local version was re-homed at NewID and the id itself
+	// took the fetched-remote version (see GitStore.Doctor).
+	DoctorFixDiverged
+)
+
 // DoctorFix describes a single fix applied by Doctor.
 type DoctorFix struct {
 	OldID int // The duplicate ID that was found
 	NewID int // The new ID assigned to the duplicate
+	// Kind classifies the fix (zero for the file backend's duplicates - see
+	// DoctorFixKind).
+	Kind DoctorFixKind
 }
 
 // Doctor detects duplicate task IDs and renumbers them.

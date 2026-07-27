@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -82,31 +83,35 @@ func TestDoctor_NoCycle_NoIssues(t *testing.T) {
 	}
 }
 
-// --- git mode: `md doctor` surfacing GitStore.Diverged (task 65 phase 8) ---
+// --- git mode: `md doctor` resolving a divergence (task 65 phase 8, task 86) ---
 
 // setupDoctorDivergenceClones creates a bare "remote" under t.TempDir() and
 // two independent git-mode clones of it, BOTH running `md init --git` - so
-// both configure the safe fetch refspec cmd/md/init.go's meadsFetchRefspec
-// adds. That is the one important difference from push_test.go's
-// setupDivergedGitModeClones, which only needs clone1's fetch refspec since
-// it exists to test PUSH rejection, never GitStore.Diverged/refs/meads-
-// remote/*; a fresh, self-contained helper here avoids coupling this test's
-// needs onto that one (and risking its already-passing phase 6 coverage).
+// both configure the safe fetch refspec (meads.FetchRefspec). That is the
+// one important difference from push_test.go's setupDivergedGitModeClones,
+// which only needs clone1's fetch refspec since it exists to test PUSH
+// rejection, never refs/meads-remote/*; a fresh, self-contained helper here
+// avoids coupling this test's needs onto that one (and risking its
+// already-passing phase 6 coverage).
 //
 // It diverges one shared task between the two clones exactly like that
 // helper does, then has clone2 run a REAL plain `git fetch origin` (relying
 // entirely on the configured refspec, exactly like an actual user) so
 // refs/meads-remote/* is populated for `md doctor` to read. Returns
-// clone2's globals (the one with a genuine divergence to report) and the
+// clone2's globals (the one with a genuine divergence to resolve) and the
 // shared task's id.
 func setupDoctorDivergenceClones(t *testing.T) (g2 *globals, sharedID int) {
 	t.Helper()
-	// See setupDivergedGitModeClones's identical comment: suppress the real
-	// push for setup so autoPush doesn't reveal/interfere with the
-	// divergence while this helper is still constructing it.
-	realPushFunc := pushFunc
+	// Suppress BOTH network halves of autoPush for setup: the push (see
+	// setupDivergedGitModeClones's identical comment) AND the fetch - since
+	// task 86, autoPush pulls first, and a real fetch+Integrate here would
+	// resolve the divergence at update time, before `md doctor` ever runs
+	// (that auto-resolution is the feature; this test needs the raw
+	// divergence to survive until doctor).
+	realPushFunc, realFetchFunc := pushFunc, fetchFunc
 	pushFunc = func(ctx context.Context, dir string) (string, error) { return "", nil }
-	defer func() { pushFunc = realPushFunc }()
+	fetchFunc = func(ctx context.Context, dir string) (string, error) { return "", errFakeOffline }
+	defer func() { pushFunc, fetchFunc = realPushFunc, realFetchFunc }()
 
 	bareDir := t.TempDir()
 	runGit(t, bareDir, "init", "--bare", "-b", "main")
@@ -182,51 +187,62 @@ func setupDoctorDivergenceClones(t *testing.T) (g2 *globals, sharedID int) {
 	return g2, sharedID
 }
 
-// TestIntegration_GitMode_DoctorReportsDivergence proves `md doctor`'s
-// git-mode path is actually wired to GitStore.Diverged end to end: it
-// exits non-zero, names the diverged task, shows what BOTH sides say,
-// reassures the user local work is safe, and - the MVP requirement - never
-// changes local state itself (no auto-merge).
-func TestIntegration_GitMode_DoctorReportsDivergence(t *testing.T) {
+// errFakeOffline makes a stubbed fetchFunc fail as if the network were
+// down, so autoPush skips the pull's Integrate (see push.go: a failed
+// fetch leaves remote-tracking stale and integrating against it is
+// deliberately skipped).
+var errFakeOffline = errors.New("fake offline")
+
+// TestIntegration_GitMode_DoctorResolvesDivergence proves `md doctor`'s
+// git-mode path resolves an edit/edit divergence end to end (task 86): it
+// reports the re-homing, exits ZERO (a divergence is auto-fixed now, not
+// manual-attention), the id takes the fetched-remote version, and the local
+// version is preserved as a new task - no merge, no force-push, no data
+// loss.
+func TestIntegration_GitMode_DoctorResolvesDivergence(t *testing.T) {
 	g2, sharedID := setupDoctorDivergenceClones(t)
 
 	out, err := captureStdout(t, (&doctorCmd{globals: g2}).Run)
-	if err == nil {
-		t.Fatal("doctor should exit non-zero when a divergence is present")
+	if err != nil {
+		t.Fatalf("doctor should succeed (a divergence is auto-resolved now): %v", err)
 	}
-	if !strings.Contains(err.Error(), "diverged") {
-		t.Errorf("doctor error = %q, want it to mention the diverged task(s)", err.Error())
-	}
-	if !strings.Contains(out, "has diverged") {
-		t.Errorf("doctor output = %q, want it to report the divergence", out)
-	}
-	if !strings.Contains(out, strconv.Itoa(sharedID)) {
-		t.Errorf("doctor output = %q, want it to name task %d", out, sharedID)
-	}
-	if !strings.Contains(out, "clone2's update") || !strings.Contains(out, "clone1's update") {
-		t.Errorf("doctor output = %q, want it to show what BOTH sides say", out)
-	}
-	if !strings.Contains(out, "committed and safe") {
-		t.Errorf("doctor output = %q, want it to reassure the user local work is safe", out)
+	wantMsg := "Task " + strconv.Itoa(sharedID) + " diverged with the fetched remote. Local version renumbered to " + strconv.Itoa(sharedID+1)
+	if !strings.Contains(out, wantMsg) {
+		t.Errorf("doctor output = %q, want it to contain %q", out, wantMsg)
 	}
 
-	// Per the MVP requirement: doctor must not have changed local state.
 	gs2 := meads.NewGitStore(g2.git())
-	got, err := gs2.Get([]int{sharedID})
-	if err != nil || got[0].Title != "clone2's update" {
-		t.Fatalf("task %d after doctor = %+v (err=%v), want clone2's own update untouched (no auto-merge)", sharedID, got, err)
+	// The id holds the fetched-remote version (so the next push converges).
+	kept, err := gs2.Get([]int{sharedID})
+	if err != nil || kept[0].Title != "clone1's update" {
+		t.Fatalf("task %d after doctor = %+v (err=%v), want clone1's update (the id follows the remote)", sharedID, kept, err)
+	}
+	// The local version is preserved as a new task - no data loss.
+	moved, err := gs2.Get([]int{sharedID + 1})
+	if err != nil || len(moved) != 1 || moved[0].Title != "clone2's update" {
+		t.Fatalf("task %d after doctor = %+v (err=%v), want clone2's update re-homed there", sharedID+1, moved, err)
+	}
+
+	// Fully resolved: a second doctor reports nothing.
+	out2, err := captureStdout(t, (&doctorCmd{globals: g2}).Run)
+	if err != nil {
+		t.Fatalf("second doctor: %v", err)
+	}
+	if !strings.Contains(out2, "no issues found") {
+		t.Errorf("second doctor output = %q, want \"no issues found\"", out2)
 	}
 }
 
 // TestIntegration_GitMode_DoctorRenumbersCrossClonedDuplicate is the
-// duplicate-id counterpart of TestIntegration_GitMode_DoctorReportsDivergence
+// duplicate-id counterpart of TestIntegration_GitMode_DoctorResolvesDivergence
 // above: two fully independent clones (never sharing any bootstrap state,
 // unlike the divergence scenario) each create a FIRST task while
 // disconnected, so create-if-absent's NextID computation gives both id 1 for
 // two entirely unrelated tasks - exactly task 65's "two clones both create
-// task 58" scenario. Proves `md doctor` renumbers it (auto-applied, unlike a
-// divergence: doctor succeeds rather than requiring manual attention) end to
-// end through the real CLI and a real fetch.
+// task 58" scenario. Proves `md doctor` renumbers it end to end through the
+// real CLI and a real fetch: origin's task keeps the id, the local one is
+// re-homed at a fresh id (task 86's convergent policy), so the next push
+// succeeds.
 func TestIntegration_GitMode_DoctorRenumbersCrossClonedDuplicate(t *testing.T) {
 	realPushFunc := pushFunc
 	pushFunc = func(ctx context.Context, dir string) (string, error) { return "", nil }
@@ -273,19 +289,21 @@ func TestIntegration_GitMode_DoctorRenumbersCrossClonedDuplicate(t *testing.T) {
 
 	out, err := captureStdout(t, (&doctorCmd{globals: g2}).Run)
 	if err != nil {
-		t.Fatalf("doctor should succeed (a duplicate-id fix is auto-applied, unlike a divergence which needs manual attention): %v", err)
+		t.Fatalf("doctor should succeed (a duplicate-id fix is auto-applied, like a divergence): %v", err)
 	}
-	if !strings.Contains(out, "Duplicate ID 1 detected. Renumbered to 2.") {
+	if !strings.Contains(out, "Duplicate ID 1 detected. Renumbered to 2") {
 		t.Errorf("doctor output = %q, want it to report renumbering the duplicate", out)
 	}
 
 	gs2 := meads.NewGitStore(g2.git())
+	// Origin's task keeps the id (so the next push converges)...
 	kept, err := gs2.Get([]int{1})
-	if err != nil || kept[0].Title != "clone2's task" {
-		t.Fatalf("task 1 after doctor = %+v (err=%v), want clone2's own task, untouched", kept, err)
+	if err != nil || kept[0].Title != "clone1's task" {
+		t.Fatalf("task 1 after doctor = %+v (err=%v), want clone1's task (the id follows origin)", kept, err)
 	}
-	imported, err := gs2.Get([]int{2})
-	if err != nil || imported[0].Title != "clone1's task" {
-		t.Fatalf("task 2 after doctor = %+v (err=%v), want clone1's imported duplicate", imported, err)
+	// ...and the local task is re-homed at the fresh id, content preserved.
+	moved, err := gs2.Get([]int{2})
+	if err != nil || moved[0].Title != "clone2's task" {
+		t.Fatalf("task 2 after doctor = %+v (err=%v), want clone2's re-homed task", moved, err)
 	}
 }
