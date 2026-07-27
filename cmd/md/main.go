@@ -75,13 +75,45 @@ type globals struct {
 	TaskStoreCache meads.Tasks `opts:"-"`
 }
 
+// gitModeResolved reports whether this invocation has ALREADY resolved to
+// git mode, WITHOUT resolving anything itself. mode() would resolve, and
+// resolution can cost git subprocesses and even one ls-remote (the clone
+// check, see pkg/meads/clone.go) - fine on a command's main path, wrong on
+// a best-effort side channel like the webhook, which must never make a
+// mutation slower or reach the network on its own account.
+//
+// Every command that posts a webhook has already gone through tasks() to
+// perform the mutation it is reporting, so the cache is populated by then.
+// An unpopulated cache means nobody asked, and callers treat that as file
+// mode - the pre-git-mode behaviour.
+func (g *globals) gitModeResolved() bool {
+	return g.TaskStoreCache != nil && g.TaskStoreCache.Backend() == meads.BackendGit
+}
+
 // tasksFileAbs resolves TasksFile to an absolute path. It is included in every
 // webhook payload so a consumer receiving events from multiple tasks files can
 // tell them apart. Falls back to the raw path if resolution fails.
+//
+// In git mode there IS no tasks file, so what this returns is a phantom:
+// TASKS.md under the repository root. That is deliberate. Consumers scope
+// events by the path's DIRECTORY - "does this file govern the directory my
+// terminal is in" - and the repo root is the honest answer to that question
+// in git mode, where refs/meads/* is repo-wide. Resolving against g.Dir
+// instead would name the invocation's cwd, so running md from a
+// subdirectory would report a directory that governs nothing and a
+// correctly-scoped consumer would drop the event. File mode keeps using
+// g.Dir, where a cwd-relative tasks file genuinely is a different store
+// (md does not walk up to find one).
 func (g *globals) tasksFileAbs() string {
+	base := g.Dir
+	if g.gitModeResolved() {
+		if top, err := g.git().Output("rev-parse", "--show-toplevel"); err == nil && top != "" {
+			base = top
+		}
+	}
 	path := g.TasksFile
-	if !filepath.IsAbs(path) && g.Dir != "" {
-		path = filepath.Join(g.Dir, path)
+	if !filepath.IsAbs(path) && base != "" {
+		path = filepath.Join(base, path)
 	}
 	if abs, err := filepath.Abs(path); err == nil {
 		return abs

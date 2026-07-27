@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-07-27T23:55:26Z
+* updated: 2026-07-27T23:58:04Z
 * max-id: 88
 * next-id: 13
 
@@ -790,23 +790,6 @@ not absolute, and look for refs there. Everything else stays as is.
   commands, matching the main checkout
 - A test covers the worktree layout
 
-## 83. Webhook file field points at a phantom TASKS.md in git mode
-
-* status: open
-* priority: P2
-* type: bug
-* created: 2026-07-26T12:14:55Z
-
-`postWebhook` (`cmd/md/webhook.go:24`) has no `mode()` check, so in git mode it still emits `File: <cwd>/TASKS.md` — a path to a file that does not exist.
-
-Consumers scope events by that path's **directory** (e.g. rais's `tasksFileGovernsDir`: accept only if `filepath.Dir(file)` is the terminal's working dir or an ancestor). `md` does not walk up to find the tasks file, so at the project root the phantom path resolves to the right directory and everything works — identical to file mode.
-
-It misjudges `md` run from a **subdirectory**. In file mode that genuinely is a different (nonexistent) store, so rejecting is correct. In git mode it is the *same* repo-wide store, so the consumer silently drops a legitimate event — in rais's case, the agent task badge never appears.
-
-### Fix
-
-In git mode only, resolve `tasksFileAbs()` against `git rev-parse --show-toplevel` instead of `globals.Dir`. No new payload field, no consumer change, file mode untouched.
-
 ## 84. Git-mode tasks carry no meta.created / meta.updated
 
 * status: open
@@ -825,7 +808,7 @@ Not required by rais — its frontend never reads `task.meta` — but it is a re
 * status: open
 * priority: P1
 * type: task
-* depends-on: 83
+* depends-on: 
 * created: 2026-07-26T12:14:55Z
 * updated: 2026-07-27T14:04:35Z
 

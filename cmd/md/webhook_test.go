@@ -409,3 +409,58 @@ func containsSubstr(s, substr string) bool {
 	}
 	return false
 }
+
+// TestPostWebhook_GitModeAnchorsFileAtRepoRoot is task 83: in git mode the
+// webhook's file field is a phantom (there is no tasks file), and it must
+// name the REPOSITORY ROOT rather than the invocation's cwd.
+//
+// Consumers scope events by that path's directory - rais accepts an event
+// only when filepath.Dir(file) is the terminal's working directory or an
+// ancestor of it. refs/meads/* is repo-wide, so md run from a subdirectory
+// is still the same store; anchoring at g.Dir would have named the
+// subdirectory, which governs nothing, and the event would have been
+// silently dropped.
+func TestPostWebhook_GitModeAnchorsFileAtRepoRoot(t *testing.T) {
+	var received webhookPayload
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		json.Unmarshal(body, &received)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	h := gitModeHarness(t)
+	sub := filepath.Join(h.dir, "internal", "deep")
+	if err := os.MkdirAll(sub, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Run from the subdirectory, exactly as an agent cd'd into a package
+	// would.
+	t.Chdir(sub)
+	h.globals.Dir = sub
+	h.globals.Git = &meads.ExecGit{Dir: sub}
+	h.globals.WebhookURI = ts.URL
+
+	if err := (&addCmd{globals: h.globals, Args: []string{"added from a subdirectory"}}).Run(); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+
+	root, err := filepath.EvalSymlinks(h.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotDir, err := filepath.EvalSymlinks(filepath.Dir(received.File))
+	if err != nil {
+		t.Fatalf("resolving webhook file dir %q: %v", received.File, err)
+	}
+	if gotDir != root {
+		t.Errorf("webhook file = %q (dir %q), want it anchored at the repo root %q", received.File, gotDir, root)
+	}
+	if filepath.Base(received.File) != "TASKS.md" {
+		t.Errorf("webhook file base = %q, want TASKS.md", filepath.Base(received.File))
+	}
+	// The phantom must stay a phantom: git mode writes no tasks file.
+	if _, err := os.Stat(received.File); !os.IsNotExist(err) {
+		t.Errorf("git mode should not have created %s (stat err = %v)", received.File, err)
+	}
+}
