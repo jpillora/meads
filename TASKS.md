@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-07-27T23:58:04Z
+* updated: 2026-07-28T00:02:16Z
 * max-id: 88
 * next-id: 13
 
@@ -802,22 +802,3 @@ not absolute, and look for refs there. Everything else stays as is.
 Since `created`/`updated` are not in `knownMetaKeys` (`task.go:42`), file-mode JSON carries `"meta":{"created":"..."}` while git-mode JSON omits `meta` entirely. Task 57's own design doc specifies both fields in `task.json`, so this is an undocumented divergence from the design, not a deliberate omission.
 
 Not required by rais — its frontend never reads `task.meta` — but it is a real `md list --json` / `md get --json` parity gap between backends.
-
-## 85. Release meads v0.36.0
-
-* status: open
-* priority: P1
-* type: task
-* depends-on: 
-* created: 2026-07-26T12:14:55Z
-* updated: 2026-07-27T14:04:35Z
-
-`go fmt ./...`, `go test ./...`, tag `v0.36.0` and push.
-
-Call out in the release notes that this is a **breaking** v0 change:
-
-* `meads.TaskStore` is gone, replaced by `meads.Tasks`
-* `pkg/mcp.NewServer` and `pkg/webui.Server.Store` now take `meads.Tasks`
-* `meads.NewStore` / `meads.NewFileStore` are no longer the entry point — use `meads.OpenTasks(dir)`, `meads.OpenTasksFile(file)` or `meads.OpenTasksFS(fs, file)`
-
-rais's integration work is blocked on this tag.
