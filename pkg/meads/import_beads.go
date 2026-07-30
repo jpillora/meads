@@ -112,9 +112,10 @@ func beadToTask(b beadIssue) Task {
 	if b.Assignee != "" {
 		t.Meta["assignee"] = b.Assignee
 	}
-	// Labels → Tags
+	// Labels → Tags. Beads labels are free-form, so they are coerced into
+	// the tag rule rather than rejected - see SanitizeTags.
 	if len(b.Labels) > 0 {
-		t.SetTags(b.Labels)
+		t.SetTags(SanitizeTags(b.Labels))
 	}
 	// Metadata (prefixed)
 	for k, v := range b.Metadata {

@@ -136,7 +136,12 @@ func parseTask(section string) (Task, bool) {
 		t.CloseReason = v
 	}
 	if v, ok := meta["tags"]; ok {
-		t.Tags = splitTags(v)
+		t.Tags = ParseTags(v)
+		if len(t.Tags) == 0 {
+			delete(meta, "tags")
+		} else {
+			meta["tags"] = t.Tags.String() // normalize
+		}
 	}
 	if v, ok := meta["deleted"]; ok {
 		t.Deleted = v == "true"
@@ -151,7 +156,7 @@ func parseTask(section string) (Task, bool) {
 		delete(meta, "agent-id")
 	}
 	if v, ok := meta["files-in-scope"]; ok {
-		t.FilesInScope = splitTags(v) // reuse: a plain comma-separated list, same shape as tags
+		t.FilesInScope = splitCSV(v) // a plain comma-separated list, same shape as tags
 		delete(meta, "files-in-scope")
 	}
 	return t, true
@@ -243,8 +248,13 @@ func FormatTask(t Task) string {
 	// never synced into t.Meta the way Set* methods sync e.g. status, so
 	// they are synthesized here exactly like Deleted/StatusReason, letting
 	// a git-mode task round-trip through `md convert --from-git`.
+	//
+	// Tags is in that group too, with one difference: it CAN be carried in
+	// Meta (SetTags syncs it), so the field is treated as authoritative and
+	// the meta value is rewritten from it - or dropped, when the field was
+	// cleared directly - whenever the two disagree.
 	meta := t.Meta
-	if t.Deleted || t.StatusReason != "" || t.AgentID != "" || len(t.FilesInScope) > 0 {
+	if t.Deleted || t.StatusReason != "" || t.AgentID != "" || len(t.FilesInScope) > 0 || t.Meta["tags"] != t.Tags.String() {
 		meta = make(map[string]string, len(t.Meta)+4)
 		for k, v := range t.Meta {
 			meta[k] = v
@@ -260,6 +270,11 @@ func FormatTask(t Task) string {
 		}
 		if len(t.FilesInScope) > 0 {
 			meta["files-in-scope"] = strings.Join(t.FilesInScope, ",")
+		}
+		if len(t.Tags) > 0 {
+			meta["tags"] = t.Tags.String()
+		} else {
+			delete(meta, "tags")
 		}
 	}
 	if metaBlock := formatMetaBlock(meta, taskMetaOrder); metaBlock != "" {

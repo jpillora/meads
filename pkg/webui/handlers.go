@@ -146,6 +146,14 @@ func (s *Server) handleAddTask(w http.ResponseWriter, r *http.Request) {
 		}
 		t.SetType(in.Type)
 	}
+	if len(in.Tags) > 0 {
+		tags, err := in.Tags.Normalize()
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		t.SetTags(tags)
+	}
 	if in.Description != "" {
 		t.Description = in.Description
 	}
@@ -193,6 +201,17 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		}
 		priority = norm
 	}
+	// A present-but-empty "tags" clears them; an absent one leaves them
+	// alone - hence the pointer on UpdateTaskInput.
+	var tags meads.Tags
+	if in.Tags != nil {
+		norm, err := in.Tags.Normalize()
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		tags = norm
+	}
 	err = s.cfg.Store.Update(id, func(t *meads.Task) {
 		if in.Status != "" {
 			t.SetStatus(in.Status)
@@ -205,6 +224,9 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		}
 		if in.Type != "" {
 			t.SetType(in.Type)
+		}
+		if in.Tags != nil {
+			t.SetTags(tags)
 		}
 		if in.Description != "" {
 			t.Description = in.Description

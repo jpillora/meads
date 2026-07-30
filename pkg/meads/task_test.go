@@ -44,7 +44,7 @@ func TestFormatIntSlice(t *testing.T) {
 	}
 }
 
-func TestSplitTags(t *testing.T) {
+func TestSplitCSV(t *testing.T) {
 	tests := []struct {
 		input string
 		want  []string
@@ -54,16 +54,17 @@ func TestSplitTags(t *testing.T) {
 		{"", nil},
 		{",,,", nil},
 		{"a,,b", []string{"a", "b"}},
+		{"a,b,a", []string{"a", "b"}}, // duplicates collapse
 	}
 	for _, tt := range tests {
-		got := splitTags(tt.input)
+		got := splitCSV(tt.input)
 		if len(got) != len(tt.want) {
-			t.Errorf("splitTags(%q) = %v, want %v", tt.input, got, tt.want)
+			t.Errorf("splitCSV(%q) = %v, want %v", tt.input, got, tt.want)
 			continue
 		}
 		for i := range got {
 			if got[i] != tt.want[i] {
-				t.Errorf("splitTags(%q)[%d] = %q, want %q", tt.input, i, got[i], tt.want[i])
+				t.Errorf("splitCSV(%q)[%d] = %q, want %q", tt.input, i, got[i], tt.want[i])
 			}
 		}
 	}

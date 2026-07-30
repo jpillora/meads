@@ -399,3 +399,59 @@ func unmarshalContent(t *testing.T, res *mcp.CallToolResult, v any) {
 		t.Fatalf("unmarshal content: %v\nraw: %s", err, tc.Text)
 	}
 }
+
+// TestTags covers the tags wiring on the MCP tools: add_task sets them,
+// update_task replaces them, an empty list clears them, and an invalid tag
+// is refused rather than stored.
+func TestTags(t *testing.T) {
+	cs := setup(t)
+	ctx := context.Background()
+
+	addRes := callTool(t, cs, ctx, "add_task", map[string]any{
+		"title": "Tagged",
+		"tags":  []string{"API", "web-ui"},
+	})
+	var addOut struct{ ID int }
+	unmarshalContent(t, addRes, &addOut)
+	if got := getTags(t, cs, ctx, addOut.ID); got != "api,web-ui" {
+		t.Errorf("tags after add_task = %q, want api,web-ui", got)
+	}
+
+	callTool(t, cs, ctx, "update_task", map[string]any{
+		"id":   addOut.ID,
+		"tags": []string{"docs"},
+	})
+	if got := getTags(t, cs, ctx, addOut.ID); got != "docs" {
+		t.Errorf("tags after update_task = %q, want docs", got)
+	}
+
+	// An update that says nothing about tags leaves them alone.
+	callTool(t, cs, ctx, "update_task", map[string]any{"id": addOut.ID, "title": "Renamed"})
+	if got := getTags(t, cs, ctx, addOut.ID); got != "docs" {
+		t.Errorf("tags after unrelated update = %q, want docs", got)
+	}
+
+	// An explicitly empty list clears them.
+	callTool(t, cs, ctx, "update_task", map[string]any{"id": addOut.ID, "tags": []string{}})
+	if got := getTags(t, cs, ctx, addOut.ID); got != "" {
+		t.Errorf("tags after clearing = %q, want none", got)
+	}
+
+	res, err := cs.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "add_task",
+		Arguments: map[string]any{"title": "Bad", "tags": []string{"web ui"}},
+	})
+	if err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+	if !res.IsError {
+		t.Errorf("add_task with an invalid tag should have failed")
+	}
+}
+
+func getTags(t *testing.T, cs *mcp.ClientSession, ctx context.Context, id int) string {
+	t.Helper()
+	var task meads.Task
+	unmarshalContent(t, callTool(t, cs, ctx, "get_task", map[string]any{"id": id}), &task)
+	return task.Tags.String()
+}

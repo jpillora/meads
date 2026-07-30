@@ -16,6 +16,7 @@ type AddTaskInput struct {
 	Status      string `json:"status,omitempty" jsonschema:"task status (draft, open, inprogress, blocked, closed)"`
 	Priority    string `json:"priority,omitempty" jsonschema:"task priority (P0-P9)"`
 	Type        string `json:"type,omitempty" jsonschema:"task type (bug, task, feature, idea)"`
+	Tags        Tags   `json:"tags,omitempty" jsonschema:"task tags - each lowercase letters, numbers and dashes"`
 	Description string `json:"description,omitempty" jsonschema:"task description"`
 }
 
@@ -29,6 +30,7 @@ type UpdateTaskInput struct {
 	Priority     string `json:"priority,omitempty" jsonschema:"new priority (P0-P9)"`
 	Title        string `json:"title,omitempty" jsonschema:"new title"`
 	Type         string `json:"type,omitempty" jsonschema:"new type (bug, task, feature, idea)"`
+	Tags         *Tags  `json:"tags,omitempty" jsonschema:"replacement tags - each lowercase letters, numbers and dashes; [] clears them"`
 	Description  string `json:"description,omitempty" jsonschema:"new description"`
 	StatusReason string `json:"status_reason,omitempty" jsonschema:"reason for status change"`
 }

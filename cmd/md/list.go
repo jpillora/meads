@@ -15,7 +15,7 @@ type listCmd struct {
 	Status   string `help:"Filter by status (e.g. open, closed, inprogress, blocked)"`
 	Priority string `help:"Filter by priority (e.g. P0, P1, P2)"`
 	Type     string `help:"Filter by type (e.g. task, bug, feature, idea)"`
-	Tag      string `help:"Filter by tag"`
+	Tag      string `help:"Filter by tag — comma-separated to require all of them (e.g. api,backend)"`
 }
 
 func (c *listCmd) Run() error {
@@ -52,6 +52,7 @@ func (c *listCmd) filterTasks(tasks []meads.Task) []meads.Task {
 	if c.Status == "" && c.Priority == "" && c.Type == "" && c.Tag == "" {
 		return tasks
 	}
+	tasks = filterByTag(tasks, c.Tag)
 	var filtered []meads.Task
 	for _, t := range tasks {
 		if c.Status != "" && t.Status != c.Status {
@@ -75,20 +76,24 @@ func (c *listCmd) filterTasks(tasks []meads.Task) []meads.Task {
 				continue
 			}
 		}
-		if c.Tag != "" && !hasTag(t.Tags, c.Tag) {
-			continue
-		}
 		filtered = append(filtered, t)
 	}
 	return filtered
 }
 
-// hasTag returns true if the given tag is present in the tags slice.
-func hasTag(tags []string, tag string) bool {
-	for _, t := range tags {
-		if t == tag {
-			return true
+// filterByTag returns only the tasks carrying every tag in the
+// comma-separated spec; an empty spec returns tasks unchanged. Shared with
+// `md ready`, which filters on tags and nothing else.
+func filterByTag(tasks []meads.Task, spec string) []meads.Task {
+	want := meads.ParseTags(spec)
+	if len(want) == 0 {
+		return tasks
+	}
+	var filtered []meads.Task
+	for _, t := range tasks {
+		if t.Tags.HasAll(want) {
+			filtered = append(filtered, t)
 		}
 	}
-	return false
+	return filtered
 }

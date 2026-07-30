@@ -3,8 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-07-28T00:02:16Z
-* max-id: 88
+* updated: 2026-07-30T14:57:30Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -802,3 +801,23 @@ not absolute, and look for refs there. Everything else stays as is.
 Since `created`/`updated` are not in `knownMetaKeys` (`task.go:42`), file-mode JSON carries `"meta":{"created":"..."}` while git-mode JSON omits `meta` entirely. Task 57's own design doc specifies both fields in `task.json`, so this is an undocumented divergence from the design, not a deliberate omission.
 
 Not required by rais — its frontend never reads `task.meta` — but it is a real `md list --json` / `md get --json` parity gap between backends.
+
+## 89. Add first-class tag support
+
+* status: closed
+* priority: P2
+* type: feature
+* created: 2026-07-30T14:40:37Z
+* updated: 2026-07-30T14:57:30Z
+
+Tags are a CSV `tags` metadata field on every backend (file + git). Custom meads.Tags []string type transcodes the CSV form; tags validate as ^[a-z0-9-]+$. CLI: md add --tags, md update --tags/--add-tags/--rm-tags, md list --tag, md ready --tag. Also wired through MCP/webui inputs and the prime docs.
+
+## 90. Show and filter tags in the web UI
+
+* status: open
+* priority: P3
+* type: feature
+* tags: webui
+* created: 2026-07-30T14:57:28Z
+
+The webui frontend (pkg/webui/assets/app.js) does not render task tags at all, even though the HTTP API now accepts and returns them (POST/PATCH /api/tasks take a 'tags' array or CSV string). Add tag chips to the task list/detail views and a tag filter, mirroring 'md list --tag'.

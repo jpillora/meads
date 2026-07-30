@@ -10,6 +10,8 @@
 - `md ready` - Show open tasks not blocked by dependencies (sorted by priority)
 - `md list` - List all tasks
 - `md list --json` - List all tasks as JSON
+- `md list --tag=api` - List tasks carrying a tag (comma-separated requires all of them, e.g. `--tag=api,backend`)
+- `md ready --tag=api` - Same filter over ready work
 - `md list --history` - List all tasks from git history (including deleted)
 - `md get <id>` - Get a specific task (a soft-deleted task's ref is kept forever, so this still resolves it)
 - `md get --json <id>` - Get a specific task as JSON
@@ -23,12 +25,15 @@
   - Description: text after that split point
 - `md add --title="Fix login" --type=bug --priority=P1 --description="Details here"` - Flag-based
 - `md add --title="Fix login" --description-file=/path/to/notes.md` - Description from file
+- `md add --title="Fix login" --tags=api,web-ui` - Set tags (comma-separated; each tag is lowercase letters, numbers and dashes)
 
 ### Updating Tasks
 - `md update <id> --status=draft|open|inprogress|closed` - Update status
 - `md update <id> --priority=P1` - Update priority
 - `md update <id> --title="New title"` - Update title
 - `md update <id> --description-file=/path/to/notes.md` - Update description from file
+- `md update <id> --tags=api,web-ui` - Replace all tags (`--tags=` clears them)
+- `md update <id> --add-tags=docs` / `md update <id> --rm-tags=api` - Add or remove tags, keeping the rest
 - `md set-status <id> <status>` - Shorthand for status changes
 - `md del <id>` - Delete a task (soft delete — see Rules)
 

@@ -86,8 +86,10 @@ md add --depends-on=1 "Write tests"   Add with dependency
 md create "title"                     Alias for add
 md get <id>                           View a task (recovers deleted tasks from git history)
 md list                               List all tasks
+md list --tag=api                     Filter by tag (also on ready; --tag=a,b requires both)
 md ready                              Show unblocked open tasks (by priority)
 md update <id> --priority=P1          Update task fields
+md update <id> --add-tags=api         Add tags (--rm-tags removes, --tags replaces)
 md set-status <id> <status>           Change status (draft|open|inprogress|closed)
 md del <id>                           Delete a task
 md add-dep <child> <parent>           Add a dependency
@@ -188,6 +190,14 @@ md add "bug: Fix login P1. Session cookie expires prematurely"
 md ready
 ```
 
+**Tag work, then filter by tag:**
+
+```bash
+md add "Rate-limit the login endpoint" --tags=api,security
+md update 1 --add-tags=urgent   # --rm-tags removes, --tags= clears
+md ready --tag=api,security     # ready work carrying BOTH tags
+```
+
 **Create dependent tasks:**
 
 ```bash
@@ -221,6 +231,7 @@ md doctor
   - `TASKS.csv` — Standard CSV with soft-delete and computed next-id. Easy to import into spreadsheets and other tools.
   - **Git mode** — no file at all; each task is its own git ref (`refs/meads/tasks/<id>`).
 - **Metadata** — Built-in keys are `status`, `priority`, `type`, `depends-on`, `tags`, `close-reason`, `created`, and `updated`.
+- **Tags** — A comma-separated set under the `tags` key (`* tags: api,web-ui`, a CSV column, or a JSON array in git mode). Each tag is lowercase letters, numbers and dashes; values are lowercased and de-duplicated on input, and rejected if they contain anything else.
 - **Concurrency** — Concurrent writes are always safe: file mode via optimistic file locking, git mode via compare-and-swap on each task's own ref — either way, multiple processes (or AI agents) can write simultaneously without corruption.
 - **AI-friendly** — Every backend is designed to be readable and writable by LLMs. Use `md prime` to print context for an AI agent (it describes whichever mode is actually active), or `md mcp` to run an MCP server over stdio.
 - **Minimal** — Single static binary, no config files.

@@ -81,10 +81,10 @@ func ParseCSV(content string) File {
 			t.DependsOn = parseIntSlice(depsStr)
 		}
 		if tagsStr := get(row, "tags"); tagsStr != "" {
-			t.Tags = splitTags(tagsStr)
+			t.Tags = ParseTags(tagsStr)
 		}
 		if filesStr := get(row, "files-in-scope"); filesStr != "" {
-			t.FilesInScope = splitTags(filesStr)
+			t.FilesInScope = splitCSV(filesStr)
 		}
 		// Parse meta JSON column.
 		meta := make(map[string]string)
@@ -110,7 +110,7 @@ func ParseCSV(content string) File {
 			meta["close-reason"] = t.CloseReason
 		}
 		if len(t.Tags) > 0 {
-			meta["tags"] = strings.Join(t.Tags, ",")
+			meta["tags"] = t.Tags.String()
 		}
 		if v := get(row, "created"); v != "" {
 			meta["created"] = v
@@ -174,7 +174,7 @@ func FormatCSV(f File) string {
 			t.Priority,
 			t.Type,
 			formatIntSlice(t.DependsOn),
-			strings.Join(t.Tags, ","),
+			t.Tags.String(),
 			escapeNewlines(t.Description),
 			t.CloseReason,
 			t.StatusReason,

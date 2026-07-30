@@ -86,6 +86,13 @@ func NewServer(store meads.Tasks, version string) *mcp.Server {
 			}
 			t.SetType(input.Type)
 		}
+		if len(input.Tags) > 0 {
+			tags, terr := input.Tags.Normalize()
+			if terr != nil {
+				return nil, nil, terr
+			}
+			t.SetTags(tags)
+		}
 		if input.Description != "" {
 			t.Description = input.Description
 		}
@@ -119,6 +126,15 @@ func NewServer(store meads.Tasks, version string) *mcp.Server {
 				return nil, nil, perr
 			}
 		}
+		// A present-but-empty "tags" clears them; an absent one leaves them
+		// alone - hence the pointer on UpdateTaskInput.
+		var tags meads.Tags
+		if input.Tags != nil {
+			var terr error
+			if tags, terr = input.Tags.Normalize(); terr != nil {
+				return nil, nil, terr
+			}
+		}
 		err := store.Update(input.ID, func(t *meads.Task) {
 			if input.Status != "" {
 				t.SetStatus(input.Status)
@@ -131,6 +147,9 @@ func NewServer(store meads.Tasks, version string) *mcp.Server {
 			}
 			if input.Type != "" {
 				t.SetType(input.Type)
+			}
+			if input.Tags != nil {
+				t.SetTags(tags)
 			}
 			if input.Description != "" {
 				t.Description = input.Description

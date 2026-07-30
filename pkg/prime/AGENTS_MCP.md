@@ -14,15 +14,16 @@ The `md` MCP server is enabled. **Use MCP tools instead of CLI commands** for al
 - `get_task(id)` - Get a specific task by ID
 
 ### Creating Tasks
-- `add_task(title, [status], [priority], [type], [description])` - Add a new task
+- `add_task(title, [status], [priority], [type], [tags], [description])` - Add a new task
   - `title` (required): task title
   - `status`: draft, open, inprogress, closed
   - `priority`: P0-P9 (0=critical, 4=backlog, default=P2)
   - `type`: bug, task, feature
+  - `tags`: list of tags, each lowercase letters, numbers and dashes (e.g. `["api","web-ui"]`)
   - `description`: detailed description
 
 ### Updating Tasks
-- `update_task(id, [status], [priority], [title], [description])` - Update a task
+- `update_task(id, [status], [priority], [title], [tags], [description])` - Update a task. `tags` replaces the whole set; omit it to leave tags alone, pass `[]` to clear them
 - `delete_task(id)` - Delete a task
 
 ### Dependencies

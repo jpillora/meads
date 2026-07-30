@@ -24,6 +24,7 @@ hardcoded assumption the way this file's hand-written rules below do.
 - `md ready` - Show open tasks not blocked by dependencies (sorted by priority)
 - `md list` - List all tasks
 - `md list --json` - List all tasks as JSON
+- `md list --tag=api` / `md ready --tag=api` - Filter by tag (`--tag=a,b` requires both)
 - `md get <id>` - Get a specific task (a deleted task absent from TASKS.md is recovered from git history)
 - `md get --json <id>` - Get a specific task as JSON
 
@@ -36,12 +37,15 @@ hardcoded assumption the way this file's hand-written rules below do.
   - Description: text after that split point
 - `md add --title="Fix login" --type=bug --priority=P1 --description="Details here"` - Flag-based
 - `md add --title="Fix login" --description-file=/path/to/notes.md` - Description from file
+- `md add --tags=api,web-ui "Fix login"` - Set tags (lowercase letters, numbers and dashes)
 
 ### Updating Tasks
 - `md update <id> --status=draft|open|inprogress|closed` - Update status
 - `md update <id> --priority=P1` - Update priority
 - `md update <id> --title="New title"` - Update title
 - `md update <id> --description-file=/path/to/notes.md` - Update description from file
+- `md update <id> --tags=api,web-ui` - Replace all tags (`--tags=` clears them)
+- `md update <id> --add-tags=docs` / `--rm-tags=api` - Add or remove tags, keeping the rest
 - `md set-status <id> <status>` - Shorthand for status changes
 - `md del <id>` - Delete a task
 

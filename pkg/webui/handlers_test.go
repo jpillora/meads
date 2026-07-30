@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"github.com/go-git/go-billy/v5/memfs"
@@ -294,4 +295,68 @@ func TestOrigin_RejectsNonLoopback(t *testing.T) {
 	if resp.StatusCode != http.StatusForbidden {
 		t.Errorf("expected 403 for non-loopback origin, got %d", resp.StatusCode)
 	}
+}
+
+// TestTags_AddUpdateClear covers the tags wiring on the HTTP API: both
+// accepted input forms, the validation boundary, and the pointer that lets
+// a present-but-empty "tags" clear them.
+func TestTags_AddUpdateClear(t *testing.T) {
+	ts, token := newTestServer(t)
+	resp, body := do(t, ts, token, http.MethodPost, "/api/tasks",
+		meads.AddTaskInput{Title: "Tagged", Tags: meads.Tags{"API", "web-ui"}})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("status=%d body=%s", resp.StatusCode, body)
+	}
+	if got := fetchTags(t, ts, token, 1); got != "api,web-ui" {
+		t.Errorf("tags after add = %q, want api,web-ui", got)
+	}
+
+	// The CSV form is accepted too - Tags.UnmarshalJSON takes either.
+	resp, body = do(t, ts, token, http.MethodPatch, "/api/tasks/1",
+		json.RawMessage(`{"tags":"docs, api"}`))
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("patch status=%d body=%s", resp.StatusCode, body)
+	}
+	if got := fetchTags(t, ts, token, 1); got != "docs,api" {
+		t.Errorf("tags after patch = %q, want docs,api", got)
+	}
+
+	// An invalid tag is a 400, and changes nothing.
+	resp, body = do(t, ts, token, http.MethodPatch, "/api/tasks/1",
+		json.RawMessage(`{"tags":["web ui"]}`))
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("patch (invalid) status=%d body=%s", resp.StatusCode, body)
+	}
+	if got := fetchTags(t, ts, token, 1); got != "docs,api" {
+		t.Errorf("tags after rejected patch = %q, want docs,api", got)
+	}
+
+	// An omitted "tags" leaves them alone; an empty one clears them.
+	if _, body = do(t, ts, token, http.MethodPatch, "/api/tasks/1",
+		json.RawMessage(`{"title":"Renamed"}`)); len(body) == 0 {
+		t.Fatal("empty patch response")
+	}
+	if got := fetchTags(t, ts, token, 1); got != "docs,api" {
+		t.Errorf("tags after unrelated patch = %q, want docs,api", got)
+	}
+	resp, body = do(t, ts, token, http.MethodPatch, "/api/tasks/1", json.RawMessage(`{"tags":[]}`))
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("patch (clear) status=%d body=%s", resp.StatusCode, body)
+	}
+	if got := fetchTags(t, ts, token, 1); got != "" {
+		t.Errorf("tags after clear = %q, want none", got)
+	}
+}
+
+func fetchTags(t *testing.T, ts *httptest.Server, token string, id int) string {
+	t.Helper()
+	resp, body := do(t, ts, token, http.MethodGet, "/api/tasks/"+strconv.Itoa(id), nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("get status=%d body=%s", resp.StatusCode, body)
+	}
+	var got meads.Task
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("decode: %v body=%s", err, body)
+	}
+	return got.Tags.String()
 }

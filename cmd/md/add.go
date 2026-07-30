@@ -18,6 +18,7 @@ type addCmd struct {
 	Priority        string   `help:"Set task priority (P0-P9 or 0-9)"`
 	Type            string   `help:"Set task type (bug, task, feature, idea)"`
 	DependsOn       string   `opts:"name=depends-on" help:"Set dependency task ID"`
+	Tags            string   `help:"Set task tags — comma-separated, each lowercase letters, numbers and dashes (e.g. api,backend)"`
 	Description     string   `help:"Set task description — markdown with JSON-style escapes (\\n, \\t, \\uXXXX, etc.)"`
 	DescriptionFile string   `opts:"name=description-file" help:"Path to a markdown file to use as the task description"`
 	Draft           bool     `help:"Create task with draft status (defaults to open)"`
@@ -31,10 +32,6 @@ var (
 	typeRe     = regexp.MustCompile(`^(bug|task|feature|idea):`)
 	priorityRe = regexp.MustCompile(`\bP(\d)\b`)
 )
-
-func (c *addCmd) Run() error {
-	return runAdd(c.globals, c.Args, c.Title, c.Status, c.Priority, c.Type, c.DependsOn, c.Description, c.DescriptionFile, c.Draft)
-}
 
 // decodeJSONEscapes processes JSON-style escape sequences (\n, \t, \\, \", \uXXXX,
 // etc.) so multi-line markdown fits in a single shell argument. Unrecognised
@@ -63,14 +60,17 @@ func decodeJSONEscapes(s string) string {
 	return b.String()
 }
 
-func runAdd(g *globals, args []string, title, status, priority, typ, dependsOn, description, descriptionFile string, draft bool) error {
+func (c *addCmd) Run() error {
+	g, args := c.globals, c.Args
+	title, status, priority, typ := c.Title, c.Status, c.Priority, c.Type
+	description := c.Description
 	// --description and --description-file are mutually exclusive
-	if description != "" && descriptionFile != "" {
+	if description != "" && c.DescriptionFile != "" {
 		return fmt.Errorf("cannot use both --description and --description-file")
 	}
 	// Read description from file if provided
-	if descriptionFile != "" {
-		data, err := os.ReadFile(descriptionFile)
+	if c.DescriptionFile != "" {
+		data, err := os.ReadFile(c.DescriptionFile)
 		if err != nil {
 			return fmt.Errorf("reading description file: %w", err)
 		}
@@ -128,7 +128,7 @@ func runAdd(g *globals, args []string, title, status, priority, typ, dependsOn, 
 		return fmt.Errorf("title is required")
 	}
 	// Default status
-	if draft {
+	if c.Draft {
 		if status != "" {
 			return fmt.Errorf("cannot use --draft with --status")
 		}
@@ -155,15 +155,22 @@ func runAdd(g *globals, args []string, title, status, priority, typ, dependsOn, 
 		}
 		t.SetPriority(p)
 	}
-	if dependsOn != "" {
-		n, err := strconv.Atoi(dependsOn)
+	if c.DependsOn != "" {
+		n, err := strconv.Atoi(c.DependsOn)
 		if err != nil {
-			return fmt.Errorf("invalid depends-on: %s", dependsOn)
+			return fmt.Errorf("invalid depends-on: %s", c.DependsOn)
 		}
 		t.SetDependsOn([]int{n})
 	}
 	if typ != "" {
 		t.SetType(typ)
+	}
+	if c.Tags != "" {
+		tags, err := meads.NormalizeTags(c.Tags)
+		if err != nil {
+			return err
+		}
+		t.SetTags(tags)
 	}
 	if description != "" {
 		t.Description = description

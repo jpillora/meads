@@ -10,6 +10,8 @@
 - `md ready` - Show open tasks not blocked by dependencies (sorted by priority)
 - `md list` - List all tasks
 - `md list --json` - List all tasks as JSON
+- `md list --tag=api` - List tasks carrying a tag (comma-separated requires all of them, e.g. `--tag=api,backend`)
+- `md ready --tag=api` - Same filter over ready work
 - `md get <id>` - Get a specific task
 - `md get --json <id>` - Get a specific task as JSON
 
@@ -22,6 +24,7 @@
   - Description: text after that split point
 - `md add --title="Fix login" --type=bug --priority=P1 --description="Details here"` - Flag-based
 - `md add --title="Fix login" --description-file=/path/to/notes.md` - Description from file
+- `md add --title="Fix login" --tags=api,web-ui` - Set tags (comma-separated; each tag is lowercase letters, numbers and dashes)
 
 ### Updating Tasks
 - `md update <id> --status=draft|open|inprogress|closed` - Update status
@@ -29,6 +32,8 @@
 - `md update <id> --title="New title"` - Update title
 - `md update <id> --description="## Notes\n\n- detail one\n- detail two"` - Update description. **Preferred** for rich text: the value is JSON-encoded markdown, so `\n`, `\t`, `\uXXXX`, etc. decode to a real multi-line document passed in a single argument
 - `md update <id> --description-file=/path/to/notes.md` - Update description from a markdown file (alternative to inline `--description`)
+- `md update <id> --tags=api,web-ui` - Replace all tags (`--tags=` clears them)
+- `md update <id> --add-tags=docs` / `md update <id> --rm-tags=api` - Add or remove tags, keeping the rest
 - `md set-status <id> <status>` - Shorthand for status changes
 - `md del <id>` - Delete a task
 

@@ -22,7 +22,7 @@ type Task struct {
 	Type         string            `json:"type,omitempty"`
 	DependsOn    []int             `json:"depends_on,omitempty"`
 	CloseReason  string            `json:"close_reason,omitempty"`
-	Tags         []string          `json:"tags,omitempty"`
+	Tags         Tags              `json:"tags,omitempty"`
 	Deleted      bool              `json:"deleted,omitempty"`
 	StatusReason string            `json:"status_reason,omitempty"`
 	AgentID      string            `json:"agent_id,omitempty"`
@@ -151,11 +151,17 @@ func (t *Task) SetCloseReason(s string) {
 	t.Meta["close-reason"] = s
 }
 
-// SetTags updates the tags in both the field and Meta map.
-func (t *Task) SetTags(tags []string) {
+// SetTags updates the tags in both the field and Meta map. Clearing the
+// tags removes the meta key outright rather than leaving an empty
+// "* tags:" line behind.
+func (t *Task) SetTags(tags Tags) {
 	t.Tags = tags
+	if len(tags) == 0 {
+		delete(t.Meta, "tags")
+		return
+	}
 	t.ensureMeta()
-	t.Meta["tags"] = strings.Join(tags, ",")
+	t.Meta["tags"] = tags.String()
 }
 
 // SetDependsOn updates the depends-on list in both the field and Meta map.
@@ -213,7 +219,7 @@ func (t *Task) SetMeta(key, value string) {
 	case "close-reason":
 		t.CloseReason = value
 	case "tags":
-		t.Tags = splitTags(value)
+		t.Tags = ParseTags(value)
 	}
 }
 
@@ -242,16 +248,4 @@ func formatIntSlice(ids []int) string {
 		parts[i] = strconv.Itoa(id)
 	}
 	return strings.Join(parts, ",")
-}
-
-// splitTags splits a comma-separated string into trimmed non-empty tags.
-func splitTags(s string) []string {
-	var tags []string
-	for _, t := range strings.Split(s, ",") {
-		t = strings.TrimSpace(t)
-		if t != "" {
-			tags = append(tags, t)
-		}
-	}
-	return tags
 }

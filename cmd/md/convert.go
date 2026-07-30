@@ -160,8 +160,8 @@ func (c *convertCmd) runFromGit() error {
 
 // syncMetaFromFields brings t.Meta into agreement with t's own dedicated
 // fields for every key the markdown/CSV formatters read from Meta rather
-// than the field itself (status, priority, type, depends-on, close-reason,
-// tags - see FormatTask/FormatCSV). This is required for EVERY git-mode
+// than the field itself (status, priority, type, depends-on, close-reason
+// - see FormatTask/FormatCSV). This is required for EVERY git-mode
 // source, not just an edge case: Task.MarshalJSON deliberately excludes
 // every known meta key from the "meta" JSON object it writes (to avoid
 // duplicating e.g. "status" against the dedicated top-level field), and
@@ -171,8 +171,8 @@ func (c *convertCmd) runFromGit() error {
 // GitStore.Claim (gitmutate.go, which also sets Status directly rather
 // than through SetStatus) is one illustrative way to reach this, but the
 // gap exists for every git-sourced task. Deleted/StatusReason/AgentID/
-// FilesInScope need no such treatment: FormatTask/FormatCSV already read
-// those straight from their dedicated fields, never from Meta (see
+// FilesInScope/Tags need no such treatment: FormatTask/FormatCSV already
+// read those straight from their dedicated fields, never from Meta (see
 // markdown.go's FormatTask).
 func syncMetaFromFields(t meads.Task) meads.Task {
 	if t.Status != "" {
@@ -189,9 +189,6 @@ func syncMetaFromFields(t meads.Task) meads.Task {
 	}
 	if t.CloseReason != "" {
 		t.SetCloseReason(t.CloseReason)
-	}
-	if len(t.Tags) > 0 {
-		t.SetTags(t.Tags)
 	}
 	return t
 }
