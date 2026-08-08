@@ -3,6 +3,7 @@ package prime
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -146,6 +147,49 @@ func TestWriteFile(t *testing.T) {
 			t.Fatal("want error creating into missing dir, got nil")
 		}
 	})
+}
+
+// doubleQuotedDescriptionRe captures the value of every inline
+// --description="..." the CLI docs demonstrate.
+var doubleQuotedDescriptionRe = regexp.MustCompile(`--description="([^"]*)"`)
+
+// Rich markdown inside a double-quoted shell argument is a trap: the shell
+// runs backtick code spans as command substitutions and expands $variables
+// before md ever sees the value. The docs may keep short double-quoted
+// examples; anything that looks like a document (embedded newlines) or that
+// the shell would rewrite belongs in a quoted HEREDOC instead. Guarding the
+// shape rather than one past sentence keeps a reworded example from
+// reintroducing the same advice.
+func TestAgentsCLIDoesNotRecommendDoubleQuotedRichDescription(t *testing.T) {
+	forEachCLIDoc(t, func(t *testing.T, content string) {
+		for _, m := range doubleQuotedDescriptionRe.FindAllStringSubmatch(content, -1) {
+			for _, unsafe := range []string{`\n`, "`", "$"} {
+				if strings.Contains(m[1], unsafe) {
+					t.Errorf("example %s puts %q inside double quotes; the shell rewrites it before md receives the description — use --description-file=- with a quoted HEREDOC", m[0], unsafe)
+				}
+			}
+		}
+	})
+}
+
+func TestAgentsCLIRecommendsQuotedHeredocForRichDescriptions(t *testing.T) {
+	forEachCLIDoc(t, func(t *testing.T, content string) {
+		if !strings.Contains(content, "--description-file=- <<'EOF'") {
+			t.Error("CLI prime context should recommend stdin via a quoted HEREDOC")
+		}
+	})
+}
+
+// forEachCLIDoc runs check against both CLI prime documents, which document
+// the same commands for file mode and git mode and so must not drift apart.
+func forEachCLIDoc(t *testing.T, check func(*testing.T, string)) {
+	t.Helper()
+	for name, content := range map[string]string{
+		"file": AgentsCLI,
+		"git":  AgentsCLIGit,
+	} {
+		t.Run(name, func(t *testing.T) { check(t, content) })
+	}
 }
 
 func readFile(t *testing.T, path string) string {

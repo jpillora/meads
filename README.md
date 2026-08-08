@@ -83,6 +83,7 @@ a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 md add "title"                        Add a simple task
 md add "bug: Fix login P1. Details"   Rich input (type, priority, body)
 md add --depends-on=1 "Write tests"   Add with dependency
+md add --description-file=-           Read a description from stdin/HEREDOC
 md create "title"                     Alias for add
 md get <id>                           View a task (recovers deleted tasks from git history)
 md list                               List all tasks
@@ -90,6 +91,7 @@ md list --tag=api                     Filter by tag (also on ready; --tag=a,b re
 md ready                              Show unblocked open tasks (by priority)
 md update <id> --priority=P1          Update task fields
 md update <id> --add-tags=api         Add tags (--rm-tags removes, --tags replaces)
+md update <id> --description-file=-   Read a description from stdin/HEREDOC
 md set-status <id> <status>           Change status (draft|open|inprogress|closed)
 md del <id>                           Delete a task
 md add-dep <child> <parent>           Add a dependency
@@ -211,6 +213,21 @@ md add "Write tests for API" --depends-on=3    # blocked until 3 is closed
 md set-status 3 inprogress   # claim it
 md set-status 3 closed       # done
 ```
+
+**Write a rich Markdown description without shell escapes:**
+
+```bash
+md update 3 --description-file=- <<'EOF'
+## Notes
+
+- Real newlines and `code spans` are preserved literally.
+- The quoted delimiter prevents shell expansion of `$variables`.
+EOF
+```
+
+`--description-file` (a path or `-`) is taken literally — no escape decoding —
+with trailing blank lines trimmed. Inline `--description` still decodes
+JSON-style escapes, so `\n` there means a newline.
 
 ## Merging TASKS.md
 

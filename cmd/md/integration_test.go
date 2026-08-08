@@ -651,6 +651,38 @@ func TestIntegration_CommandStructs(t *testing.T) {
 		}
 	})
 
+	t.Run("updateCmd preserves markdown code spans", func(t *testing.T) {
+		h := newHarness(t)
+		id := h.addTask("Update description")
+		description := "running while `document.hidden`, `visibilityState`, and `document.hasFocus()`"
+		cmd := &updateCmd{globals: h.globals, ID: "1", Description: description}
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("updateCmd.Run: %v", err)
+		}
+		task := h.getTask(id)
+		if task.Description != description {
+			t.Fatalf("expected description %q, got %q", description, task.Description)
+		}
+	})
+
+	t.Run("updateCmd description file preserves markdown code spans", func(t *testing.T) {
+		h := newHarness(t)
+		id := h.addTask("Update description from file")
+		description := "running while `document.hidden`, `visibilityState`, and `document.hasFocus()`"
+		path := filepath.Join(t.TempDir(), "description.md")
+		if err := os.WriteFile(path, []byte(description), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		cmd := &updateCmd{globals: h.globals, ID: "1", DescriptionFile: path}
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("updateCmd.Run: %v", err)
+		}
+		task := h.getTask(id)
+		if task.Description != description {
+			t.Fatalf("expected description %q, got %q", description, task.Description)
+		}
+	})
+
 	t.Run("setStatusCmd", func(t *testing.T) {
 		h := newHarness(t)
 		id := h.addTask("Close me")

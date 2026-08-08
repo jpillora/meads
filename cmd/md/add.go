@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -12,15 +11,15 @@ import (
 
 type addCmd struct {
 	globals         *globals
-	Args            []string `opts:"mode=arg,min=0" help:"Note: task descriptions are JSON-encoded markdown — '\\n', '\\t', '\\uXXXX', etc. all decode.\n\nTwo modes for setting task fields:\n\n(1) Free-form string. Pass a single argument and meads extracts:\n      type prefix:   bug: / task: / feature: / idea:   (optional)\n      priority:      P0-P9 anywhere in the string      (default P2)\n      title:         text before the first '. ' (period+space) or newline\n      description:   text after that split point\n    Examples:\n      md add 'Fix the login bug'\n      md add 'bug: Fix login P1. Session cookie expires after 5min'\n      md add 'Fix login.\\nSession cookie expires.\\n\\nSteps to repro...'\n\n(2) Explicit flags. Set each field via --title, --type, --priority, etc.\n    Example:\n      md add --type=bug --priority=P1 --title='Fix login' \\\n             --description='## Steps\\n1. Repro\\n2. Patch'"`
+	Args            []string `opts:"mode=arg,min=0" help:"Note: inline task descriptions are JSON-encoded markdown — '\\n', '\\t', '\\uXXXX', etc. all decode. Use --description-file=- with a quoted HEREDOC for literal multiline Markdown.\n\nTwo modes for setting task fields:\n\n(1) Free-form string. Pass a single argument and meads extracts:\n      type prefix:   bug: / task: / feature: / idea:   (optional)\n      priority:      P0-P9 anywhere in the string      (default P2)\n      title:         text before the first '. ' (period+space) or newline\n      description:   text after that split point\n    Examples:\n      md add 'Fix the login bug'\n      md add 'bug: Fix login P1. Session cookie expires after 5min'\n      md add 'Fix login.\\nSession cookie expires.\\n\\nSteps to repro...'\n\n(2) Explicit flags. Set each field via --title, --type, --priority, etc.\n    Example:\n      md add --type=bug --priority=P1 --title='Fix login' \\\n             --description='## Steps\\n1. Repro\\n2. Patch'"`
 	Title           string   `help:"Set task title"`
 	Status          string   `help:"Set task status (draft, open, inprogress, blocked, closed)"`
 	Priority        string   `help:"Set task priority (P0-P9 or 0-9)"`
 	Type            string   `help:"Set task type (bug, task, feature, idea)"`
 	DependsOn       string   `opts:"name=depends-on" help:"Set dependency task ID"`
 	Tags            string   `help:"Set task tags — comma-separated, each lowercase letters, numbers and dashes (e.g. api,backend)"`
-	Description     string   `help:"Set task description — markdown with JSON-style escapes (\\n, \\t, \\uXXXX, etc.)"`
-	DescriptionFile string   `opts:"name=description-file" help:"Path to a markdown file to use as the task description"`
+	Description     string   `help:"Set task description inline — markdown with JSON-style escapes (\\n, \\t, \\uXXXX, etc.)"`
+	DescriptionFile string   `opts:"name=description-file" help:"Path to a markdown file to use as the task description; use - to read stdin (for example, a quoted HEREDOC). Content is taken literally, with trailing blank lines trimmed"`
 	Draft           bool     `help:"Create task with draft status (defaults to open)"`
 }
 
@@ -63,22 +62,21 @@ func decodeJSONEscapes(s string) string {
 func (c *addCmd) Run() error {
 	g, args := c.globals, c.Args
 	title, status, priority, typ := c.Title, c.Status, c.Priority, c.Type
-	description := c.Description
+	// Inline descriptions are JSON-encoded markdown. File and stdin content
+	// is already real Markdown and must remain literal.
+	description := decodeJSONEscapes(c.Description)
 	// --description and --description-file are mutually exclusive
 	if description != "" && c.DescriptionFile != "" {
 		return fmt.Errorf("cannot use both --description and --description-file")
 	}
 	// Read description from file if provided
 	if c.DescriptionFile != "" {
-		data, err := os.ReadFile(c.DescriptionFile)
+		var err error
+		description, err = readDescriptionFile(c.DescriptionFile, g.stdinReader())
 		if err != nil {
-			return fmt.Errorf("reading description file: %w", err)
+			return err
 		}
-		description = string(data)
 	}
-	// Task descriptions are JSON-encoded markdown — decode \n, \uXXXX, etc.
-	// in both the --description flag and the free-form positional arg.
-	description = decodeJSONEscapes(description)
 	// Parse args if provided
 	if len(args) > 0 {
 		input := strings.Join(args, " ")

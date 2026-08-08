@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"strconv"
 
 	"github.com/jpillora/meads/pkg/meads"
@@ -18,8 +17,8 @@ type updateCmd struct {
 	Tags            tagsFlag `opts:"mode=flag" help:"Replace task tags — comma-separated, each lowercase letters, numbers and dashes ('--tags=' clears them all)"`
 	AddTags         string   `help:"Add tags, keeping the existing ones — comma-separated"`
 	RmTags          string   `help:"Remove tags, keeping the rest — comma-separated"`
-	Description     string   `help:"Set task description — markdown with JSON-style escapes (\\n, \\t, \\uXXXX, etc.)"`
-	DescriptionFile string   `opts:"name=description-file" help:"Path to a markdown file to use as the task description"`
+	Description     string   `help:"Set task description inline — markdown with JSON-style escapes (\\n, \\t, \\uXXXX, etc.)"`
+	DescriptionFile string   `opts:"name=description-file" help:"Path to a markdown file to use as the task description; use - to read stdin (for example, a quoted HEREDOC). Content is taken literally, with trailing blank lines trimmed"`
 	StatusReason    string   `help:"Set status reason"`
 }
 
@@ -85,11 +84,10 @@ func (c *updateCmd) Run() error {
 	}
 	description := decodeJSONEscapes(c.Description)
 	if c.DescriptionFile != "" {
-		data, err := os.ReadFile(c.DescriptionFile)
+		description, err = readDescriptionFile(c.DescriptionFile, c.globals.stdinReader())
 		if err != nil {
-			return fmt.Errorf("reading description file: %w", err)
+			return err
 		}
-		description = string(data)
 	}
 	priority := c.Priority
 	if priority != "" {

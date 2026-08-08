@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -56,6 +57,7 @@ type globals struct {
 	Store      *meads.Store    `opts:"-"`
 	GitStore   *meads.GitStore `opts:"-"`
 	Git        meads.Git       `opts:"-"`
+	Stdin      io.Reader       `opts:"-"`
 	TasksFile  string          `help:"the tasks markdown file to manage (env MEADS_TASK_FILE)"`
 	WebhookURI string          `help:"a uri to POST to with {meads:true,action,file,data}; http(s):// or unix:///path/to/sock or unix://[/path/to/sock]/http/path (env MEADS_WEBHOOK_URI)"`
 	Dir        string          `opts:"-"`

@@ -25,12 +25,30 @@
   - Description: text after that split point
 - `md add --title="Fix login" --type=bug --priority=P1 --description="Details here"` - Flag-based
 - `md add --title="Fix login" --description-file=/path/to/notes.md` - Description from file
+- For rich Markdown, read the description from a quoted HEREDOC so the shell passes backticks, dollar signs, and backslashes literally:
+  ```bash
+  md add --title="Fix login" --description-file=- <<'EOF'
+  ## Context
+
+  The session cookie expires while `document.hidden` is true.
+  EOF
+  ```
 - `md add --title="Fix login" --tags=api,web-ui` - Set tags (comma-separated; each tag is lowercase letters, numbers and dashes)
 
 ### Updating Tasks
 - `md update <id> --status=draft|open|inprogress|closed` - Update status
 - `md update <id> --priority=P1` - Update priority
 - `md update <id> --title="New title"` - Update title
+- `md update <id> --description="Short details"` - Update a short description inline (JSON-style escapes such as `\n` still decode)
+- For rich Markdown, prefer stdin via a quoted HEREDOC; `--description-file=-` means read stdin and does not require shell escaping:
+  ```bash
+  md update <id> --description-file=- <<'EOF'
+  ## Notes
+
+  - Preserves `code spans` literally
+  - Supports real newlines without `\n` escapes
+  EOF
+  ```
 - `md update <id> --description-file=/path/to/notes.md` - Update description from file
 - `md update <id> --tags=api,web-ui` - Replace all tags (`--tags=` clears them)
 - `md update <id> --add-tags=docs` / `md update <id> --rm-tags=api` - Add or remove tags, keeping the rest

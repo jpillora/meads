@@ -37,6 +37,14 @@ hardcoded assumption the way this file's hand-written rules below do.
   - Description: text after that split point
 - `md add --title="Fix login" --type=bug --priority=P1 --description="Details here"` - Flag-based
 - `md add --title="Fix login" --description-file=/path/to/notes.md` - Description from file
+- For rich Markdown, read the description from a quoted HEREDOC so the shell passes backticks, dollar signs, and backslashes through literally:
+  ```bash
+  md add --title="Fix login" --description-file=- <<'EOF'
+  ## Context
+
+  The session cookie expires while `document.hidden` is true.
+  EOF
+  ```
 - `md add --tags=api,web-ui "Fix login"` - Set tags (lowercase letters, numbers and dashes)
 
 ### Updating Tasks
@@ -44,6 +52,15 @@ hardcoded assumption the way this file's hand-written rules below do.
 - `md update <id> --priority=P1` - Update priority
 - `md update <id> --title="New title"` - Update title
 - `md update <id> --description-file=/path/to/notes.md` - Update description from file
+- For rich Markdown, prefer stdin via a quoted HEREDOC; `--description-file=-` means read stdin and needs no shell escaping:
+  ```bash
+  md update <id> --description-file=- <<'EOF'
+  ## Notes
+
+  - Preserves `code spans` literally
+  - Supports real newlines without `\n` escapes
+  EOF
+  ```
 - `md update <id> --tags=api,web-ui` - Replace all tags (`--tags=` clears them)
 - `md update <id> --add-tags=docs` / `--rm-tags=api` - Add or remove tags, keeping the rest
 - `md set-status <id> <status>` - Shorthand for status changes
