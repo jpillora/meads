@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-08-06T23:38:52Z
+* updated: 2026-08-08T05:41:15Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -658,71 +658,6 @@ including exactly the final write-up a closing commit is most likely to add.
 - Editing a task's description and closing it in the same commit preserves the
   edit somewhere in git history
 - A regression test covers edit-then-close-in-one-commit
-
-## 74. TASKS.md left dirty by one trailing newline after every description-file write
-
-* status: open
-* priority: P3
-* type: bug
-* created: 2026-07-25T23:19:06Z
-
-After any commit whose TASKS.md was last written by `md update
---description-file` / `md add --description-file`, TASKS.md stays modified in
-the working tree by exactly one trailing blank line. Committing clears it until
-the next such write.
-
-### Mechanism
-
-1. `--description-file` keeps the source file's trailing newline, so the
-   formatted TASKS.md ends `...
-
-`. Verified:
-   ```
-   $ md update 1 --description-file=d.txt; tail -c 12 TASKS.md | xxd
-   650a 6c69 6e65 2074 776f 0a0a          e.line two..
-   ```
-2. This repo's pre-commit hook runs **auto-save first**, which stages that
-   `
-
-` version verbatim.
-3. auto-delete then runs `AutoClean`, whose `acquireLock` normalizes:
-   `clean := strings.TrimRight(stripLockLines(content), "
-") + "
-"`
-   (pkg/meads/lock.go:61). Even when nothing is pruned, the
-   `len(result.Removed) == 0` branch calls `releaseLock(content)` with that
-   already-trimmed content, rewriting the file.
-4. auto-delete only re-stages when it actually removed something, so the
-   normalization never reaches the index.
-
-Net: index has `
-
-`, working tree has `
-`.
-
-Note the block order matters — a repo that installed auto-delete first
-normalizes before auto-save stages and never drifts. So this reproduces only
-where auto-save's block precedes auto-delete's, which is install-order
-dependent.
-
-### Why it is worth fixing
-
-Cosmetic on its own, but it trains "TASKS.md is always dirty, just check it
-out" — and per #72 a stray `git checkout -- TASKS.md` discards real task edits.
-A file the tool itself never leaves clean is a bad default.
-
-### Options
-
-- Stop `--description-file` preserving the trailing newline (trim it on read),
-  so the two representations agree. Narrowest fix.
-- Or have auto-delete stage whenever it rewrote the file, not only when it
-  pruned. Also fixes any other normalization drift.
-- Or normalize on write in `Format`, so no lock cycle is needed to converge.
-
-### Acceptance
-
-- `md add`/`md update --description-file` then commit leaves a clean tree
-- A test asserts TASKS.md is byte-identical to the index after the hook runs
 
 ## 75. Help visibility misdetects git mode inside a linked worktree
 

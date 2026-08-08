@@ -281,9 +281,13 @@ func FormatTask(t Task) string {
 		sb.WriteString("\n")
 		sb.WriteString(metaBlock)
 	}
-	if t.Description != "" {
+	// Trim exactly what parseTask trims on the way back in, so formatting is
+	// idempotent: a description that already ends in a newline would otherwise
+	// emit a trailing blank line the next parse silently drops, leaving the
+	// file dirty in the working tree after every write (see task #74).
+	if description := strings.TrimRight(t.Description, "\n \t"); description != "" {
 		sb.WriteString("\n")
-		sb.WriteString(t.Description)
+		sb.WriteString(description)
 		sb.WriteString("\n")
 	}
 	return sb.String()

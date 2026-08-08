@@ -233,3 +233,31 @@ func TestFormatTask_NoAgentFields_OmitsMetaLines(t *testing.T) {
 		t.Errorf("FormatTask for a task with no AgentID/FilesInScope should omit both keys:\n%s", formatted)
 	}
 }
+
+// TestFormatTask_DescriptionIsIdempotent guards task #74: a description
+// carrying its own trailing newline used to emit a trailing blank line, so
+// the committed file and the file the next parse/format cycle produced
+// differed by one byte and TASKS.md never came back clean.
+func TestFormatTask_DescriptionIsIdempotent(t *testing.T) {
+	for name, description := range map[string]string{
+		"trailing newline":       "line one\nline two\n",
+		"trailing blank lines":   "line one\nline two\n\n\n",
+		"trailing spaces":        "line one\nline two  ",
+		"whitespace only":        "\n \t\n",
+		"internal blanks intact": "para one\n\npara two\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			formatted := FormatTask(Task{ID: 1, Title: "Task", Status: "open", Description: description})
+			if strings.HasSuffix(formatted, "\n\n") {
+				t.Errorf("formatted task ends in a blank line:\n%q", formatted)
+			}
+			parsed, ok := parseTask(formatted)
+			if !ok {
+				t.Fatalf("could not re-parse formatted task:\n%s", formatted)
+			}
+			if again := FormatTask(parsed); again != formatted {
+				t.Errorf("format is not idempotent:\nfirst:  %q\nsecond: %q", formatted, again)
+			}
+		})
+	}
+}
