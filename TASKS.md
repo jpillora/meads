@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-08-08T05:41:15Z
+* updated: 2026-08-15T13:43:48Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -803,3 +803,57 @@ leave identical state and order stops mattering. Failing that, make `md init
 than exiting 1, and say so in convert's help.
 
 Hit while migrating jpillora.com's knobot site into git mode.
+
+## 92. md get in git mode silently omits status, priority, type, depends-on and close-reason
+
+* status: open
+* priority: P1
+* type: bug
+* created: 2026-08-15T13:43:48Z
+
+`FormatTask` (pkg/meads/markdown.go:239) builds its meta block from `t.Meta`,
+synthesizing only `deleted`, `status-reason`, `agent-id`, `files-in-scope` and
+`tags` from their dedicated fields. The other five formatter-visible keys —
+`status`, `priority`, `type`, `depends-on`, `close-reason` — are read from
+`t.Meta` alone.
+
+Every git-sourced task has an empty `Meta` for those keys: `Task.MarshalJSON`
+deliberately excludes every known meta key, and `Task` has no custom
+`UnmarshalJSON` to rebuild them (see the `syncMetaFromFields` doc comment in
+cmd/md/convert.go, which already spells this out). So `md get` in git mode
+prints a task with no status, no priority, no type, no dependencies and no
+close reason.
+
+### Reproduce
+
+```
+$ git init -q -b main . && git commit -q --allow-empty -m init
+$ md init --git && md add "feature: Fresh task P1. Body here"
+added task 1
+$ md get 1
+### 1. Fresh task
+
+Body here
+```
+
+No `* status: open`, no `* priority: P1`, no `* type: feature`. In file mode
+the same task prints all three.
+
+### Why it matters
+
+The data is intact — `md list` and `md get --json` both report status/priority/
+type correctly, because they read the dedicated fields. Only the human-readable
+`md get` rendering loses them, which is the output an agent reads when it runs
+`md get <id>` to decide what to do with a task. A closed task reads as
+statusless; a P0 reads as unprioritized.
+
+### Fix
+
+`runFromGit` already solves exactly this with `syncMetaFromFields`
+(cmd/md/convert.go:177). The narrow fix is to move that logic into
+`FormatTask`'s meta-synthesis block so it covers all ten formatter-visible
+keys, not five — then `--from-git`'s pre-pass becomes redundant and can go.
+`FormatCSV` needs the same audit.
+
+Found while migrating rais (783 tasks) to git mode; every task there renders
+without status.
