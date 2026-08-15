@@ -424,16 +424,16 @@ func assertAgentFieldsPreserved(t *testing.T, dst *meads.Store, id int, wantAgen
 	}
 }
 
-// TestConvert_GitToFile_ClaimStatusNotStale guards syncMetaFromFields's
-// reason for existing: Task.MarshalJSON strips every known meta key
-// (status, priority, ...) out of the "meta" JSON object it writes, and
-// there is no custom UnmarshalJSON to reconstruct them, so ANY task read
-// back from git (GitStore.Get/LoadAll) has an empty Meta for those keys -
-// see syncMetaFromFields's doc comment. Claim is used here as the concrete
-// illustration (it also sets Status directly, bypassing SetStatus, unlike
-// every CLI-reachable mutation), and its result - Status "inprogress" with
-// an Meta["status"] that never even reflects "open" - is exactly the shape
-// the converted file must still get right.
+// TestConvert_GitToFile_ClaimStatusNotStale guards the reason FormatTask
+// reads status/priority/type/... from the dedicated struct field rather than
+// from Meta (taskMetaForFormat, TASKS #92): Task.MarshalJSON strips every
+// known meta key out of the "meta" JSON object it writes, and there is no
+// custom UnmarshalJSON to reconstruct them, so ANY task read back from git
+// (GitStore.Get/LoadAll) has an empty Meta for those keys. Claim is used here
+// as the concrete illustration (it also sets Status directly, bypassing
+// SetStatus, unlike every CLI-reachable mutation), and its result - Status
+// "inprogress" with a Meta["status"] that never even reflects "open" - is
+// exactly the shape the converted file must still get right.
 func TestConvert_GitToFile_ClaimStatusNotStale(t *testing.T) {
 	h := newHarness(t)
 	gs := meads.NewGitStore(h.globals.git())
@@ -447,9 +447,8 @@ func TestConvert_GitToFile_ClaimStatusNotStale(t *testing.T) {
 		t.Fatalf("Claim: %v", err)
 	}
 	// Confirm the precondition this test is about: a git-mode read never
-	// carries Meta["status"] at all (see syncMetaFromFields's doc comment),
-	// so the struct field is the ONLY authoritative source of truth by the
-	// time convert sees it.
+	// carries Meta["status"] at all, so the struct field is the ONLY
+	// authoritative source of truth by the time convert sees it.
 	preConvert, err := gs.Get([]int{created.ID})
 	if err != nil {
 		t.Fatalf("Get: %v", err)
@@ -458,7 +457,7 @@ func TestConvert_GitToFile_ClaimStatusNotStale(t *testing.T) {
 		t.Fatalf("precondition: claimed task Status = %q, want inprogress", preConvert[0].Status)
 	}
 	if preConvert[0].Meta["status"] != "" {
-		t.Fatalf("precondition: expected Meta[\"status\"] empty after a git-mode read (see syncMetaFromFields), got %q", preConvert[0].Meta["status"])
+		t.Fatalf("precondition: expected Meta[\"status\"] empty after a git-mode read, got %q", preConvert[0].Meta["status"])
 	}
 
 	dstFile := filepath.Join(h.dir, "claimed-status.md")

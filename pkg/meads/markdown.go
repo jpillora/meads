@@ -243,41 +243,7 @@ func FormatTask(t Task) string {
 	} else {
 		fmt.Fprintf(&sb, "## %d.\n", t.ID)
 	}
-	// Build meta map including struct-only fields for formatting. AgentID/
-	// FilesInScope are set only by GitStore.Claim (git mode) - they are
-	// never synced into t.Meta the way Set* methods sync e.g. status, so
-	// they are synthesized here exactly like Deleted/StatusReason, letting
-	// a git-mode task round-trip through `md convert --from-git`.
-	//
-	// Tags is in that group too, with one difference: it CAN be carried in
-	// Meta (SetTags syncs it), so the field is treated as authoritative and
-	// the meta value is rewritten from it - or dropped, when the field was
-	// cleared directly - whenever the two disagree.
-	meta := t.Meta
-	if t.Deleted || t.StatusReason != "" || t.AgentID != "" || len(t.FilesInScope) > 0 || t.Meta["tags"] != t.Tags.String() {
-		meta = make(map[string]string, len(t.Meta)+4)
-		for k, v := range t.Meta {
-			meta[k] = v
-		}
-		if t.Deleted {
-			meta["deleted"] = "true"
-		}
-		if t.StatusReason != "" {
-			meta["status-reason"] = t.StatusReason
-		}
-		if t.AgentID != "" {
-			meta["agent-id"] = t.AgentID
-		}
-		if len(t.FilesInScope) > 0 {
-			meta["files-in-scope"] = strings.Join(t.FilesInScope, ",")
-		}
-		if len(t.Tags) > 0 {
-			meta["tags"] = t.Tags.String()
-		} else {
-			delete(meta, "tags")
-		}
-	}
-	if metaBlock := formatMetaBlock(meta, taskMetaOrder); metaBlock != "" {
+	if metaBlock := formatMetaBlock(taskMetaForFormat(t), taskMetaOrder); metaBlock != "" {
 		sb.WriteString("\n")
 		sb.WriteString(metaBlock)
 	}
@@ -291,6 +257,69 @@ func FormatTask(t Task) string {
 		sb.WriteString("\n")
 	}
 	return sb.String()
+}
+
+// fieldBackedMetaKeys are the meta keys whose value FormatTask takes from a
+// Task's own dedicated struct field, never from t.Meta - knownMetaKeys plus
+// "deleted" and "status-reason". Those two back Deleted/StatusReason but are
+// deliberately absent from knownMetaKeys, which exists to drive MarshalJSON's
+// meta exclusion: parseTask/ParseCSV already strip them out of Meta on the way
+// in, so there is nothing there for MarshalJSON to exclude. Derived rather
+// than written out a second time so the two sets cannot drift apart.
+var fieldBackedMetaKeys = func() map[string]bool {
+	m := map[string]bool{"deleted": true, "status-reason": true}
+	for k := range knownMetaKeys {
+		m[k] = true
+	}
+	return m
+}()
+
+// taskMetaForFormat returns the meta map FormatTask renders: t.Meta's own
+// entries (created, updated, and any custom key such as bead-id or owner)
+// with every field-backed key rebuilt from its dedicated struct field.
+//
+// The field is authoritative for all ten of them, not just some. t.Meta is
+// only ever half the picture: parseTask moves deleted/status-reason/agent-id/
+// files-in-scope into their fields and deletes the meta key outright, while a
+// git-sourced Task has an empty Meta for EVERY known key - MarshalJSON
+// excludes them all (knownMetaKeys) and Task has no UnmarshalJSON to put them
+// back. So a task read from refs/meads/tasks/* used to format with no status,
+// priority, type, depends-on or close-reason at all: the data was intact in
+// the fields, and `md get` simply did not print it (TASKS #92).
+//
+// Reading fields also makes clearing work uniformly: a field emptied directly
+// (rather than through SetTags/SetStatus/...) drops its meta line instead of
+// leaving a stale value behind, which is the special case Tags alone used to
+// get. `md convert --from-git` needed a syncMetaFromFields pre-pass to paper
+// over this for markdown; FormatCSV never did, having always read the fields.
+func taskMetaForFormat(t Task) map[string]string {
+	meta := make(map[string]string, len(t.Meta)+len(fieldBackedMetaKeys))
+	for k, v := range t.Meta {
+		if !fieldBackedMetaKeys[k] {
+			meta[k] = v
+		}
+	}
+	// An empty value means "absent", so the key is left out rather than
+	// emitting a valueless "* status:" line the parser would read back as "".
+	for key, val := range map[string]string{
+		"status":         t.Status,
+		"priority":       t.Priority,
+		"type":           t.Type,
+		"depends-on":     formatIntSlice(t.DependsOn),
+		"close-reason":   t.CloseReason,
+		"status-reason":  t.StatusReason,
+		"tags":           t.Tags.String(),
+		"agent-id":       t.AgentID,
+		"files-in-scope": strings.Join(t.FilesInScope, ","),
+	} {
+		if val != "" {
+			meta[key] = val
+		}
+	}
+	if t.Deleted {
+		meta["deleted"] = "true"
+	}
+	return meta
 }
 
 // formatMetaBlock formats a metadata map as "* key: value" lines.

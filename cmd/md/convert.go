@@ -138,6 +138,14 @@ func (c *convertCmd) runToGit() error {
 // preserving ids exactly via Store.ImportAll. Refuses to run if File already
 // exists, so a migration never silently merges into (or clobbers) existing
 // file content.
+//
+// Git-sourced tasks arrive with an empty Meta for every field-backed key
+// (Task.MarshalJSON excludes them all, and Task has no UnmarshalJSON to put
+// them back), which used to need a syncMetaFromFields pre-pass here so the
+// markdown formatter would not drop status/priority/type/depends-on/
+// close-reason on the way out. FormatTask now reads those from the dedicated
+// fields itself - as FormatCSV always did - so the pre-pass is gone (TASKS
+// #92); there is nothing left for this to fix up.
 func (c *convertCmd) runFromGit() error {
 	if !c.globals.inGitRepo() {
 		return fmt.Errorf("--from-git requires a git repository")
@@ -147,48 +155,10 @@ func (c *convertCmd) runFromGit() error {
 	if err != nil {
 		return err
 	}
-	for i := range tasks {
-		tasks[i] = syncMetaFromFields(tasks[i])
-	}
 	dst := meads.NewFileStore(c.File)
 	if err := dst.ImportAll(tasks); err != nil {
 		return err
 	}
 	fmt.Printf("converted %d tasks: %s* → %s\n", len(tasks), meads.TasksRefPrefix, c.File)
 	return nil
-}
-
-// syncMetaFromFields brings t.Meta into agreement with t's own dedicated
-// fields for every key the markdown/CSV formatters read from Meta rather
-// than the field itself (status, priority, type, depends-on, close-reason
-// - see FormatTask/FormatCSV). This is required for EVERY git-mode
-// source, not just an edge case: Task.MarshalJSON deliberately excludes
-// every known meta key from the "meta" JSON object it writes (to avoid
-// duplicating e.g. "status" against the dedicated top-level field), and
-// Task has no custom UnmarshalJSON to reconstruct them - so a task read
-// back from a git ref (GitStore.LoadAll, Get, etc.) always has an empty
-// Meta for these keys, regardless of how it was created or last mutated.
-// GitStore.Claim (gitmutate.go, which also sets Status directly rather
-// than through SetStatus) is one illustrative way to reach this, but the
-// gap exists for every git-sourced task. Deleted/StatusReason/AgentID/
-// FilesInScope/Tags need no such treatment: FormatTask/FormatCSV already
-// read those straight from their dedicated fields, never from Meta (see
-// markdown.go's FormatTask).
-func syncMetaFromFields(t meads.Task) meads.Task {
-	if t.Status != "" {
-		t.SetStatus(t.Status)
-	}
-	if t.Priority != "" {
-		t.SetPriority(t.Priority)
-	}
-	if t.Type != "" {
-		t.SetType(t.Type)
-	}
-	if len(t.DependsOn) > 0 {
-		t.SetDependsOn(t.DependsOn)
-	}
-	if t.CloseReason != "" {
-		t.SetCloseReason(t.CloseReason)
-	}
-	return t
 }

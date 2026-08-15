@@ -54,8 +54,9 @@ func TestTags_CSVRoundTrip(t *testing.T) {
 
 // TestTags_MarkdownFieldIsAuthoritative covers the case the formatter has
 // to synthesize: a task whose Tags field was set directly, with no Meta
-// entry to format from - exactly the shape every git-sourced task has (see
-// cmd/md/convert.go's syncMetaFromFields).
+// entry to format from - exactly the shape every git-sourced task has.
+// Tags was the first key to get this treatment; TASKS #92 extended it to
+// all ten field-backed keys (see markdown.go's taskMetaForFormat).
 func TestTags_MarkdownFieldIsAuthoritative(t *testing.T) {
 	out := meads.FormatTask(meads.Task{ID: 7, Title: "Direct", Tags: meads.Tags{"api"}})
 	if !strings.Contains(out, "* tags: api\n") {

@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/jpillora/meads/pkg/meads"
@@ -75,10 +76,13 @@ func TestParseFile_ProjectMeta(t *testing.T) {
 	}
 }
 
+// A parsed task carries every field-backed value in BOTH its dedicated field
+// and Meta (parseTask sets both), which is the shape these fixtures mirror.
+// FormatTask reads the field either way - see TestFormatTask_FieldsOnly.
 func TestFormatTask_Full(t *testing.T) {
 	task := meads.Task{
-		ID: 1, Title: "Fix the login bug", Status: "open",
-		Meta: map[string]string{"status": "open", "priority": "3"},
+		ID: 1, Title: "Fix the login bug", Status: "open", Priority: "3",
+		Meta:        map[string]string{"status": "open", "priority": "3"},
 		Description: "Some description.",
 	}
 	got := meads.FormatTask(task)
@@ -89,7 +93,7 @@ func TestFormatTask_Full(t *testing.T) {
 }
 
 func TestFormatTask_NoDescription(t *testing.T) {
-	task := meads.Task{ID: 2, Title: "No body", Meta: map[string]string{"status": "closed"}}
+	task := meads.Task{ID: 2, Title: "No body", Status: "closed"}
 	got := meads.FormatTask(task)
 	want := "## 2. No body\n\n* status: closed\n"
 	if got != want {
@@ -98,7 +102,7 @@ func TestFormatTask_NoDescription(t *testing.T) {
 }
 
 func TestFormatTask_EmptyTitle(t *testing.T) {
-	task := meads.Task{ID: 4, Meta: map[string]string{"status": "open"}}
+	task := meads.Task{ID: 4, Status: "open"}
 	got := meads.FormatTask(task)
 	want := "## 4.\n\n* status: open\n"
 	if got != want {
@@ -109,7 +113,7 @@ func TestFormatTask_EmptyTitle(t *testing.T) {
 func TestFormatFile_WithProjectMeta(t *testing.T) {
 	f := meads.File{
 		Meta:  map[string]string{"created": "2026-01-01T00:00:00Z", "next-id": "3"},
-		Tasks: []meads.Task{{ID: 1, Title: "First", Meta: map[string]string{"status": "open"}}},
+		Tasks: []meads.Task{{ID: 1, Title: "First", Status: "open"}},
 	}
 	got := meads.FormatFile(f)
 	want := "# TASKS\n\na [meads](https://github.com/jpillora/meads) (`md`) managed task log\n\n* created: 2026-01-01T00:00:00Z\n* next-id: 3\n\n## 1. First\n\n* status: open\n"
@@ -133,5 +137,60 @@ func TestFormatFile_RoundTrip(t *testing.T) {
 		if f.Tasks[i].ID != f2.Tasks[i].ID || f.Tasks[i].Title != f2.Tasks[i].Title {
 			t.Errorf("round-trip task %d mismatch", i)
 		}
+	}
+}
+
+// TASKS #92: a git-sourced Task has an empty Meta for every field-backed key -
+// MarshalJSON excludes them (knownMetaKeys) and Task has no UnmarshalJSON to
+// put them back - so FormatTask must render all ten from the dedicated fields.
+// It used to read status/priority/type/depends-on/close-reason from Meta alone,
+// which made `md get` in git mode print tasks with no status at all.
+func TestFormatTask_FieldsOnly(t *testing.T) {
+	task := meads.Task{
+		ID: 7, Title: "Git-sourced", Status: "closed", Priority: "P1", Type: "bug",
+		DependsOn: []int{3, 5}, CloseReason: "shipped", StatusReason: "blocked on review",
+		Tags: meads.Tags{"api", "web-ui"}, AgentID: "agent-1",
+		FilesInScope: []string{"a.go", "b.go"}, Deleted: true,
+		Description: "Body.",
+	}
+	got := meads.FormatTask(task)
+	want := "## 7. Git-sourced\n\n" +
+		"* status: closed\n* priority: P1\n* type: bug\n* depends-on: 3,5\n" +
+		"* close-reason: shipped\n* status-reason: blocked on review\n" +
+		"* tags: api,web-ui\n* agent-id: agent-1\n* files-in-scope: a.go,b.go\n" +
+		"* deleted: true\n\nBody.\n"
+	if got != want {
+		t.Errorf("FormatTask =\n%q\nwant\n%q", got, want)
+	}
+	// ...and the render must parse back into the same fields, so `md convert
+	// --from-git` round-trips without convert.go's syncMetaFromFields pre-pass.
+	f := meads.ParseFile(got)
+	if len(f.Tasks) != 1 {
+		t.Fatalf("re-parsed %d tasks, want 1", len(f.Tasks))
+	}
+	rt := f.Tasks[0]
+	if rt.Status != task.Status || rt.Priority != task.Priority || rt.Type != task.Type ||
+		rt.CloseReason != task.CloseReason || rt.StatusReason != task.StatusReason ||
+		rt.AgentID != task.AgentID || rt.Deleted != task.Deleted ||
+		rt.Tags.String() != task.Tags.String() ||
+		fmt.Sprint(rt.DependsOn) != fmt.Sprint(task.DependsOn) ||
+		fmt.Sprint(rt.FilesInScope) != fmt.Sprint(task.FilesInScope) {
+		t.Errorf("round-trip =\n%+v\nwant\n%+v", rt, task)
+	}
+}
+
+// A field cleared directly (not via SetTags/SetStatus/...) leaves a stale
+// value behind in Meta. The field wins, so the meta line is dropped - the
+// behaviour Tags alone used to get, now uniform across all ten keys.
+func TestFormatTask_ClearedFieldDropsStaleMeta(t *testing.T) {
+	task := meads.Task{
+		ID: 8, Title: "Cleared",
+		Meta: map[string]string{"status": "open", "priority": "P1", "type": "bug",
+			"depends-on": "3", "close-reason": "old", "tags": "api", "created": "2026-01-01T00:00:00Z"},
+	}
+	got := meads.FormatTask(task)
+	want := "## 8. Cleared\n\n* created: 2026-01-01T00:00:00Z\n"
+	if got != want {
+		t.Errorf("FormatTask =\n%q\nwant\n%q", got, want)
 	}
 }
