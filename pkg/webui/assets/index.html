@@ -23,7 +23,7 @@
     <span id="file-meta" class="muted"></span>
   </div>
   <div class="actions">
-    <input type="search" id="filter" placeholder="Filter…  type:bug is:ready  (/ to focus)" autocomplete="off">
+    <input type="search" id="filter" placeholder="Filter…  type:bug tag:api  (/ to focus)" autocomplete="off">
     <div class="overflow-group">
       <select id="sort-by" title="Sort tasks">
         <option value="default">Sort: status</option>
@@ -86,6 +86,10 @@
     <label id="reason-field" hidden>Status reason
       <input name="status_reason" id="editor-reason" autocomplete="off" placeholder="Why blocked/closed (optional)">
     </label>
+    <label>Tags <span class="muted">— comma separated; lowercase letters, numbers and dashes</span>
+      <input name="tags" id="editor-tags" autocomplete="off" placeholder="api, web-ui" list="tag-suggestions">
+    </label>
+    <datalist id="tag-suggestions"></datalist>
     <label for="editor-description">Task <span class="muted">— first line becomes the title</span></label>
     <div class="md-editor">
       <div class="md-toolbar" role="toolbar" aria-label="Format">

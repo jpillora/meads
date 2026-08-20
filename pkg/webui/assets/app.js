@@ -72,6 +72,17 @@ function chip(label, cls) {
   return c;
 }
 
+// taskTags normalises a task's tags to a lowercase string array. The API
+// returns them as an array, but a task that has none omits the key entirely,
+// and `md` itself accepts a CSV string on the way in - so accept both rather
+// than trusting one shape.
+function taskTags(t) {
+  const raw = t.tags;
+  if (!raw) return [];
+  const list = Array.isArray(raw) ? raw : String(raw).split(",");
+  return list.map((s) => String(s).trim().toLowerCase()).filter(Boolean);
+}
+
 // --- Icons -------------------------------------------------------------
 // Inline Material Design Icon path data (no build step, no icon font). Used by
 // the compact view; the strings are constants — never user input — so building
@@ -179,6 +190,20 @@ function taskCard(t) {
   typeChip.dataset.facet = "type";
   typeChip.title = "Change type";
   chips.append(typeChip);
+  // Tags trail the fixed facets: there can be any number of them, and unlike
+  // status/priority/type they are not editable in place (a chip menu of every
+  // tag in the repo is the wrong shape) - clicking one filters by it instead.
+  // No "#" prefix, tempting as it reads: "#" already means a task id here
+  // (the .id cell renders "#3", and "#3" is an id filter token), and a tag is
+  // allowed to be all digits - so a task tagged "2" would wear a chip reading
+  // "#2" that looks exactly like a reference to task 2. The outline style
+  // distinguishes these well enough on its own.
+  for (const tag of taskTags(t)) {
+    const tagChip = chip(tag, "tag");
+    tagChip.dataset.tag = tag;
+    tagChip.title = `Filter by tag:${tag}`;
+    chips.append(tagChip);
+  }
 
   const deps = node.querySelector(".deps");
   if (Array.isArray(t.depends_on)) {
@@ -266,7 +291,7 @@ function taskCard(t) {
 }
 
 // colShow toggles the optional compact columns; recomputed each render.
-let colShow = { priority: true, dep: true };
+let colShow = { priority: true, tag: false, dep: true };
 
 function tcell(cls, text) {
   const s = el("span", text);
@@ -312,6 +337,12 @@ function taskRow(t) {
   row.append(statusCell);
 
   if (colShow.priority) row.append(tcell("tpri " + priority.toLowerCase(), priority));
+  if (colShow.tag) {
+    const tags = taskTags(t);
+    const cell = tcell("ttag", tags.join(" "));
+    if (tags.length) cell.title = "tags: " + tags.join(", ");
+    row.append(cell);
+  }
   if (colShow.dep) {
     const deps = Array.isArray(t.depends_on) ? t.depends_on : [];
     const cell = tcell("tdep" + (blocking.length ? " unmet" : ""), deps.length ? deps.join(", ") : "");
@@ -329,6 +360,7 @@ function compactHeader() {
   h.className = "trow thead";
   h.append(tcell("tid", "ID"), tcell("ttitle", "Title"), tcell("ttype", ""), tcell("tstatus", ""));
   if (colShow.priority) h.append(tcell("tpri", "Pri"));
+  if (colShow.tag) h.append(tcell("ttag", "Tags"));
   if (colShow.dep) h.append(tcell("tdep", "Dep"));
   return h;
 }
@@ -427,15 +459,22 @@ function clampDescription(desc) {
 
 // parseQuery turns the filter string into combinable facets + free-text terms.
 // Tokens: status:/s:, type:/t:, priority:/pri:/p:, is:ready|blocked|open|closed,
-// id:N or #N. Bare words are free-text (also matched against facet values).
+// tag:a or tag:a,b, id:N or #N. Bare words are free-text (also matched against
+// facet values).
+//
+// "t:" stays type, as it always has; tags get no one-letter form, because
+// reassigning "t" would silently change what every existing muscle-memory
+// filter means - "t:bug" would stop matching bug-typed tasks and start
+// looking for a tag nobody has.
 function parseQuery(str) {
-  const q = { status: [], type: [], priority: [], is: [], ids: [], terms: [] };
+  const q = { status: [], type: [], priority: [], is: [], tags: [], ids: [], terms: [] };
   for (const tok of str.trim().toLowerCase().split(/\s+/).filter(Boolean)) {
     let m;
     if ((m = /^(?:status|s):(.+)$/.exec(tok))) q.status.push(m[1]);
     else if ((m = /^(?:type|t):(.+)$/.exec(tok))) q.type.push(m[1]);
     else if ((m = /^(?:priority|pri|p):(.+)$/.exec(tok))) q.priority.push(/^\d$/.test(m[1]) ? "p" + m[1] : m[1]);
     else if ((m = /^is:(.+)$/.exec(tok))) q.is.push(m[1]);
+    else if ((m = /^tags?:(.+)$/.exec(tok))) q.tags.push(...m[1].split(",").map((s) => s.trim()).filter(Boolean));
     else if ((m = /^id:(\d+)$/.exec(tok))) q.ids.push(m[1]);
     else if ((m = /^#(\d+)$/.exec(tok))) q.ids.push(m[1]);
     else q.terms.push(tok);
@@ -444,13 +483,19 @@ function parseQuery(str) {
 }
 
 // matchesQuery ANDs across facets and free-text terms, ORs within one facet.
+//
+// Tags are the exception: they AND within the facet too, so `tag:api,web-ui`
+// wants a task carrying BOTH - matching `md list --tag=a,b`, whose whole point
+// is narrowing. ORing them would make the two disagree about the same syntax.
 function matchesQuery(t, q) {
   const status = (t.status || "open").toLowerCase();
   const type = (t.type || "task").toLowerCase();
   const pri = (t.priority || "P2").toLowerCase();
+  const tags = taskTags(t);
   if (q.status.length && !q.status.includes(status)) return false;
   if (q.type.length && !q.type.includes(type)) return false;
   if (q.priority.length && !q.priority.includes(pri)) return false;
+  if (q.tags.length && !q.tags.every((want) => tags.includes(want))) return false;
   if (q.ids.length && !q.ids.includes(String(t.id))) return false;
   for (const v of q.is) {
     if (v === "ready" && !(status === "open" && !isDepBlocked(t))) return false;
@@ -460,7 +505,8 @@ function matchesQuery(t, q) {
   }
   for (const term of q.terms) {
     const hay = `${t.title || ""} ${t.description || ""}`.toLowerCase();
-    if (!(hay.includes(term) || type === term || status === term || pri === term || String(t.id) === term)) return false;
+    if (!(hay.includes(term) || type === term || status === term || pri === term ||
+      tags.includes(term) || String(t.id) === term)) return false;
   }
   return true;
 }
@@ -500,11 +546,13 @@ function renderList() {
   }
   const sorted = sortTasks(visible);
   // Compact mode: switch the row renderer and recompute the optional columns
-  // (hide priority when every visible task shares one; hide deps when none).
+  // (hide priority when every visible task shares one; hide tags and deps when
+  // none - a repo that uses neither should not pay two empty columns for them).
   list.classList.toggle("compact", state.compact);
   if (state.compact) {
     const firstPri = visible[0].priority || "P2";
     colShow.priority = visible.some((t) => (t.priority || "P2") !== firstPri);
+    colShow.tag = visible.some((t) => taskTags(t).length > 0);
     colShow.dep = visible.some((t) => Array.isArray(t.depends_on) && t.depends_on.length > 0);
     list.append(compactHeader());
   }
@@ -658,8 +706,9 @@ function saveDraft() {
     type: form.type.value,
     priority: form.priority.value,
     status: form.status.value,
+    tags: form.tags.value,
   };
-  if (d.body.trim() || d.type !== "task" || d.priority !== "P2" || d.status !== "open") {
+  if (d.body.trim() || d.tags.trim() || d.type !== "task" || d.priority !== "P2" || d.status !== "open") {
     localStorage.setItem(DRAFT_KEY, JSON.stringify(d));
   } else {
     localStorage.removeItem(DRAFT_KEY);
@@ -677,10 +726,52 @@ function loadDraft() {
     if (d.type) form.type.value = d.type;
     if (d.priority) form.priority.value = d.priority;
     if (d.status) form.status.value = d.status;
+    if (typeof d.tags === "string") form.tags.value = d.tags;
   } catch { /* ignore a malformed draft */ }
 }
 
 function clearDraft() { localStorage.removeItem(DRAFT_KEY); }
+
+// allTags is every tag currently in use, sorted - the vocabulary the editor
+// offers as suggestions. Derived from the loaded tasks rather than fetched:
+// there is no tags endpoint, and a tag only exists by being on a task.
+//
+// Filtered to what the server would accept, unlike taskTags, which shows
+// whatever is stored. Tags are validated on write and not on read
+// (pkg/meads/tags.go), so a hand-edited TASKS.md can hold a tag no write will
+// ever accept - offering it as a suggestion would be inviting a 400.
+function allTags() {
+  const seen = new Set();
+  for (const t of state.tasks) {
+    for (const tag of taskTags(t)) if (/^[a-z0-9-]+$/.test(tag)) seen.add(tag);
+  }
+  return [...seen].sort();
+}
+
+// refreshTagSuggestions repopulates the editor's datalist. A datalist rather
+// than a custom typeahead: the browser gives free filtering and keyboard
+// handling, and this is one input, not the dep picker's multi-select.
+function refreshTagSuggestions() {
+  const list = document.getElementById("tag-suggestions");
+  if (!list) return;
+  list.innerHTML = "";
+  for (const tag of allTags()) {
+    const opt = el("option");
+    opt.value = tag;
+    list.append(opt);
+  }
+}
+
+// parseTagsInput splits the editor's comma-separated field. It only splits and
+// lowercases - the server normalises and rejects anything malformed (see
+// meads.Tags.Normalize), and duplicating that ruleset here would just be a
+// second copy to drift.
+function parseTagsInput(raw) {
+  return String(raw || "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+}
 
 function openEditor(task) {
   state.editing = task;
@@ -693,7 +784,9 @@ function openEditor(task) {
     form.priority.value = task.priority || "P2";
     form.status.value = task.status || "open";
     form.status_reason.value = task.status_reason || "";
+    form.tags.value = taskTags(task).join(", ");
   }
+  refreshTagSuggestions();
   form.description.value = composeBody(task);
   if (!task) loadDraft(); // restore an in-progress New task draft
   updateReasonVisibility();
@@ -892,6 +985,22 @@ async function submitEditor(ev) {
     status: String(fd.get("status") || ""),
     description,
   };
+  // "tags" is sent only when it actually changed, which still covers clearing:
+  // an empty field differs from a non-empty task, so [] is sent and the API
+  // reads a present-but-empty "tags" as "clear them" (handlers.go).
+  //
+  // Sending it unconditionally looked simpler and was wrong. Tags are
+  // validated at the input boundary, not on read (pkg/meads/tags.go), so a
+  // value that predates the rule or was hand-edited into TASKS.md still
+  // loads - but re-submitting it makes the server reject it. Editing only the
+  // description of such a task would fail with "invalid tag", and the user
+  // would have to repair a tag they never touched before their edit could
+  // land. Omitting an unchanged key leaves it alone, which is what PATCH is
+  // for.
+  const tags = parseTagsInput(fd.get("tags"));
+  if (!state.editing || tags.join(",") !== taskTags(state.editing).join(",")) {
+    data.tags = tags;
+  }
   // status_reason applies only to blocked/closed; the server keeps the prior
   // value when this is empty (the API cannot clear it).
   if (data.status === "blocked" || data.status === "closed") {
@@ -1162,6 +1271,19 @@ document.addEventListener("click", async (e) => {
   // is neither an editable chip nor inside the open menu.
   const editChip = e.target.closest(".chip.editable");
   if (!editChip && !e.target.closest(".chip-menu")) closeChipMenu();
+
+  // Tag chip: narrow the filter to that tag. Deliberately AFTER the close
+  // above, not before it: the menu is position:fixed and a tag click
+  // re-renders the list under it, so returning early would leave the menu
+  // hovering over whatever card now occupies those coordinates - still bound
+  // to the task it was opened on, which the filter may well have hidden. The
+  // next click would then edit an invisible task.
+  const tagChip = e.target.closest(".chip.tag[data-tag]");
+  if (tagChip) {
+    toggleTagFilter(tagChip.dataset.tag);
+    return;
+  }
+
   if (editChip) {
     const card = editChip.closest("[data-id]");
     const task = card && state.tasks.find((t) => t.id === parseInt(card.dataset.id, 10));
@@ -1243,6 +1365,26 @@ document.getElementById("filter").addEventListener("input", (e) => {
   state.filter = e.target.value;
   renderList();
 });
+
+// toggleTagFilter adds or removes one `tag:<name>` token in the filter box,
+// leaving every other token alone - so clicking a tag narrows an existing
+// filter rather than replacing it, and clicking the same tag again undoes it.
+function toggleTagFilter(tag) {
+  const input = document.getElementById("filter");
+  const token = "tag:" + tag;
+  const tokens = state.filter.trim().split(/\s+/).filter(Boolean);
+  // A tag can also be sitting inside a comma list from an earlier click, e.g.
+  // "tag:api,web-ui"; splitting those out keeps the toggle exact.
+  const flat = tokens.flatMap((tok) => {
+    const m = /^tags?:(.+)$/i.exec(tok);
+    if (!m) return [tok];
+    return m[1].split(",").map((s) => s.trim()).filter(Boolean).map((s) => "tag:" + s.toLowerCase());
+  });
+  const next = flat.includes(token) ? flat.filter((tok) => tok !== token) : [...flat, token];
+  state.filter = next.join(" ");
+  input.value = state.filter;
+  renderList();
+}
 
 // Sort + group controls — initialise from state, persist on change.
 const sortSelect = document.getElementById("sort-by");

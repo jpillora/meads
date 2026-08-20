@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/go-git/go-billy/v5/memfs"
@@ -359,4 +360,47 @@ func fetchTags(t *testing.T, ts *httptest.Server, token string, id int) string {
 		t.Fatalf("decode: %v body=%s", err, body)
 	}
 	return got.Tags.String()
+}
+
+// TestAssets_TagWiring is a canary, not a behavioural test, and the difference
+// matters: the frontend is deliberately no-build (see assets/vendor/README.md),
+// so there is no JS test runner to drive taskTags/parseQuery/matchesQuery
+// directly. What this CAN catch is the frontend silently losing the tag
+// feature the API supports - an asset edit that drops the filter token, the
+// chip, or the editor field, leaving TestTags_AddUpdateClear above green while
+// the UI can no longer reach any of it.
+//
+// The behaviour itself (chip click narrows the filter, tag:a,b ANDs like
+// `md list --tag=a,b`, clearing the field removes every tag) was verified
+// against a real browser when this landed; task 90's commit records it.
+func TestAssets_TagWiring(t *testing.T) {
+	ts, _ := newTestServer(t)
+	for _, tc := range []struct {
+		path, want, why string
+	}{
+		{"/app.js", "function taskTags(", "tags are read off the task"},
+		{"/app.js", `/^tags?:(.+)$/`, "the tag: filter token is parsed"},
+		{"/app.js", "q.tags.every(", "tag:a,b ANDs, matching md list --tag"},
+		{"/app.js", `chip(tag, "tag")`, "tags render as chips"},
+		{"/app.js", "function toggleTagFilter(", "clicking a chip filters by it"},
+		{"/app.js", "data.tags = tags", "the editor submits tags"},
+		{"/index.html", `name="tags"`, "the editor has a tags field"},
+		{"/app.css", ".chip.tag", "tag chips are styled"},
+	} {
+		resp, err := http.Get(ts.URL + tc.path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		// Status first: a 404 or 401 would otherwise be reported as a missing
+		// feature rather than as the routing failure it is.
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("GET %s = %d, want 200", tc.path, resp.StatusCode)
+			continue
+		}
+		if !strings.Contains(string(body), tc.want) {
+			t.Errorf("%s no longer contains %q — %s", tc.path, tc.want, tc.why)
+		}
+	}
 }

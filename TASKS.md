@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-08-20T17:06:35Z
+* updated: 2026-08-20T17:34:16Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -509,19 +509,6 @@ optionally deprioritise tasks whose files are already claimed.
    and `md auto-delete` become **no-ops in git mode** — there is no working-tree
    file to stage, and nothing to prune since refs are never removed.
 
-## 90. Show and filter tags in the web UI
-
-* status: open
-* priority: P3
-* type: feature
-* tags: webui
-* created: 2026-07-30T14:57:28Z
-* updated: 2026-08-20T15:23:17Z
-
-Show and filter tags in the web UI
-
-The webui frontend (pkg/webui/assets/app.js) does not render task tags at all, even though the HTTP API now accepts and returns them (POST/PATCH /api/tasks take a 'tags' array or CSV string). Add tag chips to the task list/detail views and a tag filter, mirroring 'md list --tag'.
-
 ## 93. Hook paths ignore linked worktrees and core.hooksPath
 
 * status: open
@@ -648,3 +635,52 @@ Cosmetic, like #75, and for the same reason: this probe only ever decides which
 commands `--help` lists, never which backend a command uses (`globals.mode()`
 does that, via git). Filed so the containment argument stays deliberate rather
 than accidental.
+
+## 95. Web UI chips are click-only, not keyboard reachable
+
+* status: open
+* priority: P3
+* type: bug
+* tags: webui
+* created: 2026-08-20T17:32:47Z
+
+Every interactive chip on a task card is a bare `<span>` with a click handler:
+no `tabindex`, no `role`, no accessible name. An accessibility snapshot of a
+card lists only the Start / status / Edit / Delete controls; the chips show up
+only when cursor-interactive elements are included.
+
+Affects both kinds:
+* `.chip.editable` (status, priority, type) — open a quick-edit popover
+* `.chip.tag` — filter by that tag (added in TASKS #90)
+
+Nothing is unreachable: the status `<select>`, the Edit dialog and the filter
+box all provide keyboard paths to the same outcomes. So this is a polish gap,
+not a blocker — but it is out of step with the rest of `app.js`, which is
+careful about `aria-label`, `role="listitem"` and visible focus rings.
+
+### The trap in the obvious fix
+
+Adding `tabIndex = 0` to a chip is not enough on its own. A focused chip lives
+inside a card, so the card's `focusin` handler sets `state.focusedId`, and the
+global keydown switch then maps **Enter -> advanceStatus**. A focused tag chip
+would advance the task's status instead of filtering by the tag.
+
+### Fix
+
+For every interactive chip:
+* `role="button"`, `tabIndex = 0`, and an `aria-label` saying what it does
+  ("Filter by tag api" / "Change priority")
+* an early keydown branch for `.chip[data-tag], .chip.editable` that handles
+  Enter/Space and `preventDefault()`s before the existing switch runs
+* a `:focus-visible` outline in app.css, matching the card's ring
+
+Must stay no-build (see `assets/vendor/README.md`) - plain DOM APIs only.
+
+### Acceptance
+
+* Chips appear in an accessibility snapshot without needing the
+  cursor-interactive flag
+* Tab reaches them; Enter/Space activates the chip's own action, not the
+  card's
+* Existing card keyboard shortcuts (j/k/n/e/d/Enter) still behave when focus
+  is on the card rather than a chip

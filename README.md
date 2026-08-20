@@ -121,6 +121,12 @@ Pass `--open` to launch the browser automatically, or `--port 3000` for a
 fixed port. All routes require the bearer token; change events are
 streamed over Server-Sent Events at `/api/events`.
 
+The filter box takes `type:bug`, `status:open`, `priority:P1`, `tag:api`,
+`is:ready`, `#3`, and bare words as free text. Different facets AND together;
+repeating one ORs (`status:open status:draft` shows both) — except tags, which
+AND, so `tag:api,web-ui` wants both, as `md list --tag=a,b` does. Clicking a
+tag chip on a card adds or removes that one token.
+
 Pass `--no-token` to serve without auth — no token is generated and every
 request is allowed, so the printed URL needs no `?token=`. Only the
 loopback-origin check still guards the server, so keep this to trusted

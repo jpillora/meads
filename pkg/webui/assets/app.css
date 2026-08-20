@@ -309,6 +309,16 @@ main { padding: 0.75rem 1rem 2rem; display: flex; flex-direction: column; gap: 0
 .chip.dep-blocked { background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn); }
 .chip.editable { cursor: pointer; }
 .chip.editable:hover { outline: 1px solid var(--border); outline-offset: 1px; }
+/* Tags are a muted outline rather than a filled pill: a task can carry several,
+   and they must not out-shout the status/priority/type chips beside them. */
+.chip.tag {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  line-height: 1.4;
+  cursor: pointer;
+}
+.chip.tag:hover { color: var(--accent); border-color: var(--accent); }
 .chip-menu {
   position: fixed;
   z-index: 30;
@@ -614,6 +624,15 @@ dialog .footer { display: flex; justify-content: flex-end; gap: 0.5rem; margin-t
   font-weight: 600; color: var(--muted);
 }
 .trow .tpri.p0, .trow .tpri.p1 { color: var(--danger); }
+.trow .ttag {
+  width: 12ch; flex-shrink: 0;
+  color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* Data rows only: a ch-based width scales with font-size, so shrinking the
+   header cell too would leave the "Tags" label narrower than the column it
+   labels and visibly offset from it. */
+.trow:not(.thead) .ttag { font-size: 0.9em; }
 .trow .tdep {
   width: 8ch; flex-shrink: 0; text-align: right;
   color: var(--muted); font-variant-numeric: tabular-nums;
