@@ -17,6 +17,7 @@ type webuiCmd struct {
 	Port    int    `help:"TCP port (0 = pick a free one)" opts:"default=0"`
 	Host    string `help:"Bind address" opts:"default=127.0.0.1"`
 	Token   string `help:"Bearer token (auto-generated if empty)"`
+	NoToken bool   `opts:"name=no-token" help:"Serve without token auth - every request is allowed. Conflicts with --token"`
 	Open    bool   `help:"Open the UI in the default browser after start"`
 	Print   string `help:"Startup line format: url|json|none" opts:"default=json"`
 }
@@ -30,13 +31,14 @@ func (c *webuiCmd) Run() error {
 		return err
 	}
 	srv, err := webui.New(webui.Config{
-		Store: store,
-		Host:  c.Host,
-		Port:  c.Port,
-		Token: c.Token,
-		Print: c.Print,
-		Open:  c.Open,
-		Dev:   os.Getenv("WEBUI_DEV") == "1",
+		Store:   store,
+		Host:    c.Host,
+		Port:    c.Port,
+		Token:   c.Token,
+		NoToken: c.NoToken,
+		Print:   c.Print,
+		Open:    c.Open,
+		Dev:     os.Getenv("WEBUI_DEV") == "1",
 	})
 	if err != nil {
 		return err
@@ -63,7 +65,7 @@ func waitAndOpen(ctx context.Context, srv *webui.Server) {
 	defer deadline.Stop()
 	for {
 		if url := srv.URL(); url != "" {
-			openBrowser(url + "/?token=" + srv.Token())
+			openBrowser(webui.BrowseURL(url, srv.Token()))
 			return
 		}
 		select {

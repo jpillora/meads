@@ -12,6 +12,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"sync"
 	"time"
@@ -33,8 +34,14 @@ type Config struct {
 	Host string
 	// Port to listen on. 0 = pick a random free port.
 	Port int
-	// Token required on every request (bearer or ?token=). Auto-generated if empty.
+	// Token required on every request (bearer or ?token=). Auto-generated if
+	// empty, unless NoToken is set.
 	Token string
+	// NoToken disables token auth entirely: no token is generated and every
+	// request is served unauthenticated. Conflicts with a non-empty Token.
+	// Only the Origin check (loopback-only) still guards the server, so this
+	// is for trusted setups - a local reverse proxy, a kiosk, a test harness.
+	NoToken bool
 	// Stdout format on start: "url", "json", or "none".
 	Print string
 	// Open browser after start (ignored when Print=none).
@@ -82,7 +89,12 @@ func New(cfg Config) (*Server, error) {
 	if cfg.Stderr == nil {
 		cfg.Stderr = os.Stderr
 	}
-	if cfg.Token == "" {
+	switch {
+	case cfg.NoToken && cfg.Token != "":
+		return nil, fmt.Errorf("webui: Token and NoToken are mutually exclusive")
+	case cfg.NoToken:
+		// Leave Token empty - withMiddleware treats "" as auth disabled.
+	case cfg.Token == "":
 		t, err := randomToken()
 		if err != nil {
 			return nil, err
@@ -152,6 +164,13 @@ func (s *Server) Run(ctx context.Context) error {
 		return err
 	}
 
+	// Warn on stderr rather than stdout: stdout carries the machine-readable
+	// start line (the VS Code extension parses it), and --print=none must stay
+	// silent there while still surfacing that auth is off.
+	if s.cfg.Token == "" {
+		fmt.Fprintf(s.cfg.Stderr, "webui: token auth disabled - anyone who can reach %s has full read/write access\n", s.URL())
+	}
+
 	// Start file watcher if possible. Failures are non-fatal.
 	if w, err := startWatcher(ctx, s.cfg.Store, s.events, s.cfg.Stderr); err == nil {
 		s.watcher = w
@@ -215,11 +234,23 @@ func (s *Server) printStartLine() error {
 		}
 		fmt.Fprintf(s.cfg.Stdout, "%s\n", raw)
 	case "url":
-		fmt.Fprintf(s.cfg.Stdout, "%s/?token=%s\n", info.URL, info.Token)
+		fmt.Fprintf(s.cfg.Stdout, "%s\n", BrowseURL(info.URL, info.Token))
 	default:
 		return fmt.Errorf("invalid --print value %q (want url|json|none)", s.cfg.Print)
 	}
 	return nil
+}
+
+// BrowseURL joins base and token into the URL a browser should open. With an
+// empty token (Config.NoToken) the query is omitted entirely rather than left
+// as a bare "?token=" - the UI reads the token from the query string, so an
+// empty value there is the same as none, but it looks like a bug in a shared
+// link.
+func BrowseURL(base, token string) string {
+	if token == "" {
+		return base + "/"
+	}
+	return base + "/?token=" + url.QueryEscape(token)
 }
 
 type startInfo struct {

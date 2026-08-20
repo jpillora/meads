@@ -121,6 +121,13 @@ Pass `--open` to launch the browser automatically, or `--port 3000` for a
 fixed port. All routes require the bearer token; change events are
 streamed over Server-Sent Events at `/api/events`.
 
+Pass `--no-token` to serve without auth — no token is generated and every
+request is allowed, so the printed URL needs no `?token=`. Only the
+loopback-origin check still guards the server, so keep this to trusted
+setups (a local reverse proxy that adds its own auth, a kiosk, a test
+harness) and never combine it with `--host 0.0.0.0`. `--no-token` and
+`--token` are mutually exclusive.
+
 ### Git mode
 
 Git mode skips the tasks file entirely: every task lives at its own ref
