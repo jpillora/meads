@@ -5,6 +5,7 @@ import (
 	"slices"
 	"sync"
 	"testing"
+	"time"
 )
 
 // Tests for GitStore's write path (Create, Update, SoftDelete, Claim) over
@@ -965,5 +966,270 @@ func TestGitStore_ImportTask_SkipsDepValidation_ForwardReference(t *testing.T) {
 	got, err := gs.Get([]int{1})
 	if err != nil || len(got[0].DependsOn) != 1 || got[0].DependsOn[0] != 2 {
 		t.Fatalf("task 1 DependsOn = %v, err=%v, want [2]", got, err)
+	}
+}
+
+// --- meta.created / meta.updated parity with the file backend (task 84) ---
+
+// mustParseStamp parses a meta timestamp, failing the test if it is missing
+// or not the RFC3339 the file backend writes.
+func mustParseStamp(t *testing.T, task Task, key string) time.Time {
+	t.Helper()
+	raw, ok := task.Meta[key]
+	if !ok {
+		t.Fatalf("task %d has no meta %q (meta=%v)", task.ID, key, task.Meta)
+	}
+	got, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		t.Fatalf("meta %q = %q, not RFC3339: %v", key, raw, err)
+	}
+	return got
+}
+
+// stubNowStamp pins the timestamp writes see, so a test can assert an exact
+// value instead of an ordering, and two stamps can differ without a sleep.
+func stubNowStamp(t *testing.T, value string) {
+	t.Helper()
+	prev := nowStamp
+	nowStamp = func() string { return value }
+	t.Cleanup(func() { nowStamp = prev })
+}
+
+// TestGitStore_Create_StampsCreated is task 84: GitStore set no Meta at all,
+// so git-mode JSON omitted "meta" entirely while file-mode JSON carried
+// {"created": ...} - a `md get --json` parity gap between the two backends.
+func TestGitStore_Create_StampsCreated(t *testing.T) {
+	gs, _, _ := newGitStoreRepo(t)
+	before := time.Now().UTC().Truncate(time.Second)
+	created, err := gs.Create(Task{Title: "stamped", Status: "open"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	after := time.Now().UTC().Add(time.Second)
+	stamp := mustParseStamp(t, created, "created")
+	if stamp.Before(before) || stamp.After(after) {
+		t.Errorf("meta created = %v, outside the call window %v..%v", stamp, before, after)
+	}
+	// A brand-new task is not "updated" - matching Store.Add, which sets only
+	// "created", and the markdown formatter, which drops an "updated" equal
+	// to it.
+	if _, ok := created.Meta["updated"]; ok {
+		t.Errorf("a freshly created task should have no meta updated, got %v", created.Meta)
+	}
+	// It must survive the round-trip through the ref, not just the return
+	// value: the whole point is what `md get --json` reads back.
+	got, err := gs.Get([]int{created.ID})
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got[0].Meta["created"] != created.Meta["created"] {
+		t.Errorf("created stamp did not round-trip: stored %v, returned %v", got[0].Meta, created.Meta)
+	}
+}
+
+func TestGitStore_Update_StampsUpdated(t *testing.T) {
+	gs, _, _ := newGitStoreRepo(t)
+	created, err := gs.Create(Task{Title: "stamped", Status: "open"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	// Stub rather than sleep past a second boundary: RFC3339 here has second
+	// resolution, so the alternative is a 1.1s sleep that only ever proves an
+	// ordering, where this proves the value.
+	const later = "2030-01-02T03:04:05Z"
+	stubNowStamp(t, later)
+
+	updated, err := gs.Update(created.ID, func(task *Task) (bool, error) {
+		task.SetPriority("P1")
+		return true, nil
+	})
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if got := updated.Meta["updated"]; got != later {
+		t.Errorf("meta updated = %q, want %q", got, later)
+	}
+	createdAt := mustParseStamp(t, updated, "created")
+	updatedAt := mustParseStamp(t, updated, "updated")
+	if !updatedAt.After(createdAt) {
+		t.Errorf("meta updated (%v) should be after created (%v)", updatedAt, createdAt)
+	}
+	if updated.Meta["created"] != created.Meta["created"] {
+		t.Errorf("Update rewrote meta created: %q -> %q", created.Meta["created"], updated.Meta["created"])
+	}
+	got, err := gs.Get([]int{created.ID})
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got[0].Meta["updated"] != updated.Meta["updated"] {
+		t.Errorf("updated stamp did not round-trip: stored %v, returned %v", got[0].Meta, updated.Meta)
+	}
+}
+
+// Claim goes through the same casUpdate, so it stamps too - it is a real
+// mutation of the task, not a read.
+func TestGitStore_Claim_StampsUpdated(t *testing.T) {
+	gs, _, _ := newGitStoreRepo(t)
+	created, err := gs.Create(Task{Title: "claimable", Status: "open"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	const later = "2030-01-02T03:04:05Z"
+	stubNowStamp(t, later)
+	claimed, err := gs.Claim(created.ID, "agent-a", nil)
+	if err != nil {
+		t.Fatalf("Claim: %v", err)
+	}
+	if got := claimed.Meta["updated"]; got != later {
+		t.Errorf("meta updated after Claim = %q, want %q", got, later)
+	}
+	if claimed.Meta["created"] != created.Meta["created"] {
+		t.Errorf("Claim rewrote meta created: %q -> %q", created.Meta["created"], claimed.Meta["created"])
+	}
+	stored, err := gs.Get([]int{created.ID})
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if stored[0].Meta["updated"] != later {
+		t.Errorf("Claim's stamp did not round-trip: stored %v", stored[0].Meta)
+	}
+}
+
+// An aborted decide writes nothing, so it must stamp nothing either. Not
+// reachable from the CLI (GitTasks.Update always reports a change, and file
+// mode's Store.Update stamps unconditionally too, so parity holds either way)
+// - this pins casUpdate's exported contract for direct pkg/meads callers.
+func TestGitStore_Update_AbortedDecideDoesNotStamp(t *testing.T) {
+	gs, _, _ := newGitStoreRepo(t)
+	created, err := gs.Create(Task{Title: "untouched", Status: "open"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	got, err := gs.Update(created.ID, func(*Task) (bool, error) { return false, nil })
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if _, ok := got.Meta["updated"]; ok {
+		t.Errorf("an aborted update stamped meta updated: %v", got.Meta)
+	}
+	stored, err := gs.Get([]int{created.ID})
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if _, ok := stored[0].Meta["updated"]; ok {
+		t.Errorf("an aborted update wrote meta updated to the ref: %v", stored[0].Meta)
+	}
+}
+
+// ImportTask is the migration path, so it must preserve whatever timestamps
+// came with the task rather than restamping them - `md convert --to-git` would
+// otherwise rewrite every task's history to the moment of the migration.
+func TestGitStore_ImportTask_PreservesTimestamps(t *testing.T) {
+	gs, _, _ := newGitStoreRepo(t)
+	const created, updated = "2020-01-02T03:04:05Z", "2021-06-07T08:09:10Z"
+	if err := gs.ImportTask(Task{
+		ID: 7, Title: "old", Status: "open",
+		Meta: map[string]string{"created": created, "updated": updated},
+	}); err != nil {
+		t.Fatalf("ImportTask: %v", err)
+	}
+	got, err := gs.Get([]int{7})
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got[0].Meta["created"] != created || got[0].Meta["updated"] != updated {
+		t.Errorf("ImportTask restamped: meta = %v, want created=%q updated=%q", got[0].Meta, created, updated)
+	}
+}
+
+// withMeta must not write through the shared map: Task copies by value but its
+// Meta map does not, so an in-place write would edit every other copy.
+func TestWithMeta_DoesNotMutateTheOriginal(t *testing.T) {
+	original := Task{ID: 1, Meta: map[string]string{"created": "then"}}
+	next := withMeta(original, "updated", "now")
+	if _, ok := original.Meta["updated"]; ok {
+		t.Errorf("withMeta mutated the original's map: %v", original.Meta)
+	}
+	if next.Meta["updated"] != "now" || next.Meta["created"] != "then" {
+		t.Errorf("withMeta result = %v, want both keys", next.Meta)
+	}
+	// A nil Meta must be handled too - Create's input usually has one.
+	if got := withMeta(Task{ID: 2}, "created", "now"); got.Meta["created"] != "now" {
+		t.Errorf("withMeta on a nil Meta = %v", got.Meta)
+	}
+}
+
+// TestGitStore_Update_AbortedDecideYieldsCurrentUnchanged pins casUpdate's
+// contract that an aborted decide "yields current back unchanged".
+//
+// The decide implementations start with `candidate := current`, which SHARES
+// the Meta map, so a mutate callback calling SetPriority/SetStatus/SetTags
+// writes through it into current - which casUpdate then returns. Harmless
+// while git-mode tasks deserialized with a nil Meta (ensureMeta allocated a
+// fresh map on the copy); a live bug the moment Create started writing
+// "created", making Meta non-nil for every task.
+func TestGitStore_Update_AbortedDecideYieldsCurrentUnchanged(t *testing.T) {
+	gs, _, _ := newGitStoreRepo(t)
+	created, err := gs.Create(Task{Title: "untouched", Status: "open", Priority: "P2"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	got, err := gs.Update(created.ID, func(task *Task) (bool, error) {
+		// Edit through the Set* helpers, which write to Meta, then decline.
+		task.SetPriority("P0")
+		task.SetStatus("closed")
+		task.SetTags(Tags{"leaked"})
+		return false, nil
+	})
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	for _, key := range []string{"priority", "status", "tags"} {
+		if v, ok := got.Meta[key]; ok {
+			t.Errorf("declined edit leaked into the returned task's meta: %s=%q (meta=%v)", key, v, got.Meta)
+		}
+	}
+	// The fields were already correct before this fix; the point is that meta
+	// now agrees with them rather than contradicting them.
+	if got.Priority != "P2" || got.Status != "open" || len(got.Tags) != 0 {
+		t.Errorf("declined edit leaked into the returned task's fields: %+v", got)
+	}
+	stored, err := gs.Get([]int{created.ID})
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if stored[0].Priority != "P2" || stored[0].Status != "open" {
+		t.Errorf("declined edit reached the ref: %+v", stored[0])
+	}
+}
+
+// A brand-new task cannot have been updated before it existed, so Create
+// drops a caller-supplied "updated" rather than leaving it to render as
+// "updated 27 years ago" in the webui.
+func TestGitStore_Create_DropsSuppliedTimestamps(t *testing.T) {
+	gs, _, _ := newGitStoreRepo(t)
+	input := Task{
+		Title: "fresh", Status: "open",
+		Meta: map[string]string{"created": "1999-01-01T00:00:00Z", "updated": "1999-01-02T00:00:00Z", "keep": "me"},
+	}
+	created, err := gs.Create(input)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if created.Meta["created"] == "1999-01-01T00:00:00Z" {
+		t.Error("Create kept a caller-supplied created stamp; it allocates a fresh id, so that stamp is some other task's")
+	}
+	if v, ok := created.Meta["updated"]; ok {
+		t.Errorf("Create kept a caller-supplied updated stamp: %q", v)
+	}
+	// Only the timestamps are Create's business - anything else the caller
+	// put in meta must survive.
+	if created.Meta["keep"] != "me" {
+		t.Errorf("Create dropped an unrelated meta key: %v", created.Meta)
+	}
+	// And it must not have edited the caller's own map on the way through.
+	if input.Meta["updated"] != "1999-01-02T00:00:00Z" || input.Meta["created"] != "1999-01-01T00:00:00Z" {
+		t.Errorf("Create mutated its input task's meta: %v", input.Meta)
 	}
 }

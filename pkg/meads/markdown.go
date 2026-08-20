@@ -325,6 +325,15 @@ func taskMetaForFormat(t Task) map[string]string {
 // formatMetaBlock formats a metadata map as "* key: value" lines.
 // orderedKeys controls which keys appear first, in the given order.
 // The "updated" key is skipped if its value equals the "created" value.
+//
+// That skip makes a git->markdown->git round trip drop an "updated" that
+// happens to equal "created" - reachable since git mode started stamping both
+// (task 84), because a create and an update inside the same second produce
+// identical RFC3339 stamps. Deliberately kept: no timestamp is lost, since the
+// dropped value is by definition the one still sitting in "created", and
+// "updated absent" and "updated == created" already mean the same thing to
+// every reader. CSV has real created/updated columns and no such rule, so it
+// round-trips the key itself either way.
 func formatMetaBlock(meta map[string]string, orderedKeys []string) string {
 	if len(meta) == 0 {
 		return ""

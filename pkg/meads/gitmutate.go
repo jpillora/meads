@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"time"
 )
 
 // ErrAlreadyClaimed is returned by Claim when the task is no longer open -
@@ -164,6 +165,52 @@ func (g *GitStore) validateTaskDeps(id int, candidate Task) error {
 	return validateDeps(&f)
 }
 
+// nowStamp is the timestamp format the meta "created"/"updated" keys carry,
+// matching the file backend's Store.Add/Store.Update (mutate.go) exactly, so
+// `md get --json` reads the same either side of a `md convert`.
+//
+// A var so tests can stub it: the alternative is sleeping past a second
+// boundary to make two stamps differ, which is slow and only ever proves an
+// ordering where a stub proves the value.
+var nowStamp = func() string { return time.Now().UTC().Format(time.RFC3339) }
+
+// cloneMeta returns a copy of m, never nil.
+//
+// Task is copied by value but its Meta map is NOT, so two Task values assigned
+// from one another share it: a write through either is a write to both. Every
+// place a Task is copied and then written to needs this.
+func cloneMeta(m map[string]string) map[string]string {
+	out := make(map[string]string, len(m)+1)
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
+// withMeta returns t with meta[key] = value, leaving t's own map untouched.
+//
+// Named withMeta, not setMeta, to keep its distance from the (*Task).SetMeta
+// method in task.go, which is a different thing: in place, and it syncs the
+// convenience fields for the keys that have them.
+//
+// The copy earns its keep twice over. Create would otherwise write "created"
+// into the CALLER's input task, and the Task casUpdate returns would share its
+// map with the one the decide callback saw - so a later write through either
+// would silently edit the other.
+func withMeta(t Task, key, value string) Task {
+	meta := cloneMeta(t.Meta)
+	meta[key] = value
+	t.Meta = meta
+	return t
+}
+
+// withClonedMeta returns t with its own private copy of Meta, so a caller
+// handed the result cannot write back into the original.
+func withClonedMeta(t Task) Task {
+	t.Meta = cloneMeta(t.Meta)
+	return t
+}
+
 // casUpdate is the shared retry loop behind Update and Claim - every method
 // that reads-modifies-writes a SINGLE EXISTING task ref. (Create is
 // different: there is no current value to read, so it loops separately.
@@ -181,6 +228,12 @@ func (g *GitStore) validateTaskDeps(id int, candidate Task) error {
 // genuinely no longer holds (e.g. Claim's ErrAlreadyClaimed), not that the
 // write lost a race. Only ErrCASConflict loops back to re-read; any other
 // failure from the write itself is returned immediately.
+//
+// Every write through here stamps meta "updated" (task 84), which is why it
+// happens HERE and not in each decide: it must be derived on the attempt that
+// actually lands, like everything else the retry re-derives, and it must cover
+// Claim as well as Update. An aborted decide stamps nothing - nothing was
+// written, so nothing was updated.
 func (g *GitStore) casUpdate(id int, action string, decide func(current Task) (next Task, ok bool, err error)) (Task, error) {
 	message := fmt.Sprintf("%s task %d", action, id)
 	var lastErr error
@@ -189,13 +242,23 @@ func (g *GitStore) casUpdate(id int, action string, decide func(current Task) (n
 		if err != nil {
 			return Task{}, err
 		}
-		next, ok, err := decide(current)
+		// decide gets its own Meta map. Its implementations start with
+		// `candidate := current`, which shares the map, and a mutate callback
+		// calling SetPriority/SetStatus/SetTags writes straight through it -
+		// so without this an ABORTED decide would hand `current` back with
+		// the declined edits already in its Meta, contradicting the contract
+		// above and leaving fields disagreeing with meta. Latent until this
+		// backend started writing meta at all: an empty map marshals away, so
+		// every task used to deserialize with a nil Meta and ensureMeta
+		// allocated a fresh one on the copy.
+		next, ok, err := decide(withClonedMeta(current))
 		if err != nil {
 			return Task{}, err
 		}
 		if !ok {
 			return current, nil
 		}
+		next = withMeta(next, "updated", nowStamp())
 		if err := g.commitTaskCAS(id, next, oid, message); err != nil {
 			if !errors.Is(err, ErrCASConflict) {
 				return Task{}, err
@@ -230,6 +293,19 @@ func (g *GitStore) Create(t Task) (Task, error) {
 		}
 		candidate := t
 		candidate.ID = id
+		// "created" only, no "updated" - a task that has never been touched
+		// since is not "updated", and the markdown formatter drops an
+		// "updated" equal to "created" anyway (markdown.go). Unconditional,
+		// like Store.Add: this allocates a fresh id, so any caller-supplied
+		// timestamp describes some other task. ImportTask is the path that
+		// preserves them.
+		//
+		// Which is why a supplied "updated" is DROPPED rather than left
+		// alone. Overwriting only "created" would leave a brand-new task
+		// claiming it was updated before it existed - the webui renders that
+		// as "updated 27 years ago" (app.js taskTimestamp).
+		candidate = withMeta(candidate, "created", nowStamp())
+		delete(candidate.Meta, "updated") // safe: withMeta just gave us a private copy
 		if err := g.validateTaskDeps(id, candidate); err != nil {
 			return Task{}, err
 		}

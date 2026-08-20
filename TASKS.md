@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-08-20T16:47:15Z
+* updated: 2026-08-20T17:06:35Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -508,19 +508,6 @@ optionally deprioritise tasks whose files are already claimed.
 9. Integrations: webui watch (poll refs, not fsnotify on a file); `md auto-save`
    and `md auto-delete` become **no-ops in git mode** — there is no working-tree
    file to stage, and nothing to prune since refs are never removed.
-
-## 84. Git-mode tasks carry no meta.created / meta.updated
-
-* status: open
-* priority: P3
-* type: bug
-* created: 2026-07-26T12:14:55Z
-
-`GitStore.Create`/`Update` (`pkg/meads/gitmutate.go`) set no `Meta` at all — grep confirms `"created"` appears nowhere in `gitmutate.go`/`gitstore.go`. File mode's `Store.Add` sets `t.Meta["created"]` (`pkg/meads/mutate.go:38-40`) and bumps `f.Meta["updated"]`.
-
-Since `created`/`updated` are not in `knownMetaKeys` (`task.go:42`), file-mode JSON carries `"meta":{"created":"..."}` while git-mode JSON omits `meta` entirely. Task 57's own design doc specifies both fields in `task.json`, so this is an undocumented divergence from the design, not a deliberate omission.
-
-Not required by rais — its frontend never reads `task.meta` — but it is a real `md list --json` / `md get --json` parity gap between backends.
 
 ## 90. Show and filter tags in the web UI
 
