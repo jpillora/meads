@@ -75,6 +75,63 @@ func EnsureFetchRefspec(git Git) (FetchRefspecOutcome, error) {
 	return FetchRefspecAdded, nil
 }
 
+// GitInitState reports what EnsureGitInit did, as data, so a caller with a UI
+// prints it and a silent caller ignores it - the same split InitResult exists
+// for.
+type GitInitState struct {
+	// Skipped is true if the repo is not in git mode, so nothing was done and
+	// FetchRefspec is meaningless.
+	Skipped bool
+	// FetchRefspec is what EnsureFetchRefspec did.
+	FetchRefspec FetchRefspecOutcome
+}
+
+// EnsureGitInit finishes git-mode setup for a repo that is ALREADY in git
+// mode, which is where InitTasks refuses to run at all.
+//
+// Git mode has two ways in - `md init --git` and `md convert --to-git` - and
+// only the first ensured origin's fetch refspec, so the documented migration
+// left a repo unable to fetch anyone else's task refs and with no way to
+// repair it: InitTasks refuses on ANY ref under RefNamespace, and convert's
+// task refs are under it (task 91). Both entry points call this now, and so
+// does `md doctor`, so repos an older binary already left that way can be
+// fixed.
+//
+// It ensures the fetch refspec and NOTHING ELSE - in particular it does not
+// seed ConfigRef, even though InitTasks does. That asymmetry is deliberate.
+// An absent ConfigRef is harmless: Config() degrades to DefaultConfig(), which
+// is why task 91 concluded only the refspec is genuinely lost. But a PRESENT
+// one is the marker that says "this repo is in git mode" (see InitTasks' doc
+// comment on why it writes one), so seeding it here would not repair a repo,
+// it would convert one - flipping a file-mode repo run with `md --git doctor`
+// into an empty git-mode repo whose TASKS.md tasks all vanish from `md list`,
+// and short-circuiting a fresh clone's adoption of origin's refs with a rival
+// config ref of unrelated history.
+//
+// The refspec has none of that power: it lands fetched refs in
+// RemoteRefNamespace, which no mode detection looks at, and adding it is
+// idempotent (EnsureFetchRefspec never duplicates one).
+//
+// The guard below is the other half. Everything above assumes the repo really
+// is in git mode, and neither caller can promise that on its own - doctor runs
+// wherever the user points it, and convert populates the namespace itself
+// moments earlier, so a convert that imported nothing must not leave a mark.
+// So this checks rather than trusts.
+func EnsureGitInit(git Git) (GitInitState, error) {
+	refs, err := NewRefStore(git).ListRefs(RefNamespace)
+	if err != nil {
+		return GitInitState{}, fmt.Errorf("checking for %s refs: %w", RefNamespace, err)
+	}
+	if len(refs) == 0 {
+		return GitInitState{Skipped: true}, nil
+	}
+	outcome, err := EnsureFetchRefspec(git)
+	if err != nil {
+		return GitInitState{}, err
+	}
+	return GitInitState{FetchRefspec: outcome}, nil
+}
+
 // InitResult describes what InitTasks did, as data - the reason InitTasks
 // prints nothing itself: a server caller (rais) gets the full outcome with
 // no stdout side effects, while cmd/md's init command is a thin wrapper

@@ -49,7 +49,15 @@ func (c *initCmd) runGit() error {
 	} else {
 		fmt.Printf("initialized git mode (%s*)\n", meads.RefNamespace)
 	}
-	switch res.FetchRefspec {
+	printFetchRefspec(res.FetchRefspec)
+	return nil
+}
+
+// printFetchRefspec reports an EnsureFetchRefspec outcome. Shared with
+// convert.go and doctor.go, which reach the same setup step by other routes
+// (meads.EnsureGitInit), so all three say the same thing about it.
+func printFetchRefspec(outcome meads.FetchRefspecOutcome) {
+	switch outcome {
 	case meads.FetchRefspecNoOrigin:
 		fmt.Println("no 'origin' remote configured — skipping fetch refspec setup")
 	case meads.FetchRefspecAlreadyPresent:
@@ -57,5 +65,4 @@ func (c *initCmd) runGit() error {
 	case meads.FetchRefspecAdded:
 		fmt.Printf("added fetch refspec %s to origin\n", meads.FetchRefspec)
 	}
-	return nil
 }

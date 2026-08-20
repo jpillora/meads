@@ -168,6 +168,13 @@ func readyContains(tasks []meads.Task, id int) bool {
 // mode yet".
 func TestIntegration_GitMode_DoctorSupported(t *testing.T) {
 	h := gitModeHarness(t)
+	// gitModeHarness forces git mode with --git rather than initialising it,
+	// so the repo has no config ref and no fetch refspec - which doctor now
+	// treats as incomplete setup and repairs (task 91). Init first, so "clean"
+	// here means what the test says it does.
+	if err := (&initCmd{globals: h.globals, Git: true}).Run(); err != nil {
+		t.Fatalf("init --git: %v", err)
+	}
 	if err := (&addCmd{globals: h.globals, Args: []string{"a clean git-mode task"}}).Run(); err != nil {
 		t.Fatalf("add: %v", err)
 	}

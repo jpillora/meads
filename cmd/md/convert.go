@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
@@ -11,7 +12,7 @@ import (
 type convertCmd struct {
 	globals *globals
 	File    string `opts:"mode=arg" help:"tasks file to convert (TASKS.md or TASKS.csv); with --to-git/--from-git, the file-mode side of the migration"`
-	ToGit   bool   `opts:"mode=flag,name=to-git" help:"Migrate File into git mode (refs/meads/tasks/*) in the current repo, preserving ids and soft-deleted tasks"`
+	ToGit   bool   `opts:"mode=flag,name=to-git" help:"Migrate File into git mode (refs/meads/tasks/*) in the current repo, preserving ids and soft-deleted tasks. No prior 'md init --git' needed: this completes the setup (config ref, fetch refspec) itself"`
 	FromGit bool   `opts:"mode=flag,name=from-git" help:"Migrate git mode (refs/meads/tasks/*) in the current repo into File, preserving ids and soft-deleted tasks"`
 }
 
@@ -130,6 +131,32 @@ func (c *convertCmd) runToGit() error {
 		}
 	}
 	fmt.Printf("converted %d tasks (%d recovered from git history): %s → %s*\n", len(tasks), len(recoveredIDs), c.File, meads.TasksRefPrefix)
+
+	// Importing task refs is not the whole of "now in git mode": origin's
+	// fetch refspec is the rest of it, and this used to skip it, leaving a
+	// migrated repo unable to fetch anyone else's task refs - with no way
+	// back, since `md init --git` refuses once RefNamespace has any ref (task
+	// 91). Doing it here means either entry point leaves a repo that can
+	// actually share.
+	//
+	// After the import deliberately, not before: a failed import should leave
+	// nothing behind to explain, and this step is additive and idempotent, so
+	// re-running it costs nothing.
+	//
+	// Its failure is reported but not returned. The migration itself has
+	// already succeeded and cannot be repeated - a second --to-git refuses on
+	// the tasks this one just imported - so failing here would report a
+	// success as an error and point the user at a command that now rejects
+	// them. `md doctor` retries exactly this step.
+	st, err := meads.EnsureGitInit(c.globals.git())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "meads: tasks imported, but finishing git-mode setup failed: %v\n", err)
+		fmt.Fprintln(os.Stderr, "meads: run `md doctor` to retry it")
+		return nil
+	}
+	if !st.Skipped {
+		printFetchRefspec(st.FetchRefspec)
+	}
 	return nil
 }
 

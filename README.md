@@ -100,7 +100,7 @@ md init                               Initialize a new tasks file
 md init --git                         Initialize git mode (refs/meads/*) instead
 md convert TASKS.md                   Convert between Markdown and CSV formats
 md convert TASKS.md --to-git          Migrate a tasks file into git mode
-md doctor                             Detect and fix duplicate task IDs
+md doctor                             Detect and fix duplicate task IDs (in git mode, also repairs incomplete setup)
 md prime                              Print LLM context for using md
 md mcp                                Start MCP server over stdio
 md webui                              Launch web UI for the current task store
@@ -159,6 +159,13 @@ Both directions preserve task ids exactly, including soft-deleted
 (tombstone) tasks — `--to-git` also recovers any id already pruned from the
 working file by `md auto-delete`, straight from git history, so nothing
 gets silently reassigned.
+
+Run either `md init --git` or `md convert --to-git`, not both — `--to-git`
+needs no prior init, and adds the fetch refspec itself, so a migrated repo
+can share task refs like any other. (`md init --git` after a migration still
+refuses, since `refs/meads/` is no longer empty; there is nothing left for it
+to do.) A repo migrated by an older version, which skipped the refspec, is
+repaired by `md doctor`.
 
 **Sharing across clones:** `md init --git` adds a fetch refspec so `git
 fetch`/`git clone` also download `refs/meads/*` — into a separate

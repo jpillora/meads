@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/jpillora/meads/pkg/meads"
 )
@@ -60,10 +61,11 @@ func (c *doctorCmd) runFile() error {
 // fetched remote-tracking namespace to compare against). It reports two
 // independent kinds of issue - repaired content mismatches and re-homed
 // contended tasks (duplicates and divergences, all auto-applied by
-// GitStore.Doctor's convergent renumbering, task 86), and circular
-// dependencies, which can't be auto-fixed (which edge to cut is ambiguous)
-// and block every future mutation, so they exit non-zero. Fixes never cause
-// a non-zero exit on their own.
+// GitStore.Doctor's convergent renumbering, task 86); incomplete git-mode
+// setup, i.e. a missing fetch refspec (task 91); and circular dependencies,
+// which can't be auto-fixed (which edge to cut is ambiguous) and block every
+// future mutation, so they exit non-zero. Fixes never cause a non-zero exit
+// on their own.
 func (c *doctorCmd) runGit() error {
 	gs := c.globals.gitStore()
 
@@ -85,6 +87,29 @@ func (c *doctorCmd) runGit() error {
 		}
 	}
 
+	// Incomplete git-mode setup is the third repairable kind, and the only one
+	// a user cannot fix by hand from the docs: `md convert --to-git` used to
+	// import task refs without ensuring origin's fetch refspec, and `md init
+	// --git` then refuses to finish the job because RefNamespace already has
+	// refs (task 91). Convert does its own setup now, but repos already
+	// migrated by an older binary have no other way back - so doctor, the
+	// command whose whole job is repairing state, does it.
+	//
+	// A failure here is reported and stepped over rather than returned:
+	// writing origin's config is the one part of doctor that touches
+	// something outside refs/meads/, so it can fail for reasons that have
+	// nothing to do with task integrity (a read-only or locked .git/config).
+	// Returning would abandon the cycle check below - and would do so AFTER
+	// gs.Doctor above already applied its fixes, reporting a partly-completed
+	// run as a total failure.
+	repaired := 0
+	if setup, err := meads.EnsureGitInit(c.globals.git()); err != nil {
+		fmt.Fprintf(os.Stderr, "meads: could not check git-mode setup: %v\n", err)
+	} else if !setup.Skipped && setup.FetchRefspec == meads.FetchRefspecAdded {
+		fmt.Printf("Missing fetch refspec detected. Added %s to origin.\n", meads.FetchRefspec)
+		repaired++
+	}
+
 	cycles, err := gs.FindCycles()
 	if err != nil {
 		return err
@@ -93,7 +118,7 @@ func (c *doctorCmd) runGit() error {
 		fmt.Printf("Circular dependency detected: %s\n", meads.FormatCycle(cycle))
 	}
 
-	if len(fixes) == 0 && len(cycles) == 0 {
+	if len(fixes) == 0 && len(cycles) == 0 && repaired == 0 {
 		fmt.Println("no issues found")
 		return nil
 	}

@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-08-20T15:57:16Z
+* updated: 2026-08-20T16:25:03Z
 * max-id: 92
 * next-id: 13
 
@@ -600,60 +600,3 @@ Not required by rais — its frontend never reads `task.meta` — but it is a re
 Show and filter tags in the web UI
 
 The webui frontend (pkg/webui/assets/app.js) does not render task tags at all, even though the HTTP API now accepts and returns them (POST/PATCH /api/tasks take a 'tags' array or CSV string). Add tag chips to the task list/detail views and a tag filter, mirroring 'md list --tag'.
-
-## 91. md convert --to-git leaves git mode with no fetch refspec, and init --git then refuses to add one
-
-* status: open
-* priority: P2
-* type: bug
-* created: 2026-08-06T23:38:17Z
-
-The README offers `md init --git` and `md convert TASKS.md --to-git` as two
-independent ways in ("Enable it" / "Migrate an existing tasks file"), but only
-`init` seeds ConfigRef and calls EnsureFetchRefspec — `convert` just imports
-task refs. So doing the documented migration on its own leaves the repo
-permanently unable to fetch anyone else's task refs, and nothing can repair it.
-
-### Reproduce
-
-```
-$ git init -q -b main . && git remote add origin https://example.com/x.git
-$ md init >/dev/null && md add "task: one" >/dev/null
-$ md convert TASKS.md --to-git
-converted 1 tasks (0 recovered from git history): TASKS.md → refs/meads/tasks/*
-$ git for-each-ref refs/meads/config | wc -l
-0
-$ git config --get-all remote.origin.fetch
-+refs/heads/*:refs/remotes/origin/*        # no +refs/meads/*:refs/meads-remote/*
-$ md init --git                            # try to finish the job
-git mode is already initialized (refs/meads/ already has refs)
-$ echo $?
-1
-```
-
-### Why it cannot self-heal
-
-* `InitTasks` (init.go) refuses on ANY ref under `RefNamespace`, and convert's
-  task refs are under it — so init can never legally run second.
-* `resolveCloneBackend` (clone.go) only adopts from origin and calls
-  `EnsureFetchRefspec` when there are NO local `refs/meads/*`, so the
-  on-first-use path that installs the refspec in a fresh clone is gated off
-  here too.
-* Only the refspec is genuinely lost: an absent ConfigRef degrades to
-  `DefaultConfig()` (gitconfig.go `Config()`). But the refspec is what powers
-  cross-clone sharing, which is git mode's headline feature.
-
-The working order — init first, then convert — is discoverable only by reading
-init.go and convert.go. Neither `md convert --help` nor the README mentions
-that convert has a prerequisite, and the failure is silent: convert prints a
-success line and `md list` works fine afterwards.
-
-### Suggested fix
-
-Have `--to-git` complete the initialization itself when the namespace is
-otherwise empty (seed ConfigRef, call EnsureFetchRefspec), so both entry points
-leave identical state and order stops mattering. Failing that, make `md init
---git` fall through to "already has tasks — ensuring config + refspec" rather
-than exiting 1, and say so in convert's help.
-
-Hit while migrating jpillora.com's knobot site into git mode.
