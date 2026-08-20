@@ -169,6 +169,151 @@ func TestFastGitModeLikely_PackedRefsFile_NoMeadsNamespace(t *testing.T) {
 	}
 }
 
+// --- linked worktrees (task 75) ---
+
+// addWorktree creates a linked worktree of h's repo and returns its path.
+// No removal cleanup, matching push_test.go and gitlock_test.go: both the
+// worktree and h.dir (which holds its admin directory) are t.TempDir()s that
+// get removed anyway, so a `git worktree remove` could only ever fail a test
+// that had already passed.
+func addWorktree(t *testing.T, h *testHarness, name string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), name)
+	h.git("worktree", "add", "--quiet", "-b", name, path)
+	return path
+}
+
+// TestFastGitModeLikely_LinkedWorktree is task 75: refs/meads/* is an ordinary
+// SHARED ref, so it lives in the common git directory, not in the linked
+// worktree's own <repo>/.git/worktrees/<name>. Looking for it there found
+// nothing and reported file mode, so `md --help` advertised the
+// file-mode-only commands inside a git-mode worktree.
+func TestFastGitModeLikely_LinkedWorktree(t *testing.T) {
+	h := newHarness(t)
+	gs := meads.NewGitStore(h.globals.git())
+	if _, err := gs.Create(meads.Task{Title: "a git task", Status: "open"}); err != nil {
+		t.Fatalf("seeding a task ref: %v", err)
+	}
+	wt := addWorktree(t, h, "side")
+
+	// Precondition: the per-worktree gitdir must genuinely lack refs/, or
+	// this would pass for the wrong reason.
+	gitDir, ok := fastGitDir(wt)
+	if !ok {
+		t.Fatal("fastGitDir should resolve a linked worktree's .git file")
+	}
+	if _, err := os.Stat(filepath.Join(gitDir, "refs", "meads")); err == nil {
+		t.Fatalf("precondition: %s unexpectedly holds refs/meads", gitDir)
+	}
+
+	if !fastGitModeLikely(wt) {
+		t.Error("fastGitModeLikely in a linked worktree of a git-mode repo should be true")
+	}
+	if got := detectHelpMode(wt); got != helpModeGit {
+		t.Errorf("detectHelpMode in a linked worktree = %v, want helpModeGit", got)
+	}
+}
+
+// The packed case has to work too: refs/meads/* packed into the COMMON
+// packed-refs is what a gc'd or freshly cloned repo looks like, and the
+// per-worktree gitdir has no packed-refs of its own either.
+func TestFastGitModeLikely_LinkedWorktree_PackedRefs(t *testing.T) {
+	h := newHarness(t)
+	gs := meads.NewGitStore(h.globals.git())
+	if _, err := gs.Create(meads.Task{Title: "a git task", Status: "open"}); err != nil {
+		t.Fatalf("seeding a task ref: %v", err)
+	}
+	wt := addWorktree(t, h, "packed-side")
+	h.git("pack-refs", "--all")
+
+	if !fastGitModeLikely(wt) {
+		t.Error("fastGitModeLikely in a linked worktree after pack-refs should still be true")
+	}
+}
+
+// A linked worktree of a repo with NO meads refs must still report false -
+// resolving commondir must not turn detection into a blanket yes.
+func TestFastGitModeLikely_LinkedWorktree_NoMeadsRefs(t *testing.T) {
+	h := newHarness(t)
+	wt := addWorktree(t, h, "plain-side")
+	if fastGitModeLikely(wt) {
+		t.Error("fastGitModeLikely in a linked worktree of a non-git-mode repo should be false")
+	}
+}
+
+// TestHelpVisibility_LinkedWorktreeMatchesMainCheckout is the acceptance check
+// from task 75, stated the way a user would notice it.
+func TestHelpVisibility_LinkedWorktreeMatchesMainCheckout(t *testing.T) {
+	h := newHarness(t)
+	gs := meads.NewGitStore(h.globals.git())
+	if _, err := gs.Create(meads.Task{Title: "a git task", Status: "open"}); err != nil {
+		t.Fatalf("seeding a task ref: %v", err)
+	}
+	wt := addWorktree(t, h, "help-side")
+
+	if got, want := hiddenCommands(detectHelpMode(wt)), hiddenCommands(detectHelpMode(h.dir)); len(got) != len(want) {
+		t.Fatalf("hidden commands differ: worktree %v, main checkout %v", got, want)
+	}
+	for _, name := range []string{"auto-save", "auto-delete", "beads-import"} {
+		if !hiddenCommands(detectHelpMode(wt))[name] {
+			t.Errorf("%q should be hidden in a linked worktree of a git-mode repo", name)
+		}
+	}
+}
+
+func TestFastGitCommonDir(t *testing.T) {
+	t.Run("no commondir file is its own common dir", func(t *testing.T) {
+		dir := t.TempDir()
+		if got := fastGitCommonDir(dir); got != dir {
+			t.Errorf("fastGitCommonDir = %q, want %q", got, dir)
+		}
+	})
+	t.Run("relative commondir resolves against the gitdir", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFile(t, dir, "commondir", "../..\n")
+		if got, want := fastGitCommonDir(dir), filepath.Dir(filepath.Dir(dir)); got != want {
+			t.Errorf("fastGitCommonDir = %q, want %q", got, want)
+		}
+	})
+	t.Run("absolute commondir is used as-is", func(t *testing.T) {
+		dir := t.TempDir()
+		common := t.TempDir()
+		writeFile(t, dir, "commondir", common+"\n")
+		if got := fastGitCommonDir(dir); got != common {
+			t.Errorf("fastGitCommonDir = %q, want %q", got, common)
+		}
+	})
+	t.Run("empty commondir falls back to the gitdir", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFile(t, dir, "commondir", "\n")
+		if got := fastGitCommonDir(dir); got != dir {
+			t.Errorf("fastGitCommonDir = %q, want %q", got, dir)
+		}
+	})
+	t.Run("CRLF is trimmed", func(t *testing.T) {
+		dir := t.TempDir()
+		common := t.TempDir()
+		writeFile(t, dir, "commondir", common+"\r\n")
+		if got := fastGitCommonDir(dir); got != common {
+			t.Errorf("fastGitCommonDir = %q, want %q", got, common)
+		}
+	})
+	t.Run("a commondir naming nothing fails closed", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFile(t, dir, "commondir", filepath.Join(dir, "nowhere")+"\n")
+		// Resolution itself does not validate - every use of the result is a
+		// ReadDir/ReadFile that fails, and a failed lookup already means
+		// "not git mode".
+		if got, want := fastGitCommonDir(dir), filepath.Join(dir, "nowhere"); got != want {
+			t.Errorf("fastGitCommonDir = %q, want %q", got, want)
+		}
+		writeFile(t, dir, ".git", "gitdir: "+dir+"\n")
+		if fastGitModeLikely(dir) {
+			t.Error("a commondir naming a nonexistent path must not report git mode")
+		}
+	})
+}
+
 // --- fastTasksFileExists ---
 
 func TestFastTasksFileExists(t *testing.T) {
@@ -283,6 +428,11 @@ func TestFastCheck_NeverInvokesGit(t *testing.T) {
 		t.Fatalf("seeding a task ref: %v", err)
 	}
 
+	// Created while git is still on PATH, so the commondir hop is covered
+	// too: without this the PATH-stripped run only ever exercises
+	// fastGitCommonDir's trivial "no commondir file" fallback.
+	wt := addWorktree(t, h, "no-git-side")
+
 	emptyPathDir := t.TempDir() // guaranteed to contain no "git" binary
 	if _, err := exec.LookPath(filepath.Join(emptyPathDir, "git")); err == nil {
 		t.Fatal("precondition failed: emptyPathDir unexpectedly resolves a git binary")
@@ -300,6 +450,10 @@ func TestFastCheck_NeverInvokesGit(t *testing.T) {
 	}
 	if hidden := hiddenCommands(detectHelpMode(h.dir)); !hidden["auto-save"] {
 		t.Error("hiddenCommands did not reflect git mode with git removed from PATH")
+	}
+	// The commondir hop is a plain os.ReadFile, and must stay one.
+	if !fastGitModeLikely(wt) {
+		t.Error("fastGitModeLikely in a linked worktree with git removed from PATH must still resolve commondir from disk")
 	}
 }
 

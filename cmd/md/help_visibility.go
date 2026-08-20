@@ -77,6 +77,15 @@ func detectHelpMode(dir string) helpMode {
 // if there is no resolvable .git entry at all - treated by callers as "not a
 // git repo" for help-visibility purposes only; see globals.inGitRepo for the
 // authoritative, subprocess-based check every other command uses.
+//
+// For a linked worktree this is the PER-WORKTREE directory, which holds no
+// shared refs - anything looking for one wants fastGitCommonDir on top, which
+// is exactly the trap task 75 was.
+//
+// It also does not walk up: `md --help` from a SUBDIRECTORY of a git-mode
+// repo still advertises the file-mode-only commands, because there is no .git
+// entry beside it. That is a known, accepted limit of this approximation
+// rather than an oversight (TASKS #93).
 func fastGitDir(dir string) (string, bool) {
 	p := filepath.Join(dir, ".git")
 	info, err := os.Stat(p)
@@ -112,6 +121,48 @@ func fastGitDir(dir string) (string, bool) {
 	return gitDir, true
 }
 
+// fastGitCommonDir resolves gitDir to the git directory that holds SHARED
+// state - refs, packed-refs, objects - which for a linked worktree is not
+// gitDir itself.
+//
+// A linked worktree's git directory (<gitdir>/worktrees/<name>) holds only its
+// own per-worktree state: HEAD, index, refs/bisect, refs/worktree. An ordinary
+// ref like refs/meads/* is shared and lives in the common directory, named by
+// a "commondir" file inside the per-worktree gitdir - relative to it when not
+// absolute (gitrepository-layout(5), NOT git-worktree(1), which describes
+// $GIT_COMMON_DIR but never this file). Without that hop fastGitModeLikely
+// looked for refs/meads under a directory that has no refs/ at all, and read a
+// packed-refs that is not there either, so every linked worktree of a git-mode
+// repo reported file mode (task 75).
+//
+// git lets $GIT_COMMON_DIR outrank the file; this deliberately does not read
+// it, for the same reason nothing else here consults the environment - see
+// this file's top comment on staying a pure filesystem approximation.
+//
+// The main worktree has no commondir file; there gitDir is already the common
+// directory, which is also the right answer for an unreadable or empty one. A
+// bogus one needs no validation either: every use of the result is a ReadDir
+// or ReadFile that simply fails, and a failed lookup already means "not git
+// mode".
+//
+// A submodule is deliberately unaffected: <super>/.git/modules/<name> has no
+// commondir file, so a submodule of a git-mode superproject keeps reporting
+// its own mode rather than inheriting the parent's refs.
+func fastGitCommonDir(gitDir string) string {
+	data, err := os.ReadFile(filepath.Join(gitDir, "commondir"))
+	if err != nil {
+		return gitDir
+	}
+	common := strings.TrimSpace(string(data))
+	if common == "" {
+		return gitDir
+	}
+	if !filepath.IsAbs(common) {
+		common = filepath.Join(gitDir, common)
+	}
+	return common
+}
+
 // fastGitModeLikely reports whether refs/meads/* appears to exist under
 // dir's git directory, checked purely via filesystem stat/read - never a git
 // subprocess. Refs can live loose under refs/meads/** (as plain files/dirs)
@@ -119,16 +170,20 @@ func fastGitDir(dir string) (string, bool) {
 // clone/fetch that receives them already packed), so both are checked - a
 // git-mode repo that has been gc'd would otherwise wrongly look like file
 // mode the moment its loose refs disappear into packed-refs.
+//
+// Both lookups go through fastGitCommonDir, since refs/meads/* is a shared
+// ref and a linked worktree's own git directory does not hold shared refs.
 func fastGitModeLikely(dir string) bool {
 	gitDir, ok := fastGitDir(dir)
 	if !ok {
 		return false
 	}
+	gitDir = fastGitCommonDir(gitDir)
 	// Loose refs: refs/meads/ containing anything at all - e.g. a "config"
 	// file (refs/meads/config, written by `md init --git` before any task
 	// exists) and/or a "tasks" directory (refs/meads/tasks/<id> per task).
 	// A single shallow listing is enough: we only need to know the
-	// directory is non-empty, never what is actually says inside it.
+	// directory is non-empty, never what it actually says inside it.
 	if entries, err := os.ReadDir(filepath.Join(gitDir, "refs", "meads")); err == nil && len(entries) > 0 {
 		return true
 	}

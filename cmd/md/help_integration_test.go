@@ -110,6 +110,43 @@ func TestIntegration_HelpVisibility_GitMode_HidesFileOnlyCommands(t *testing.T) 
 	}
 }
 
+// TestIntegration_HelpVisibility_GitMode_LinkedWorktree is task 75's
+// acceptance check, stated the way the bug was reported: the same `md --help`,
+// run from a linked worktree of the same git-mode repo, must hide the same
+// commands. It used to list all three, because refs/meads/* is a shared ref
+// and the probe was looking in the per-worktree git directory.
+func TestIntegration_HelpVisibility_GitMode_LinkedWorktree(t *testing.T) {
+	bin := buildMD(t)
+	h := newHarness(t)
+	if out, err := runMD(t, bin, h.dir, nil, "init", "--git"); err != nil {
+		t.Fatalf("init --git: %v\n%s", err, out)
+	}
+	if out, err := runMD(t, bin, h.dir, nil, "add", "a git-mode task"); err != nil {
+		t.Fatalf("add: %v\n%s", err, out)
+	}
+	wt := addWorktree(t, h, "help-integration-side")
+
+	// The authoritative check: the worktree really is in git mode, so help
+	// disagreeing with it is the bug and not a mis-set-up fixture.
+	if out, err := runMD(t, bin, wt, nil, "list"); err != nil || !strings.Contains(out, "a git-mode task") {
+		t.Fatalf("precondition: `md list` in the worktree = %q, err=%v", out, err)
+	}
+
+	for _, args := range [][]string{{"--help"}, {"-h"}, {}} {
+		out, _ := runMD(t, bin, wt, nil, args...)
+		for _, name := range []string{"auto-save", "auto-delete", "beads-import"} {
+			if bulletLineFor(out, name) {
+				t.Errorf("args=%v: help in a linked worktree of a git-mode repo should not list %q:\n%s", args, name, out)
+			}
+		}
+		for _, name := range []string{"add", "list", "doctor"} {
+			if !bulletLineFor(out, name) {
+				t.Errorf("args=%v: help in a linked worktree dropped ordinary command %q:\n%s", args, name, out)
+			}
+		}
+	}
+}
+
 // TestIntegration_HiddenCommands_StillInvokable_GitMode is the CRITICAL
 // constraint's end-to-end proof: even though auto-save/auto-delete are
 // hidden from git-mode help (proven above), the real compiled binary must

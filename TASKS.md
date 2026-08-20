@@ -3,8 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-08-20T16:25:03Z
-* max-id: 92
+* updated: 2026-08-20T16:47:15Z
 * next-id: 13
 
 ## 20. VS Code extension end-to-end manual test
@@ -510,71 +509,6 @@ optionally deprioritise tasks whose files are already claimed.
    and `md auto-delete` become **no-ops in git mode** — there is no working-tree
    file to stage, and nothing to prune since refs are never removed.
 
-## 75. Help visibility misdetects git mode inside a linked worktree
-
-* status: open
-* priority: P3
-* type: bug
-* created: 2026-07-25T23:37:59Z
-
-`fastGitModeLikely` (cmd/md/help_visibility.go) reports file mode in a linked
-worktree of a git-mode repo, so `md --help` advertises the file-mode-only
-commands (auto-save/auto-delete/beads-import) there.
-
-### Reproduce
-
-```
-$ git init -q -b main . && md init --git && md add "task: one"
-$ git worktree add /tmp/wt -b side
-$ md --help | grep -c auto-save          # main checkout
-0                                        # correct: hidden, git mode
-$ cd /tmp/wt && md list
-1. [P2] one                              # authoritative check: git mode
-$ md --help | grep -c auto-save
-1                                        # WRONG: shown, i.e. detected file mode
-```
-
-### Cause
-
-`fastGitDir` correctly resolves a worktree's `.git` *file* (`gitdir: <path>`)
-to the per-worktree git directory. But shared refs do not live there:
-
-```
-$ ls /repo/.git/worktrees/wt/refs
-ls: cannot access ...: No such file or directory
-$ cat /repo/.git/worktrees/wt/commondir
-../..
-```
-
-`refs/meads/*` is an ordinary shared ref, so it lives in the **common** dir.
-`fastGitModeLikely` joins `refs/meads` onto the per-worktree gitdir and finds
-nothing, then reads a `packed-refs` that also is not there, and returns false.
-The missing step is resolving `<gitdir>/commondir` (git-worktree(1)) before
-looking for refs.
-
-### Scope of the damage
-
-Cosmetic, and only because the probe is confined to help visibility - its own
-doc comment says so, deferring to `globals.inGitRepo` as "the authoritative,
-subprocess-based check every other command uses." `md list` in the same
-worktree is correct, because mode() goes through git.
-
-That containment is the point: this is the concrete argument against promoting
-the disk probe to decide `globals.mode()`. The same false negative that costs a
-line of help text today would, as a mode decision, make `md add` write TASKS.md
-into the working tree of a git-mode worktree.
-
-### Fix
-
-Resolve `commondir` in `fastGitDir` (or a sibling), relative to the gitdir when
-not absolute, and look for refs there. Everything else stays as is.
-
-### Acceptance
-
-- `md --help` in a linked worktree of a git-mode repo hides the file-mode
-  commands, matching the main checkout
-- A test covers the worktree layout
-
 ## 84. Git-mode tasks carry no meta.created / meta.updated
 
 * status: open
@@ -600,3 +534,130 @@ Not required by rais — its frontend never reads `task.meta` — but it is a re
 Show and filter tags in the web UI
 
 The webui frontend (pkg/webui/assets/app.js) does not render task tags at all, even though the HTTP API now accepts and returns them (POST/PATCH /api/tasks take a 'tags' array or CSV string). Add tag chips to the task list/detail views and a tag filter, mirroring 'md list --tag'.
+
+## 93. Hook paths ignore linked worktrees and core.hooksPath
+
+* status: open
+* priority: P2
+* type: bug
+* tags: git
+* created: 2026-08-20T16:45:24Z
+
+`md auto-save` installs its pre-commit hook at a path git will never run when
+invoked from inside a linked worktree, and ignores `core.hooksPath` everywhere.
+
+Found while reviewing TASKS #75, which fixed the same worktree blind spot in
+the help-visibility probe. That one was cosmetic by construction; this one is
+not.
+
+### The worktree half
+
+`preCommitPath` (cmd/md/hook.go) builds the path as `git rev-parse
+--absolute-git-dir` + `hooks/pre-commit`. `--absolute-git-dir` returns the
+PER-WORKTREE directory, but `hooks/` is shared state living in the common dir.
+Measured in a linked worktree with a hook planted in each location:
+
+```
+--absolute-git-dir + hooks/pre-commit  ->  <repo>/.git/worktrees/wt/hooks/pre-commit   # md writes here
+--git-path hooks/pre-commit            ->  <repo>/.git/hooks/pre-commit                # git runs this
+git commit in the worktree             ->  ran the COMMON-dir hook
+```
+
+So from a linked worktree:
+* `md auto-save` writes a hook that never fires
+* `md auto-save --status` reports "not enabled" even when it is
+* `md auto-save --disable` removes nothing
+
+Same defect in `cleanupOldPostCommitHook` (cmd/md/auto_delete.go), which
+silently no-ops in a worktree and leaves the stale legacy post-commit hook in
+place forever, and in cmd/md/nuke.go — which additionally uses a bare
+`exec.Command` with no `cmd.Dir`, so it ignores the global `--dir` flag, and
+uses `--git-dir`, which returns a relative `.git` at the repo toplevel.
+
+`git-worktree(1)` says this outright: "do not make any assumption about whether
+a path belongs to $GIT_DIR or $GIT_COMMON_DIR ... Use git rev-parse --git-path
+to get the final path."
+
+### The core.hooksPath half
+
+`filepath.Join(gitDir, "hooks", ...)` cannot see `core.hooksPath`, so every
+hook command is wrong in any repo that sets it. This is not exotic — it
+reproduces in this project's own dev sandbox, where `core.hooksPath` is
+injected via `GIT_CONFIG_KEY_0` and `git rev-parse --git-path hooks` resolves
+somewhere else entirely.
+
+### Fix
+
+Add a `gitPath(g, rel string)` helper wrapping `git rev-parse --git-path
+<rel>`, absolutising the result against `g.Dir` the way cmd/md/push.go's
+`gitCommonDir` already does, and route the three `hooks/...` joins through it.
+One change fixes both halves.
+
+Do NOT change `sequencerInProgress` (cmd/md/hook.go): `rebase-merge`,
+`rebase-apply`, `MERGE_HEAD` and `CHERRY_PICK_HEAD` really are per-worktree, so
+it is correct as written.
+
+### Acceptance
+
+* `md auto-save` from a linked worktree installs a hook that a `git commit` in
+  that worktree actually runs
+* `--status` and `--disable` agree with it
+* A repo with `core.hooksPath` set is handled correctly
+* Tests cover a linked worktree and a `core.hooksPath` repo
+
+## 94. Help visibility misses git mode from a subdirectory, and under the reftable backend
+
+* status: open
+* priority: P3
+* type: bug
+* tags: git
+* created: 2026-08-20T16:45:38Z
+
+Two remaining false negatives in `fastGitModeLikely` (cmd/md/help_visibility.go),
+both producing exactly the symptom TASKS #75 reported — `md --help` advertising
+the file-mode-only commands inside a git-mode repo — for different reasons. #75
+fixed only the linked-worktree case.
+
+### 1. Any subdirectory (confirmed, and probably the common case)
+
+`fastGitDir` looks for a `.git` entry beside `dir` and never walks up, so from
+any subdirectory of a git-mode repo:
+
+```
+$ cd <git-mode repo>/sub/deep && md --help
+  · auto-delete   ...
+  · auto-save     ...
+  · beads-import  ...
+```
+
+Running `md` from a subdirectory is plausibly more common than running it from
+a worktree, so most of #75's user-visible symptom survives its fix.
+
+Related: `md --dir <git-mode repo> --help` from an unrelated cwd shows all
+three too, because main.go computes `detectHelpMode("")` (cwd) before
+`ParseArgsError` has parsed `--dir`. That one may be unfixable without
+reordering main(), and is lower value.
+
+Fix: a bounded upward walk in `fastGitDir` — stop at the first `.git` or the
+filesystem root. Still zero subprocesses, which is the constraint that
+matters (see help_visibility.go's top comment).
+
+### 2. The reftable ref backend (unconfirmed)
+
+With `extensions.refStorage = reftable` (git >= 2.45, and the default for new
+repos in some distributions already), refs live in `<commonDir>/reftable/` and
+there is no populated `refs/` and no `packed-refs` at all. The probe would
+report file mode in the MAIN checkout of a git-mode repo.
+
+Not reproduced — the box this was found on runs git 2.43, which does not
+support `--ref-format`. Confirm before fixing.
+
+Fix: one extra `os.Stat(filepath.Join(gitDir, "reftable"))` alongside the
+existing loose and packed checks.
+
+### Note on severity
+
+Cosmetic, like #75, and for the same reason: this probe only ever decides which
+commands `--help` lists, never which backend a command uses (`globals.mode()`
+does that, via git). Filed so the containment argument stays deliberate rather
+than accidental.
