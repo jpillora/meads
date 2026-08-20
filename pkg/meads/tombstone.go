@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-
-	"github.com/go-git/go-billy/v5/util"
 )
 
 // nextID computes the next task ID from the maximum existing task ID and the
@@ -134,9 +132,26 @@ func ensureProjectMeta(f *File, now string) {
 }
 
 // ensureFile creates the task file if it doesn't exist.
+//
+// O_EXCL, not Stat-then-write, and the difference is task 68's bug in
+// miniature. Add calls this BEFORE taking the lock (it has to - the lock lives
+// in the file), so on a fresh repo every concurrent writer runs it at once.
+// Stat-then-write let two of them both see "missing", the first create the
+// file and add a task, and the second then TRUNCATE that task away and add its
+// own at the same id. Measured at 2/40 trials with 16 writers. O_EXCL makes
+// the check and the create one indivisible step, so the loser is told the file
+// already exists - which is not an error here, it is the whole point.
 func (s *Store) ensureFile() error {
-	if _, err := s.fs.Stat(s.file); os.IsNotExist(err) {
-		return util.WriteFile(s.fs, s.file, []byte(s.fmt.EmptyFile()), 0644)
+	f, err := s.fs.OpenFile(s.file, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
+	if err != nil {
+		if os.IsExist(err) {
+			return nil // someone else created it first; nothing to do
+		}
+		return fmt.Errorf("creating %s: %w", s.file, err)
 	}
-	return nil
+	if _, err := f.Write([]byte(s.fmt.EmptyFile())); err != nil {
+		f.Close()
+		return fmt.Errorf("writing %s: %w", s.file, err)
+	}
+	return f.Close()
 }

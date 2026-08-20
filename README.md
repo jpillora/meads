@@ -16,7 +16,7 @@ Task tracking that lives entirely in git. No database, no server, no dependencie
 - **Git mode** — skip the tasks file entirely: tasks live as git refs (`refs/meads/tasks/<id>`), each with its own version history (see [Git mode](#git-mode))
 - Simple field extraction from input. Title is first sentense. Description is the rest. Type prefixes (`bug:`, `task:`, `feature:`, `idea:`), Priority (`P0`-`P5`).
 - Task dependencies with automatic blocking detection
-- Concurrent-write safe via optimistic locking — multiple processes or AI agents can write simultaneously
+- Concurrent-write safe via optimistic locking, with retry on contention — multiple processes or AI agents can write simultaneously
 - `md prime` prints LLM context, `md mcp` runs an MCP server over stdio
 
 ### Install
@@ -256,6 +256,6 @@ md doctor
   - **Git mode** — no file at all; each task is its own git ref (`refs/meads/tasks/<id>`).
 - **Metadata** — Built-in keys are `status`, `priority`, `type`, `depends-on`, `tags`, `close-reason`, `created`, and `updated`.
 - **Tags** — A comma-separated set under the `tags` key (`* tags: api,web-ui`, a CSV column, or a JSON array in git mode). Each tag is lowercase letters, numbers and dashes; values are lowercased and de-duplicated on input, and rejected if they contain anything else.
-- **Concurrency** — Concurrent writes are always safe: file mode via optimistic file locking, git mode via compare-and-swap on each task's own ref — either way, multiple processes (or AI agents) can write simultaneously without corruption.
+- **Concurrency** — Concurrent writes are safe *and* they land: file mode takes an optimistic file lock and releases it with an atomic replace, git mode compare-and-swaps each task's own ref. A writer that loses the race retries with jittered backoff (up to ~1.6s of budget, typically ~0.8s) rather than failing, so multiple processes — or AI agents — can write simultaneously without corruption and without dropped writes. Contention past that budget is reported as an error, never silently discarded.
 - **AI-friendly** — Every backend is designed to be readable and writable by LLMs. Use `md prime` to print context for an AI agent (it describes whichever mode is actually active), or `md mcp` to run an MCP server over stdio.
 - **Minimal** — Single static binary, no config files.

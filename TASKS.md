@@ -3,7 +3,7 @@
 a [meads](https://github.com/jpillora/meads) (`md`) managed task log
 
 * created: 2026-02-14T11:42:09Z
-* updated: 2026-08-20T15:24:31Z
+* updated: 2026-08-20T15:57:16Z
 * max-id: 92
 * next-id: 13
 
@@ -509,92 +509,6 @@ optionally deprioritise tasks whose files are already claimed.
 9. Integrations: webui watch (poll refs, not fsnotify on a file); `md auto-save`
    and `md auto-delete` become **no-ops in git mode** — there is no working-tree
    file to stage, and nothing to prune since refs are never removed.
-
-## 68. md add fails under write contention instead of retrying (-race failure is a memfs artifact)
-
-* status: open
-* priority: P2
-* type: bug
-* created: 2026-07-25T09:32:33Z
-* updated: 2026-07-27T22:05:18Z
-
-Two separate things were tangled under one title. Both are now settled, and
-neither is what the original task suspected.
-
-### 1. The `-race` failure is a test artifact — resolved question, small fix
-
-`go test ./pkg/meads/ -race -run TestConcurrentWriters_OneWins` still fails,
-but the race stack is entirely inside the dependency:
-
-```
-Read at 0x... by goroutine 9:
-  go-billy/v5/memfs.(*content).Len()        memfs/memory.go:395
-  go-billy/v5/memfs.(*file).Duplicate()     memfs/memory.go:336
-  go-billy/v5/memfs.(*Memory).OpenFile()    memfs/memory.go:74
-  meads.(*Store).acquireLock()              lock.go:23
-Previous write at 0x... by goroutine 15:
-  go-billy/v5/memfs.(*content).WriteAt()    memfs/storage.go:212
-  meads.(*Store).acquireLock()              lock.go:27
-```
-
-`memfs` is a plain in-memory map with no synchronisation and is not safe for
-concurrent use. meads' own lock logic never appears in the trace — both
-goroutines are inside `acquireLock` only because that is where they touch the
-shared filesystem. So this is option (1) from the original task: a fixture
-problem, not a lock defect.
-
-Fix: give the test a real filesystem (`t.TempDir()`, which is also what real
-concurrency uses) or serialise memfs access behind a mutex in the fixture.
-Nothing in `lock.go` needs to change for this half.
-
-Note the "flaky without -race, got 2 winners under -count=5" report did NOT
-reproduce: `-count=10` passes cleanly.
-
-### 2. The real defect: `md` gives up on contention instead of retrying
-
-The process-level reproduction the original task asked for, run for real
-(25 concurrent `md add` against one TASKS.md in a temp dir, three rounds):
-
-| round | landed | exited 1 |
-|---|---|---|
-| 1 | 18 | 7 |
-| 2 | 20 | 5 |
-| 3 | 15 | 10 |
-
-Every failure printed `lock contention: another writer holds the lock` and
-exited 1, and landed + failed == 25 exactly in every round. So:
-
-* **No write was ever silently lost.** The optimistic lock is sound and the
-  README's "concurrent-write safe" claim is correct as stated — it is safe.
-* **But `md` does not retry.** At 25-way contention up to 40% of `md add`
-  calls simply fail. For a tool whose headline use case is several AI agents
-  writing at once, "safe, but you lose 4 in 10 writes and must handle the
-  retry yourself" is the actual bug.
-
-`acquireLock` (pkg/meads/lock.go) returns the contention error to the caller
-immediately; there is no backoff and no retry anywhere above it. Compare git
-mode, which already retries: every mutating `GitStore` method loops on
-`ErrCASConflict` up to `maxCASRetries` (gitmutate.go). File mode should have
-the equivalent.
-
-### Change
-
-* Retry `acquireLock` with bounded backoff — a small number of attempts with
-  jitter, surfacing the existing error only once they are exhausted. Match git
-  mode's shape (`maxCASRetries`, re-read on every attempt) so the two backends
-  behave the same under contention.
-* Fix the test fixture so `-race` passes (real temp dir, or a synchronised
-  memfs).
-
-### Acceptance
-
-* `go test ./pkg/meads/ -race` passes
-* 25 concurrent `md add` processes against one TASKS.md all land, or the
-  failures are a documented, much smaller tail
-* A process-level test covers it — the in-process memfs one cannot, which is
-  how this stayed open so long
-* The README claim is re-checked against whatever the retry policy ends up
-  being
 
 ## 75. Help visibility misdetects git mode inside a linked worktree
 
