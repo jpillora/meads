@@ -232,12 +232,16 @@ func TestAcquireLock_DoesNotRetryRealFailures(t *testing.T) {
 // mode and symlinks are not carried across for free.
 func TestAtomicWrite_PreservesFileIdentity(t *testing.T) {
 	t.Run("mode", func(t *testing.T) {
+		// A masking umask, deliberately: without one this passes on a
+		// developer box (umask 002) while failing in CI (umask 022), which is
+		// how a chmod that never ran shipped green. See Store.chmod.
+		withUmask(t, 022)
 		dir := t.TempDir()
 		path := filepath.Join(dir, "TASKS.md")
 		if err := os.WriteFile(path, []byte("# Tasks\n"), 0664); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.Chmod(path, 0664); err != nil { // defeat umask
+		if err := os.Chmod(path, 0664); err != nil { // the umask above would mask the create
 			t.Fatal(err)
 		}
 		s := NewFileStore(path)

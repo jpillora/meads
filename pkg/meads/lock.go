@@ -211,17 +211,44 @@ func (s *Store) atomicWrite(data []byte) error {
 		s.fs.Remove(tmp)
 		return err
 	}
-	// util.WriteFile's mode only applies when it creates the file, and it is
-	// further masked by umask, so set it explicitly. Best-effort: a filesystem
-	// without Chmod is not a reason to abandon an otherwise good write.
-	if ch, ok := s.fs.(billy.Change); ok {
-		_ = ch.Chmod(tmp, mode)
-	}
+	// util.WriteFile's mode only applies when it CREATES the file, and even
+	// then umask masks it, so set it explicitly. Best-effort: a filesystem
+	// with no way to chmod is not a reason to abandon an otherwise good write.
+	_ = s.chmod(tmp, mode)
 	if err := s.fs.Rename(tmp, s.file); err != nil {
 		s.fs.Remove(tmp)
 		return fmt.Errorf("replacing %s: %w", s.file, err)
 	}
 	return nil
+}
+
+// chmod sets name's mode within this Store's filesystem.
+//
+// go-billy offers no single working route for this. osfs.New returns a
+// *chroot.ChrootHelper, which does NOT satisfy billy.Change, and whose own
+// Chmod method fails outright with "underlying fs does not implement
+// billy.Chmod". memfs, meanwhile, chmods fine. So try the filesystem first and
+// fall back to the real one underneath it.
+//
+// Root() is the directory an osfs Store is chrooted to, so joining it back
+// onto name recovers the real path. That fallback is only ever reached when
+// the billy attempt failed, which an in-memory filesystem's never does - so a
+// virtual path cannot escape into os.Chmod.
+//
+// Getting this wrong is silent: a skipped chmod leaves util.WriteFile's
+// umask-masked create mode, so a group-writable 0664 tasks file quietly
+// becomes 0644 and locks out every other user of a shared checkout. It only
+// shows up under a umask that actually masks - which is why the test for it
+// sets one rather than trusting the developer's.
+func (s *Store) chmod(name string, mode os.FileMode) error {
+	if ch, ok := s.fs.(interface {
+		Chmod(string, os.FileMode) error
+	}); ok {
+		if err := ch.Chmod(name, mode); err == nil {
+			return nil
+		}
+	}
+	return os.Chmod(filepath.Join(s.fs.Root(), name), mode)
 }
 
 // lstat stats s.file without following a final symlink. Not every
