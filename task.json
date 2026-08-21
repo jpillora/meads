@@ -1,0 +1,1 @@
+{"id":3,"title":"webui keyboard shortcuts","status":"open","priority":"P2","type":"feature","deleted":true,"description":"j/k to move card focus, n to new, e to edit, d to delete (with confirm), / to focus filter, esc to clear, enter to advance status. Show a help popover with ?","meta":{"created":"2026-05-20T11:55:18Z"}}
