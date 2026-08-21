@@ -1,0 +1,1 @@
+{"id":53,"title":"Document auto-save pre-commit hook behavior in CLAUDE.md","status":"open","priority":"P3","type":"task","deleted":true,"description":"Add a note to CLAUDE.md explaining that a pre-commit hook auto-stages TASKS.md into every commit, and agents should NOT unstage or remove it. Reduces agents fighting the hook.","meta":{"created":"2026-06-19T12:00:21Z"}}
