@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -279,4 +280,95 @@ func regexpQuote(s string) string {
 		b.WriteRune(r)
 	}
 	return b.String()
+}
+
+// hookOn reports whether a hook block is installed in h's repo.
+func hookOn(t *testing.T, h *testHarness, b hookBlock) bool {
+	t.Helper()
+	on, err := b.installed(h.globals)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return on
+}
+
+// TestConvert_FileToGit_RemovesFileModeHooks: auto-save and auto-delete exist
+// only to serve a working-tree tasks file. Migrating is the moment they stop
+// having a job, so that is where they go - otherwise they linger, spawning an
+// `md` process per commit to conclude they have nothing to do.
+func TestConvert_FileToGit_RemovesFileModeHooks(t *testing.T) {
+	h := newHarness(t)
+	h.addTask("One")
+	if err := (&autoSaveCmd{globals: h.globals}).Run(); err != nil {
+		t.Fatalf("auto-save: %v", err)
+	}
+	if err := (&autoDeleteCmd{globals: h.globals}).Run(); err != nil {
+		t.Fatalf("auto-delete: %v", err)
+	}
+	if !hookOn(t, h, autoSaveBlock) || !hookOn(t, h, autoDeleteBlock) {
+		t.Fatal("precondition: both hooks should be installed")
+	}
+
+	if err := (&convertCmd{globals: h.globals, File: h.globals.TasksFile, ToGit: true}).Run(); err != nil {
+		t.Fatalf("convert --to-git: %v", err)
+	}
+
+	if hookOn(t, h, autoSaveBlock) {
+		t.Error("convert --to-git left the auto-save hook installed")
+	}
+	if hookOn(t, h, autoDeleteBlock) {
+		t.Error("convert --to-git left the auto-delete hook installed")
+	}
+}
+
+// A migration must not disturb hooks it did not install. The pre-commit file
+// is shared, so removing meads' blocks has to leave everyone else's alone.
+func TestConvert_FileToGit_KeepsForeignHookContent(t *testing.T) {
+	h := newHarness(t)
+	h.addTask("One")
+	if err := (&autoSaveCmd{globals: h.globals}).Run(); err != nil {
+		t.Fatalf("auto-save: %v", err)
+	}
+	path, err := preCommitPath(h.globals)
+	if err != nil {
+		t.Fatal(err)
+	}
+	existing, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const foreign = "# somebody else's hook\necho lint\n"
+	if err := os.WriteFile(path, append([]byte(foreign), existing...), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := (&convertCmd{globals: h.globals, File: h.globals.TasksFile, ToGit: true}).Run(); err != nil {
+		t.Fatalf("convert --to-git: %v", err)
+	}
+
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(after), "echo lint") {
+		t.Errorf("convert --to-git removed a foreign hook block:\n%s", after)
+	}
+	if strings.Contains(string(after), autoSaveBlock.marker) {
+		t.Errorf("convert --to-git left meads' own block behind:\n%s", after)
+	}
+}
+
+// No hooks installed is the common case and must stay silent - not an error,
+// and not a "removed" line for something that was never there.
+func TestConvert_FileToGit_NoHooksInstalledIsQuiet(t *testing.T) {
+	h := newHarness(t)
+	h.addTask("One")
+
+	out, err := captureStdout(t, (&convertCmd{globals: h.globals, File: h.globals.TasksFile, ToGit: true}).Run)
+	if err != nil {
+		t.Fatalf("convert --to-git: %v", err)
+	}
+	if strings.Contains(out, "removed") {
+		t.Errorf("convert --to-git reported removing a hook that was never installed:\n%s", out)
+	}
 }

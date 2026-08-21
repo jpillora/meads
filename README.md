@@ -170,7 +170,10 @@ md convert TASKS.md --from-git    # git mode → file; refuses if the file alrea
 Both directions preserve task ids exactly, including soft-deleted
 (tombstone) tasks — `--to-git` also recovers any id already pruned from the
 working file by `md auto-delete`, straight from git history, so nothing
-gets silently reassigned.
+gets silently reassigned. `--to-git` also uninstalls the `md auto-save` and
+`md auto-delete` hooks, which have no job left once there is no tasks file to
+stage or prune. (`--from-git` does not reinstall them: installing a hook
+changes how every future commit behaves, so it stays opt-in.)
 
 Run either `md init` or `md convert --to-git`, not both — `--to-git` needs no
 prior init, and adds the fetch refspec itself, so a migrated repo can share

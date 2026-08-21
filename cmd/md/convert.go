@@ -157,7 +157,43 @@ func (c *convertCmd) runToGit() error {
 	if !st.Skipped {
 		printFetchRefspec(st.FetchRefspec)
 	}
+	c.removeFileModeHooks()
 	return nil
+}
+
+// removeFileModeHooks uninstalls the auto-save and auto-delete pre-commit
+// blocks, which exist only to serve a working-tree tasks file.
+//
+// Both already no-op in git mode, so leaving them is harmless - but harmless
+// is not the same as wanted. They would go on spawning an `md` process per
+// commit to decide they have nothing to do, and stay in the hook as a standing
+// invitation to wonder what they are for. Migrating is the one moment the
+// answer is unambiguous, so this is where they go.
+//
+// Failures are reported, never returned: the migration has already succeeded,
+// and a hook that could not be tidied is not a reason to call it a failure.
+// The user can always run `md auto-save --disable` themselves.
+//
+// Deliberately not mirrored by --from-git. Removing a hook meads installed and
+// has just rendered inert is tidying; installing one is a side effect on how
+// every future commit behaves, and that stays opt-in via `md auto-save`.
+func (c *convertCmd) removeFileModeHooks() {
+	for _, h := range []struct {
+		name  string
+		block hookBlock
+	}{
+		{"auto-save", autoSaveBlock},
+		{"auto-delete", autoDeleteBlock},
+	} {
+		removed, err := h.block.remove(c.globals)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "meads: could not remove the %s hook: %v\n", h.name, err)
+			continue
+		}
+		if removed {
+			fmt.Printf("removed %s hook (file-mode only)\n", h.name)
+		}
+	}
 }
 
 // runFromGit migrates git mode (refs/meads/tasks/*) in the current repo -
