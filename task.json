@@ -1,0 +1,1 @@
+{"id":6,"title":"webui status-reason inline prompt","status":"open","priority":"P2","type":"feature","deleted":true,"description":"When advancing to blocked or closed via the card button, prompt for a reason and PATCH it alongside status.","meta":{"created":"2026-05-20T11:55:18Z"}}
