@@ -1,0 +1,1 @@
+{"id":22,"title":"Cut first VS Code extension release (v1)","status":"open","priority":"P2","type":"task","depends_on":[20,21],"description":"After the e2e test passes, push a v* tag — the release_vscode job in .github/workflows/ci.yml will package meads-vX.Y.Z.vsix and attach it to the GitHub release.","meta":{"created":"2026-05-21T07:29:29Z","updated":"2026-05-21T07:53:42Z"}}
