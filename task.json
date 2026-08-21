@@ -1,0 +1,1 @@
+{"id":5,"title":"webui dependency picker in editor","status":"open","priority":"P3","type":"feature","deleted":true,"description":"Replace the plain comma-separated ID field with an autocomplete of existing tasks, showing id + title.","meta":{"created":"2026-05-20T11:55:18Z"}}
