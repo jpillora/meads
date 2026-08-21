@@ -1,0 +1,1 @@
+{"id":2,"title":"webui render description as markdown","status":"open","priority":"P2","type":"feature","deleted":true,"description":"Currently shown as plain text via pre-wrap. Use a small dependency-free renderer (or marked via CDN) so bold/italic/links/code/lists render.","meta":{"created":"2026-05-20T11:55:18Z"}}
