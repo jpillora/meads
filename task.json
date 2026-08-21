@@ -1,0 +1,1 @@
+{"id":10,"title":"webui success toast on action","status":"open","priority":"P3","type":"task","deleted":true,"description":"Currently only errors toast. Show a transient success toast after add/update/delete to confirm the change landed.","meta":{"created":"2026-05-20T11:55:18Z"}}
