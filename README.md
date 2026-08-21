@@ -96,8 +96,8 @@ md set-status <id> <status>           Change status (draft|open|inprogress|close
 md del <id>                           Delete a task
 md add-dep <child> <parent>           Add a dependency
 md rm-dep <child> <parent>            Remove a dependency
-md init                               Initialize a new tasks file
-md init --git                         Initialize git mode (refs/meads/*) instead
+md init                               Initialize — git mode in a repo, TASKS.md outside one
+md init --md / --csv                  Force a tasks file instead of git mode
 md convert TASKS.md                   Convert between Markdown and CSV formats
 md convert TASKS.md --to-git          Migrate a tasks file into git mode
 md doctor                             Detect and fix duplicate task IDs (in git mode, also repairs incomplete setup)
@@ -146,8 +146,14 @@ already share one `.git`, and therefore one set of refs.
 **Enable it:**
 
 ```bash
-md init --git
+md init          # git mode, since this is a repo
+md init --md     # a TASKS.md instead
 ```
+
+Git mode is what `md init` creates inside a git repository — it is the better
+backend wherever it can run, and a repo is its only requirement. Outside one,
+`md init` falls back to a `TASKS.md`. `--md`/`--csv` force a file either way,
+and an existing tasks file is left alone rather than shadowed.
 
 Detection after that is automatic: any `md` command finds git mode active
 whenever `refs/meads/*` is non-empty, no flag required. Override either way
@@ -166,11 +172,11 @@ Both directions preserve task ids exactly, including soft-deleted
 working file by `md auto-delete`, straight from git history, so nothing
 gets silently reassigned.
 
-Run either `md init --git` or `md convert --to-git`, not both — `--to-git`
-needs no prior init, and adds the fetch refspec itself, so a migrated repo
-can share task refs like any other. (`md init --git` after a migration still
-refuses, since `refs/meads/` is no longer empty; there is nothing left for it
-to do.) A repo migrated by an older version, which skipped the refspec, is
+Run either `md init` or `md convert --to-git`, not both — `--to-git` needs no
+prior init, and adds the fetch refspec itself, so a migrated repo can share
+task refs like any other. (`md init` after a migration still refuses, since
+`refs/meads/` is no longer empty; there is nothing left for it to do.) A repo
+migrated by an older version, which skipped the refspec, is
 repaired by `md doctor`.
 
 **Sharing across clones:** `md init --git` adds a fetch refspec so `git

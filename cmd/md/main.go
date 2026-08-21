@@ -352,7 +352,7 @@ type root struct {
 	AddDep      addDepCmd      `opts:"mode=cmd,name=add-dep,group=Basic" help:"Add a dependency to a task"`
 	RmDep       rmDepCmd       `opts:"mode=cmd,name=rm-dep,group=Basic" help:"Remove a dependency from a task"`
 	Ready       readyCmd       `opts:"mode=cmd,group=Basic" help:"List open tasks not blocked by dependencies"`
-	Init        initCmd        `opts:"mode=cmd,group=Misc" help:"Initialize a new tasks file, or git mode with --git"`
+	Init        initCmd        `opts:"mode=cmd,group=Misc" help:"Initialize git mode in a repository, or a tasks file outside one (--md/--csv to force a file)"`
 	Convert     convertCmd     `opts:"mode=cmd,group=Misc" help:"Convert between TASKS.md/TASKS.csv formats, or migrate to/from git mode with --to-git/--from-git"`
 	Prime       primeCmd       `opts:"mode=cmd,group=Misc" help:"Print LLM context for using md (describes whichever mode is active)"`
 	Mcp         mcpCmd         `opts:"mode=cmd,group=Misc" help:"Start MCP server over stdio (file or git mode)"`
