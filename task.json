@@ -1,0 +1,1 @@
+{"id":32,"title":"Title extract change","status":"closed","priority":"P2","type":"idea","deleted":true,"description":"Title extract change\n\nThe title extraction is too harsh; lets change given a `md add` argument, we should only treat `. ` (dot space) OR `\\n` (newline) as a title separator","meta":{"created":"2026-06-08T03:27:10Z","updated":"2026-06-08T05:17:44Z"}}
