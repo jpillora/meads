@@ -1,0 +1,1 @@
+{"id":7,"title":"webui sort/group controls","status":"open","priority":"P3","type":"feature","deleted":true,"description":"Header dropdown to choose sort (priority|id|status|updated) and toggle grouping by status. Persist in localStorage.","meta":{"created":"2026-05-20T11:55:18Z"}}
