@@ -1,0 +1,1 @@
+{"id":55,"title":"Add rm-dep command to remove a task dependency","status":"closed","priority":"P2","type":"feature","deleted":true,"description":"Mirror add-dep in CLI, add remove_dependency MCP tool, update docs (README, prime, CLAUDE.md) and tests","meta":{"created":"2026-06-27T07:39:50Z","updated":"2026-06-27T07:42:10Z"}}
