@@ -1,0 +1,1 @@
+{"id":8,"title":"webui hide-closed toggle","status":"open","priority":"P3","type":"feature","deleted":true,"description":"Header chip/checkbox to hide closed tasks; persist in localStorage; default to hidden once we have a way to see them again.","meta":{"created":"2026-05-20T11:55:18Z"}}
