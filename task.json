@@ -1,0 +1,1 @@
+{"id":4,"title":"webui remove-dependency support","status":"open","priority":"P2","type":"feature","deleted":true,"description":"Add DELETE /api/tasks/{id}/deps/{parent_id} and a chip-x UI on each dependency. Title fix is the JS comment in submitEditor flagging this as out of v1 scope.","meta":{"created":"2026-05-20T11:55:18Z"}}
