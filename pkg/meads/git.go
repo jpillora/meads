@@ -197,15 +197,17 @@ func withContextErr(ctx context.Context, err error) error {
 }
 
 // successfulWaitDelay identifies exec's unusual "the command succeeded, but
-// one of its descendants kept an output pipe open" result. Git transport
-// helpers can outlive the git process briefly (SSH control processes are the
-// common case), so Cmd.Wait returns exec.ErrWaitDelay even though git itself
-// exited zero and the push completed. Treating that as a failed sync caused a
-// healthy push to be reported as `exec: WaitDelay expired before I/O
+// one of its descendants kept an output pipe open" result for RunContext. Git
+// transport helpers can outlive the git process briefly (SSH control processes
+// are the common case), so Cmd.Wait returns exec.ErrWaitDelay even though git
+// itself exited zero and the push completed. Treating that as a failed sync
+// caused a healthy push to be reported as `exec: WaitDelay expired before I/O
 // complete`.
 //
 // It is success only while the caller's context is still live. If the context
-// expired, WaitDelay is part of the timeout path and must remain an error.
+// expired, WaitDelay is part of the timeout path and must remain an error. It
+// must not be used by output-bearing calls: ErrWaitDelay means their returned
+// output may be truncated.
 func successfulWaitDelay(ctx context.Context, err error) bool {
 	return errors.Is(err, exec.ErrWaitDelay) && (ctx == nil || ctx.Err() == nil)
 }
@@ -229,9 +231,6 @@ func (g *ExecGit) Output(args ...string) (string, error) { return g.OutputContex
 func (g *ExecGit) OutputContext(ctx context.Context, args ...string) (string, error) {
 	out, err := g.command(ctx, args...).Output()
 	if err != nil {
-		if successfulWaitDelay(ctx, err) {
-			return strings.TrimSpace(string(out)), nil
-		}
 		return "", withContextErr(ctx, err)
 	}
 	return strings.TrimSpace(string(out)), nil
@@ -245,9 +244,6 @@ func (g *ExecGit) OutputContext(ctx context.Context, args ...string) (string, er
 func (g *ExecGit) CombinedOutputContext(ctx context.Context, args ...string) (string, error) {
 	out, err := g.command(ctx, args...).CombinedOutput()
 	if err != nil {
-		if successfulWaitDelay(ctx, err) {
-			return string(out), nil
-		}
 		return string(out), withContextErr(ctx, err)
 	}
 	return string(out), nil

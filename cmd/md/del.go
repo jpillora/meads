@@ -23,7 +23,17 @@ func (c *delCmd) Run() error {
 	if err != nil {
 		return err
 	}
-	tasks, err := ts.Get([]int{id})
+	var tasks []meads.Task
+	if c.Force {
+		// A force-delete must also be able to erase an existing tombstone.
+		// Ordinary Get deliberately filters those out, while HardDelete and
+		// GetWithHistory retain access to them.
+		tasks, err = ts.GetWithHistory([]int{id})
+	} else {
+		// Keep repeat soft-deletes as errors: only --force may reach a
+		// tombstoned task.
+		tasks, err = ts.Get([]int{id})
+	}
 	if err != nil {
 		return err
 	}

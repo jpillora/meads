@@ -149,6 +149,41 @@ func TestIntegration_GitMode_FullCommandWiring(t *testing.T) {
 	}
 }
 
+// A force-delete is the irreversible follow-up to an ordinary soft delete, so
+// its command path must read tombstones even though an ordinary repeated
+// delete continues to reject them.
+func TestDelForceErasesSoftDeletedTask_GitMode(t *testing.T) {
+	h := gitModeHarness(t)
+	g := h.globals
+	gs := meads.NewGitStore(g.git())
+
+	if err := (&addCmd{globals: g, Args: []string{"purge me"}}).Run(); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	tasks, err := gs.Get(nil)
+	if err != nil || len(tasks) != 1 {
+		t.Fatalf("Get after add = %v, err=%v; want one task", tasks, err)
+	}
+	id := tasks[0].ID
+	idArg := strconv.Itoa(id)
+
+	if err := (&delCmd{globals: g, ID: idArg}).Run(); err != nil {
+		t.Fatalf("soft delete: %v", err)
+	}
+	if err := (&delCmd{globals: g, ID: idArg}).Run(); err == nil {
+		t.Fatal("repeated soft delete should still reject a tombstoned task")
+	}
+	if err := (&delCmd{globals: g, ID: idArg, Force: true}).Run(); err != nil {
+		t.Fatalf("force delete of tombstoned task: %v", err)
+	}
+	if _, err := gs.GetWithHistory([]int{id}); err == nil {
+		t.Fatalf("GetWithHistory(%d) after force delete succeeded; want task erased", id)
+	}
+	if err := (&getCmd{globals: g, IDs: []string{idArg}}).Run(); err == nil {
+		t.Fatal("md get after force delete succeeded; want task not found")
+	}
+}
+
 func readyContains(tasks []meads.Task, id int) bool {
 	for _, t := range tasks {
 		if t.ID == id {

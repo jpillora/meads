@@ -22,6 +22,25 @@ func TestSuccessfulWaitDelay(t *testing.T) {
 	}
 }
 
+// Git shell aliases let the git process exit zero while a descendant keeps its
+// output pipe open. RunContext has no meaningful stdout to lose and may accept
+// that result, but output-bearing calls must preserve ErrWaitDelay because the
+// bytes returned before os/exec closes the pipe may be truncated.
+func TestExecGitWaitDelayHandling(t *testing.T) {
+	g := gitRepo(t)
+	args := []string{"-c", "alias.meads-wait-delay=!sleep 2 &", "meads-wait-delay"}
+
+	if err := g.RunContext(context.Background(), args...); err != nil {
+		t.Fatalf("RunContext should accept a successful command's WaitDelay: %v", err)
+	}
+	if _, err := g.OutputContext(context.Background(), args...); !errors.Is(err, exec.ErrWaitDelay) {
+		t.Fatalf("OutputContext error = %v, want exec.ErrWaitDelay", err)
+	}
+	if _, err := g.CombinedOutputContext(context.Background(), args...); !errors.Is(err, exec.ErrWaitDelay) {
+		t.Fatalf("CombinedOutputContext error = %v, want exec.ErrWaitDelay", err)
+	}
+}
+
 // gitRepo initialises an empty repo in a temp dir and returns an ExecGit for it.
 func gitRepo(t *testing.T) *ExecGit {
 	t.Helper()
