@@ -93,7 +93,9 @@ md update <id> --priority=P1          Update task fields
 md update <id> --add-tags=api         Add tags (--rm-tags removes, --tags replaces)
 md update <id> --description-file=-   Read a description from stdin/HEREDOC
 md set-status <id> <status>           Change status (draft|open|inprogress|closed)
-md del <id>                           Delete a task
+md del <id>                           Delete a task (soft — restorable, id stays spent)
+md del <id> --force                   Erase it instead — unrecoverable, frees the id for reuse
+md restore <id> / --all               Undo a soft delete
 md add-dep <child> <parent>           Add a dependency
 md rm-dep <child> <parent>            Remove a dependency
 md init                               Initialize — git mode in a repo, TASKS.md outside one

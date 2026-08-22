@@ -2,6 +2,7 @@ package meads
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -141,6 +142,147 @@ func (s *Store) Delete(id int) error {
 				f.Tasks[i].SetDependsOn(clean)
 			}
 		}
+	}
+	pruneTombstones(&f, s.fmt.HasPreamble())
+	now := time.Now().UTC().Format(time.RFC3339)
+	if s.fmt.HasPreamble() {
+		ensureProjectMeta(&f, now)
+		f.Meta["updated"] = now
+	}
+	if err := s.releaseLock(s.fmt.Format(f)); err != nil {
+		return fmt.Errorf("writing %s: %w", s.file, err)
+	}
+	return nil
+}
+
+// HardDelete removes a task from the file outright and gives up the
+// protection that keeps its id from being reused.
+//
+// In file mode an ordinary Delete already drops the row - pruneTombstones
+// (tombstone.go) does it on the same write - so the only thing separating a
+// deleted id from a reusable one is the "max-id" high-water mark in project
+// meta. This clears that mark when it is the id being removed, which is
+// precisely what makes the id available again: nextID takes the greater of
+// the highest surviving task and max-id, so with the mark gone the next
+// `md add` can hand this number to a different task. See GitStore.HardDelete
+// for why that is worth a warning at the CLI.
+//
+// Everything else matches Delete, including the dangling-dep cleanup.
+func (s *Store) HardDelete(id int) error {
+	_, content, err := s.acquireLock()
+	if err != nil {
+		return err
+	}
+	f := s.fmt.Parse(content)
+	kept := make([]Task, 0, len(f.Tasks))
+	found := false
+	for _, t := range f.Tasks {
+		if t.ID == id {
+			found = true
+			continue
+		}
+		kept = append(kept, t)
+	}
+	if !found {
+		s.releaseLock(content)
+		return fmt.Errorf("task %d not found", id)
+	}
+	f.Tasks = kept
+	for i := range f.Tasks {
+		if len(f.Tasks[i].DependsOn) == 0 {
+			continue
+		}
+		var clean []int
+		for _, dep := range f.Tasks[i].DependsOn {
+			if dep != id {
+				clean = append(clean, dep)
+			}
+		}
+		if len(clean) != len(f.Tasks[i].DependsOn) {
+			f.Tasks[i].SetDependsOn(clean)
+		}
+	}
+	// Re-pitch the high-water mark to release exactly this id and nothing
+	// else. Ids are handed out sequentially from 1, so erasing id leaves
+	// 1..id-1 all still spent - that, not zero, is the floor. Dropping the
+	// mark outright instead would release far more than asked: file mode
+	// keeps ONE mark and pruneTombstones discards it as soon as an active
+	// task outgrows it, so with no mark the next id falls back to
+	// "highest surviving task + 1" and lands on some earlier soft-deleted
+	// id whose own tombstone was pruned long ago.
+	//
+	// A mark that names a DIFFERENT id belongs to another deleted task and
+	// must survive untouched - a middling id is not reusable in the first
+	// place, since the next id never dips below the highest.
+	mark := 0
+	if v, ok := f.Meta["max-id"]; ok {
+		if n, err := strconv.Atoi(v); err == nil && n != id {
+			mark = n
+		}
+	}
+	if id-1 > mark {
+		mark = id - 1
+	}
+	delete(f.Meta, "max-id")
+	if mark > 0 {
+		if f.Meta == nil {
+			f.Meta = make(map[string]string)
+		}
+		f.Meta["max-id"] = strconv.Itoa(mark)
+	}
+	// pruneTombstones normalises from here: it keeps the mark only while it
+	// exceeds the highest surviving task, and clears it otherwise.
+	pruneTombstones(&f, s.fmt.HasPreamble())
+	now := time.Now().UTC().Format(time.RFC3339)
+	if s.fmt.HasPreamble() {
+		ensureProjectMeta(&f, now)
+		f.Meta["updated"] = now
+	}
+	if err := s.releaseLock(s.fmt.Format(f)); err != nil {
+		return fmt.Errorf("writing %s: %w", s.file, err)
+	}
+	return nil
+}
+
+// Restore clears a tombstone's Deleted flag, returning it to the active set.
+//
+// It can only reach a tombstone the file still carries, and pruneTombstones
+// (tombstone.go) drops almost all of them on the very write that creates
+// them: markdown formats keep none at all - only a "max-id" high-water mark
+// in project meta, so ids are never reused - and CSV keeps at most the single
+// highest deleted row. So in file mode this succeeds only for that retained
+// row, and reports the id as unrestorable otherwise rather than pretending
+// the record is recoverable from a file it was pruned out of.
+//
+// Git mode is the backend where this is generally useful: it never prunes,
+// so every tombstone keeps its full record forever (see GitStore.Restore).
+// Recovering a pruned file-mode task means reading it back out of the tasks
+// file's git history - what GetWithHistory does - and adding it afresh.
+func (s *Store) Restore(id int) error {
+	_, content, err := s.acquireLock()
+	if err != nil {
+		return err
+	}
+	f := s.fmt.Parse(content)
+	found := false
+	for i := range f.Tasks {
+		if f.Tasks[i].ID == id {
+			if !f.Tasks[i].Deleted {
+				s.releaseLock(content)
+				return nil // already active: idempotent, write nothing
+			}
+			f.Tasks[i].Deleted = false
+			found = true
+			break
+		}
+	}
+	if !found {
+		s.releaseLock(content)
+		return fmt.Errorf("task %d not restorable: file mode prunes tombstones, so its record is only in this file's git history", id)
+	}
+	if err := validateDeps(&f); err != nil {
+		s.releaseLock(content)
+		return err
 	}
 	pruneTombstones(&f, s.fmt.HasPreamble())
 	now := time.Now().UTC().Format(time.RFC3339)

@@ -483,6 +483,133 @@ func (g *GitStore) SoftDelete(id int) (Task, error) {
 	return Task{}, fmt.Errorf("soft delete task %d: exhausted %d attempts: %w", id, maxCASRetries, lastErr)
 }
 
+// HardDelete removes a task's ref outright - the whole commit chain, every
+// version of it - and, in the same atomic transaction, strips the id from
+// every other active task's DependsOn exactly as SoftDelete does.
+//
+// This destroys the one property the storage model otherwise guarantees:
+// that an id, once used, is never reused. NextID is the maximum EXISTING
+// task ref plus one, so hard-deleting the highest id lowers NextID and the
+// next Create hands that number straight back out to a different task. Any
+// reference held elsewhere - a commit message, a branch name, a link in
+// another task's description, an agent's memory - then silently points at
+// the wrong task rather than at a tombstone that reads back deleted. Nothing
+// here detects or prevents that; the caller is expected to have said so out
+// loud (cmd/md's `md del --force` prints the warning and names the id it is
+// about to make reusable).
+//
+// It is also unrecoverable through meads. Deleting the ref makes its commits
+// unreachable, so `md get`, `md list --history` and Restore all lose it
+// together; only git's own reflog/fsck can find the objects, and only until
+// they are gc'd. SoftDelete is what "delete" should almost always mean.
+//
+// The dependent cleanup is not optional here the way it might look. A ref
+// that no longer exists is not merely deleted-and-skippable: validateDeps
+// (tombstone.go) fails any task pointing at an id that is absent from the
+// task set, so leaving the edges behind would make every dependent
+// unwritable through Add/Update until someone hand-repaired it.
+func (g *GitStore) HardDelete(id int) (Task, error) {
+	var lastErr error
+	for attempt := 0; attempt < maxCASRetries; attempt++ {
+		tasks, oids, err := g.loadAllWithOIDs(TasksRefPrefix)
+		if err != nil {
+			return Task{}, err
+		}
+		target, ok := tasks[id]
+		if !ok {
+			return Task{}, fmt.Errorf("task %d not found", id)
+		}
+
+		// Same "clean dangling deps" pass as SoftDelete, with one difference:
+		// already-deleted dependents are cleaned too. SoftDelete can skip
+		// them because a tombstone's DependsOn is inert history pointing at
+		// another tombstone that still exists; here the target ref is about
+		// to stop existing, so a tombstone left pointing at it would hand
+		// Restore a task whose dependency cannot be restored at all.
+		updates := make([]RefUpdate, 0, 8)
+		next := map[int]Task{}
+		for depID, t := range tasks {
+			if depID == id || len(t.DependsOn) == 0 {
+				continue
+			}
+			var clean []int
+			for _, dep := range t.DependsOn {
+				if dep != id {
+					clean = append(clean, dep)
+				}
+			}
+			if len(clean) == len(t.DependsOn) {
+				continue // id wasn't among its deps
+			}
+			t.SetDependsOn(clean)
+			next[depID] = t
+		}
+		changedIDs := make([]int, 0, len(next))
+		for cid := range next {
+			changedIDs = append(changedIDs, cid)
+		}
+		sort.Ints(changedIDs) // deterministic batch order
+		for _, cid := range changedIDs {
+			commit, err := g.buildTaskVersion(cid, next[cid], oids[cid], fmt.Sprintf("remove dependency on permanently deleted task %d", id))
+			if err != nil {
+				return Task{}, err
+			}
+			updates = append(updates, RefUpdate{Name: g.TaskRef(cid), Next: commit, Prev: oids[cid]})
+		}
+		// ZeroOID as Next is AtomicUpdate's delete form, so the ref removal
+		// and the dependent rewrites land as one transaction or not at all.
+		updates = append(updates, RefUpdate{Name: g.TaskRef(id), Next: ZeroOID, Prev: oids[id]})
+
+		if err := g.refs.AtomicUpdate(updates); err != nil {
+			if !errors.Is(err, ErrCASConflict) {
+				return Task{}, err
+			}
+			lastErr = err // lost the race: loop and re-read
+			continue
+		}
+		return target, nil
+	}
+	return Task{}, fmt.Errorf("hard delete task %d: exhausted %d attempts: %w", id, maxCASRetries, lastErr)
+}
+
+// Restore clears a task's Deleted flag, bringing a tombstone back into the
+// active set. It is the inverse of SoftDelete's FIRST half only, and
+// deliberately not of its second.
+//
+// SoftDelete strips id from every dependent's DependsOn, and each of those
+// edits lands as an ordinary commit on that dependent's own ref. Restore
+// cannot undo them: it has no way to tell an edge SoftDelete removed from
+// one the user dropped on purpose afterwards, and re-adding the wrong set
+// would silently re-block tasks. What the tombstone does still hold is the
+// restored task's OWN DependsOn, written back untouched.
+//
+// So a restored task can come back depending on an id that is itself still
+// deleted, and readyTasks (query.go) only treats a "closed" dependency as
+// satisfying - "deleted" never unblocks - leaving it permanently un-ready.
+// That is why this returns the restored task rather than just an error:
+// callers report those still-deleted dependencies (see cmd/md/restore.go).
+// Restoring a whole tombstone set at once resolves them by construction.
+//
+// Unlike Create and Update this runs no validateTaskDeps. A tombstone's
+// DependsOn is a historical record, not a new edit, and refusing to restore
+// a task because a dependency is still deleted would make a set restorable
+// only in dependency order - or, for a cycle among tombstones, not at all.
+// The set-level check belongs to the caller, which can see the whole batch.
+//
+// Restoring a task that is not deleted is idempotent success and writes
+// nothing at all, not even a no-op commit - matching SoftDelete's own
+// behaviour on a repeat delete.
+func (g *GitStore) Restore(id int) (Task, error) {
+	return g.casUpdate(id, "restore", func(current Task) (Task, bool, error) {
+		if !current.Deleted {
+			return current, false, nil
+		}
+		next := current
+		next.Deleted = false
+		return next, true, nil
+	})
+}
+
 // Claim atomically transitions task id to inprogress, recording agentID and
 // filesInScope. The precondition - status must be "open" and the task not
 // deleted - is re-checked against a fresh read on every retry attempt, so a

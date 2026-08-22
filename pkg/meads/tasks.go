@@ -107,6 +107,19 @@ type Tasks interface {
 	Update(id int, fn func(*Task)) error
 	// Delete soft-deletes task id.
 	Delete(id int) error
+	// Restore clears task id's deleted flag, returning it to the active
+	// set. Restoring an already-active task is idempotent success. The two
+	// backends differ in reach, not in meaning: git mode keeps every
+	// tombstone forever and can restore any of them, while file mode prunes
+	// tombstones on write and so can only reach one it still carries - see
+	// GitStore.Restore and Store.Restore.
+	Restore(id int) error
+	// HardDelete erases task id instead of tombstoning it, giving up the
+	// guarantee that its id is never reused - a later Add can hand the same
+	// number to a different task. It is unrecoverable: unlike Delete, no
+	// Restore, GetWithHistory or GetHistory can reach the task afterwards.
+	// See GitStore.HardDelete and Store.HardDelete.
+	HardDelete(id int) error
 
 	// Sync synchronises with origin: git PULLS first (fetch + integrate,
 	// re-homing contended local tasks at fresh ids - see GitStore.Pull and
@@ -226,6 +239,10 @@ func (t FileTasks) Update(id int, fn func(*Task)) error { return t.store.Update(
 
 func (t FileTasks) Delete(id int) error { return t.store.Delete(id) }
 
+func (t FileTasks) Restore(id int) error { return t.store.Restore(id) }
+
+func (t FileTasks) HardDelete(id int) error { return t.store.HardDelete(id) }
+
 // Sync is a no-op: a file backend has nothing to publish. The report is
 // still non-nil and empty, so a caller can inspect it unconditionally
 // without caring which backend it holds.
@@ -337,6 +354,16 @@ func (t GitTasks) Update(id int, fn func(*Task)) error {
 
 func (t GitTasks) Delete(id int) error {
 	_, err := t.gs.SoftDelete(id)
+	return err
+}
+
+func (t GitTasks) Restore(id int) error {
+	_, err := t.gs.Restore(id)
+	return err
+}
+
+func (t GitTasks) HardDelete(id int) error {
+	_, err := t.gs.HardDelete(id)
 	return err
 }
 

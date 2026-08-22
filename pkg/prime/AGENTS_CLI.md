@@ -52,7 +52,9 @@
 - `md update <id> --tags=api,web-ui` - Replace all tags (`--tags=` clears them)
 - `md update <id> --add-tags=docs` / `md update <id> --rm-tags=api` - Add or remove tags, keeping the rest
 - `md set-status <id> <status>` - Shorthand for status changes
-- `md del <id>` - Delete a task
+- `md del <id>` - Delete a task. The row is dropped, but a "max-id" mark in the file's project meta keeps its id from being reused
+- `md del <id> --force` - Also release that id for reuse. Irreversible, and the next `md add` can hand the number to a different task
+- `md restore <id>` - Undo a delete. File mode prunes tombstone rows on write, so this only reaches one the file still carries; anything else has to be recovered from the tasks file's git history
 
 ### Dependencies
 - `md add-dep <child> <parent>` - Make child depend on parent

@@ -347,6 +347,7 @@ type root struct {
 	Get         getCmd         `opts:"mode=cmd,group=Basic" help:"Get tasks by ID"`
 	List        listCmd        `opts:"mode=cmd,group=Basic" help:"List all tasks"`
 	Del         delCmd         `opts:"mode=cmd,group=Basic" help:"Delete a task by ID"`
+	Restore     restoreCmd     `opts:"mode=cmd,group=Basic" help:"Restore deleted tasks by ID, or --all"`
 	Update      updateCmd      `opts:"mode=cmd,group=Basic" help:"Update a task by ID"`
 	SetStatus   setStatusCmd   `opts:"mode=cmd,name=set-status,group=Basic" help:"Set a task's status"`
 	AddDep      addDepCmd      `opts:"mode=cmd,name=add-dep,group=Basic" help:"Add a dependency to a task"`
@@ -376,6 +377,7 @@ func main() {
 	c.Get.globals = g
 	c.List.globals = g
 	c.Del.globals = g
+	c.Restore.globals = g
 	c.Update.globals = g
 	c.SetStatus.globals = g
 	c.AddDep.globals = g
