@@ -63,6 +63,9 @@ func readyTasks(active []Task) []Task {
 		if pj == "" {
 			pj = "P2"
 		}
+		if pi == pj {
+			return ready[i].ID < ready[j].ID
+		}
 		return pi < pj
 	})
 	return ready

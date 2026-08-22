@@ -87,6 +87,7 @@ md add --description-file=-           Read a description from stdin/HEREDOC
 md create "title"                     Alias for add
 md get <id>                           View a task (recovers deleted tasks from git history)
 md list                               List all tasks
+md list --limit=50 --offset=100       Page tasks after filtering (also on ready)
 md list --tag=api                     Filter by tag (also on ready; --tag=a,b requires both)
 md ready                              Show unblocked open tasks (by priority)
 md update <id> --priority=P1          Update task fields
@@ -221,6 +222,7 @@ md add "bug: Fix login P1. Session cookie expires prematurely"
 
 ```bash
 md ready
+md ready --limit=25 --offset=50
 ```
 
 **Tag work, then filter by tag:**

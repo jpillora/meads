@@ -12,6 +12,8 @@ type listCmd struct {
 	JSON     bool   `help:"Output tasks as JSON"`
 	Md       bool   `opts:"name=md" help:"Output tasks as markdown"`
 	History  bool   `opts:"short=-" help:"List all tasks from git history (including deleted)"`
+	Limit    int    `opts:"short=n" help:"Limit number of results (0 means no limit)"`
+	Offset   int    `help:"Skip this many results before applying the limit"`
 	Status   string `help:"Filter by status (e.g. open, closed, inprogress, blocked)"`
 	Priority string `help:"Filter by priority (e.g. P0, P1, P2)"`
 	Type     string `help:"Filter by type (e.g. task, bug, feature, idea)"`
@@ -34,6 +36,10 @@ func (c *listCmd) Run() error {
 	}
 	warnCycles(c.globals)
 	tasks = c.filterTasks(tasks)
+	tasks, err = paginateTasks(tasks, c.Limit, c.Offset)
+	if err != nil {
+		return err
+	}
 	if len(tasks) == 0 && !c.JSON && !c.Md {
 		fmt.Fprintln(os.Stderr, "no tasks found (run 'md add' to create one)")
 		return nil
@@ -79,6 +85,23 @@ func (c *listCmd) filterTasks(tasks []meads.Task) []meads.Task {
 		filtered = append(filtered, t)
 	}
 	return filtered
+}
+
+func paginateTasks(tasks []meads.Task, limit, offset int) ([]meads.Task, error) {
+	if limit < 0 {
+		return nil, fmt.Errorf("--limit must be non-negative")
+	}
+	if offset < 0 {
+		return nil, fmt.Errorf("--offset must be non-negative")
+	}
+	if offset >= len(tasks) {
+		return tasks[len(tasks):], nil
+	}
+	tasks = tasks[offset:]
+	if limit > 0 && limit < len(tasks) {
+		tasks = tasks[:limit]
+	}
+	return tasks, nil
 }
 
 // filterByTag returns only the tasks carrying every tag in the

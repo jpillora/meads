@@ -10,6 +10,7 @@
 - `md ready` - Show open tasks not blocked by dependencies (sorted by priority)
 - `md list` - List all tasks
 - `md list --json` - List all tasks as JSON
+- `md list --limit=50 --offset=100` - Page filtered results (also supported by `md ready`)
 - `md list --tag=api` - List tasks carrying a tag (comma-separated requires all of them, e.g. `--tag=api,backend`)
 - `md ready --tag=api` - Same filter over ready work
 - `md list --history` - List all tasks from git history (including deleted)
