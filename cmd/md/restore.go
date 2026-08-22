@@ -125,7 +125,7 @@ func (c *restoreCmd) Run() error {
 		task.Deleted = false
 		postWebhook(c.globals, "restore", task)
 	}
-	autoPush(c.globals)
+	scheduleSync(c.globals)
 
 	fmt.Printf("restored %d task(s)\n", len(restored))
 	reportRestored(restored, deleted, danglingDeps, c.JSON)

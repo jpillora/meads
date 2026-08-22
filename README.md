@@ -189,18 +189,45 @@ repaired by `md doctor`.
 **Sharing across clones:** `md init --git` adds a fetch refspec so `git
 fetch`/`git clone` also download `refs/meads/*` — into a separate
 `refs/meads-remote/*` namespace, never overwriting your own unsynced work.
-meads also pushes `refs/meads/*` to `origin` automatically whenever a
-remote is configured, so you don't need to `git push` for task changes to
-reach it. The push runs at most once per `pushInterval` (default `1m`), so
-roughly one command per interval waits for it; it is bounded by a timeout
-and never fails your command if the remote is unreachable.
+When a CLI write succeeds, meads queues a best-effort background `md sync`
+instead of making that command wait for the network. A detached worker
+debounces writes for `pushInterval` (default `1m`); another write updates a
+durable per-repository generation and sends `SIGUSR2`, resetting the timer.
+If a write arrives while sync is running, the newer generation remains queued
+and the worker starts another timer after the current attempt. One global
+worker can service multiple repositories because its request directory is
+keyed by each Git common directory.
+
+The launcher is double-forked and starts a new session. The CLI waits for and
+reaps the intermediate helper; the worker is adopted by PID 1, or by the
+nearest configured child subreaper in container/supervisor environments, and
+is reaped there when it exits.
+
+Background delivery is intentionally not a guarantee: local ref mutations are
+the authoritative success, even when the network or worker launch fails. Run
+`md sync` when a script or human needs confirmation; it synchronizes now,
+reports pull/re-home details, and exits non-zero on failure. Library consumers
+likewise call `Tasks.Sync(ctx)` explicitly—library mutations never start a
+process or touch the network on their own.
+
+The worker PID defaults to `~/.local/run/meads-sync.pid`; its durable requests
+live under the adjacent `.pid.d` directory and its output defaults to
+`~/.local/run/meads-sync.log`. These environment variables customize it:
+
+- `MEADS_SYNC_PID` — PID file (and therefore request/lock namespace)
+- `MEADS_SYNC_DELAY` — debounce delay, overriding `pushInterval`
+- `MEADS_SYNC_TIMEOUT` — per-attempt deadline; background default `10s`, while
+  foreground `md sync` has no deadline unless this is set (`0` disables it)
+- `MEADS_SYNC_LOG` — detached worker log path
+- `MEADS_SYNC_DISABLE` — set to `1`, `true`, `yes`, or `on` to disable CLI
+  background scheduling (foreground `md sync` still works)
 
 Use the global `--verbose` flag (`-V`) before a command to see each task,
 webhook, and Git action with its elapsed time. Diagnostics go to stderr, so
-structured stdout stays safe to pipe or parse. For example,
-`md --verbose update 42 --priority=P1` shows the local update and, when a
-sync is due, separate `git fetch` and `git push` timings. Lowercase `-v`
-remains the version flag.
+structured stdout stays safe to pipe or parse. A verbose write shows the local
+mutation and background queue timing; `md --verbose sync` shows the guaranteed
+foreground sync with separate `git fetch` and `git push` timings. Detached
+sync timings go to the worker log. Lowercase `-v` remains the version flag.
 
 Run `md doctor` after fetching: it renumbers a duplicate id left behind when
 two clones each created a task offline at the same id, and reports (but does

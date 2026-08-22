@@ -255,7 +255,7 @@ const (
 // refs/meads/* until origin's are adopted - see pkg/meads/clone.go) while
 // mode() kept the bare local ref probe, so the commands that dispatch on
 // mode() alone - doctor, beads-import, prime, auto-save/auto-delete, and
-// auto-push - all read a git-mode clone as file mode. For doctor and
+// background sync - all read a git-mode clone as file mode. For doctor and
 // beads-import that was destructive rather than merely wrong: their file
 // path creates TASKS.md, and an existing tasks file short-circuits the
 // clone resolution forever after, permanently pinning a git-mode clone to a
@@ -315,7 +315,7 @@ func (g *globals) modeConflictErr() error {
 // refs fetched) instead of silently falling back to file mode - see
 // pkg/meads/clone.go. This is also the resolution mode() reports, so the
 // commands that only dispatch on mode() (doctor, beads-import, prime,
-// auto-save/auto-delete, auto-push) can never disagree with the store the
+// auto-save/auto-delete, background sync) can never disagree with the store the
 // commands that read and write tasks actually use - see mode().
 //
 // Construction can fail where mode() alone cannot: forcing git mode (--git
@@ -346,6 +346,14 @@ func (g *globals) tasks() (tasks meads.Tasks, err error) {
 	if err != nil {
 		return nil, err
 	}
+	// OpenTasksGit uses g.git for detection/clone resolution but deliberately
+	// constructs its returned store with a fresh ExecGit. Rebind a detected
+	// git backend to globals' store so --verbose continues through the fetch
+	// and push beneath Tasks.Sync (and so injected Git implementations remain
+	// in effect for the whole CLI command, not only detection).
+	if tasks.Backend() == meads.BackendGit {
+		tasks = meads.NewGitTasks(g.gitStore())
+	}
 	g.cacheTasks(tasks)
 	return g.TaskStoreCache, nil
 }
@@ -371,6 +379,7 @@ type root struct {
 	AddDep      addDepCmd      `opts:"mode=cmd,name=add-dep,group=Basic" help:"Add a dependency to a task"`
 	RmDep       rmDepCmd       `opts:"mode=cmd,name=rm-dep,group=Basic" help:"Remove a dependency from a task"`
 	Ready       readyCmd       `opts:"mode=cmd,group=Basic" help:"List open tasks not blocked by dependencies"`
+	Sync        syncCmd        `opts:"mode=cmd,group=Basic" help:"Synchronize refs/meads/* with origin now and report failure"`
 	Init        initCmd        `opts:"mode=cmd,group=Misc" help:"Initialize git mode in a repository, or a tasks file outside one (--md/--csv to force a file)"`
 	Convert     convertCmd     `opts:"mode=cmd,group=Misc" help:"Convert between TASKS.md/TASKS.csv formats, or migrate to/from git mode with --to-git/--from-git"`
 	Prime       primeCmd       `opts:"mode=cmd,group=Misc" help:"Print LLM context for using md (describes whichever mode is active)"`
@@ -402,6 +411,7 @@ func main() {
 	c.AddDep.globals = g
 	c.RmDep.globals = g
 	c.Ready.globals = g
+	c.Sync.globals = g
 	c.Init.globals = g
 	c.Convert.globals = g
 	c.Prime.globals = g

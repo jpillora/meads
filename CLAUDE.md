@@ -38,6 +38,7 @@ md prime --write CLAUDE.md
 
 ### Diagnostics
 - `md --verbose <command> ...` / `md -V <command> ...` - Show task, webhook, and Git actions with elapsed timings on stderr (global flag; place it before the command). When remote sync runs, fetch and push are timed separately. Lowercase `-v` remains the version flag
+- `md sync` - Synchronize `refs/meads/*` with `origin` now and exit non-zero on failure; use this explicit path when remote delivery must be confirmed
 
 ### Finding Work
 - `md ready` - Show open tasks not blocked by dependencies (sorted by priority)
@@ -120,7 +121,8 @@ md set-status <id> closed    # Mark task done
 ## Rules
 - **There is no task file** - do NOT look for or try to edit `TASKS.md`/`TASKS.csv`; it does not exist in git mode. Always use `md` commands to read and modify tasks, never raw `git` plumbing on `refs/meads/*`.
 - **Nothing to stage or commit yourself** - every `md add`/`update`/`set-status`/`add-dep`/`rm-dep`/`del` commits straight to that task's own ref the moment it runs. There is no "commit the tasks file" step.
-- If a remote (`origin`) is configured, meads pushes `refs/meads/*` there automatically — you do not need to `git push` for task changes to reach it. The push runs at most once per `pushInterval` (default 1m), so roughly one command per interval waits for it; it is bounded by a timeout and never fails your command if the remote is unreachable.
+- If `origin` is configured, a successful CLI write queues a best-effort detached `md sync`. Writes debounce for `pushInterval` (default 1m) and return without waiting for the network; a later write resets the timer, including while a sync is already running. Run `md sync` explicitly when you need a guaranteed attempt and trustworthy exit status.
+- The background worker uses `MEADS_SYNC_PID` (default `~/.local/run/meads-sync.pid`), `MEADS_SYNC_DELAY` (overrides `pushInterval`), `MEADS_SYNC_TIMEOUT` (background default 10s), and `MEADS_SYNC_LOG` (default beside the PID file). Set `MEADS_SYNC_DISABLE=1` to disable background scheduling without disabling explicit `md sync`.
 - `md del` never removes anything - it soft-deletes (the ref is kept forever), so a deleted id is never reused and `md get <id>` still resolves it. `md restore <id>` puts it back.
 - `md del --force` is the exception, and the only irreversible command here: it deletes the ref outright, so `md get`, `md list --history` and `md restore` all lose the task together. It also gives up the never-reused guarantee — ids come from the highest ref that still exists, so erasing the highest id hands that number to the next `md add`, and anything already referring to it (a commit message, a branch name, a link in another task) silently retargets. Prefer `md del`.
 - Concurrent writes are safe via compare-and-swap on each task's own ref.

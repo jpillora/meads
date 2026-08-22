@@ -8,7 +8,7 @@ import (
 )
 
 // IntegrateReport describes what Integrate did, as data, so callers can
-// report it (cmd/md's auto-push prints a one-line summary per kind) without
+// report it (cmd/md sync prints a one-line summary per kind) without
 // the integration itself printing anything.
 type IntegrateReport struct {
 	// Imported lists ids that existed only on remote-tracking and were

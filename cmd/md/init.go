@@ -133,6 +133,7 @@ func (c *initCmd) runGit() error {
 		fmt.Printf("initialized git mode (%s*)\n", meads.RefNamespace)
 	}
 	printFetchRefspec(res.FetchRefspec)
+	scheduleSync(c.globals)
 	return nil
 }
 

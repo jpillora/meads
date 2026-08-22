@@ -42,9 +42,17 @@ func runMD(t *testing.T, bin, dir string, env []string, args ...string) (string,
 	t.Helper()
 	cmd := exec.Command(bin, args...)
 	cmd.Dir = dir
-	if len(env) > 0 {
-		cmd.Env = append(os.Environ(), env...)
+	// Any git-mode write now starts a real detached sync worker. Keep every
+	// integration test isolated from the user's global PID and make workers
+	// retire quickly even when the test directory disappears immediately.
+	testEnv := []string{
+		"MEADS_SYNC_DISABLE=1",
+		"MEADS_SYNC_PID=" + filepath.Join(dir, ".meads-test-sync.pid"),
+		"MEADS_SYNC_DELAY=10ms",
+		"MEADS_SYNC_TIMEOUT=2s",
 	}
+	cmd.Env = append(os.Environ(), testEnv...)
+	cmd.Env = append(cmd.Env, env...)
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf

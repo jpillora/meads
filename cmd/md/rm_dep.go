@@ -35,7 +35,7 @@ func (c *rmDepCmd) Run() error {
 		return err
 	}
 	postWebhook(c.globals, "update", updated)
-	autoPush(c.globals)
+	scheduleSync(c.globals)
 	fmt.Printf("task %d no longer depends on %d\n", child, parent)
 	return nil
 }

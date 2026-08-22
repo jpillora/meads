@@ -9,12 +9,9 @@ import (
 	"time"
 )
 
-// PushStateDir is the subdirectory of the git COMMON dir (see ShouldPush's
-// doc comment) meads uses for its own local, per-clone, never-pushed push
-// state: the last-push timestamp this file governs (lastPushFile below),
-// and, in cmd/md, the most recent push attempt's captured output. Exported
-// so cmd/md's spawner (which writes the latter) and this file (which writes
-// the former) can never disagree about where that shared directory lives.
+// PushStateDir is the legacy per-clone cadence directory used by
+// ShouldPush/MarkPushed. New CLI versions debounce through their detached
+// request queue instead; the exported helpers remain for API compatibility.
 const PushStateDir = "meads"
 
 // lastPushFile is ShouldPush/MarkPushed's timestamp file, under
@@ -25,7 +22,7 @@ const lastPushFile = "last-push"
 // push attempt under commonDir (see MarkPushed) - or true if there is no
 // record at all, which covers both "never attempted" and "the record is
 // unreadable/corrupt". Both fail OPEN (a push is due) rather than
-// permanently wedging auto-push on a damaged local cache file: the very
+// permanently wedging a caller on a damaged local cache file: the very
 // next successful MarkPushed overwrites it with a fresh, valid value
 // regardless.
 //
@@ -54,16 +51,9 @@ func (g *GitStore) ShouldPush(commonDir string, interval time.Duration) (bool, e
 // its PushStateDir subdirectory if this is this clone's first-ever push
 // attempt.
 //
-// Call this at the moment a push is TRIGGERED, not once it SUCCEEDS:
-// marking first (rather than after the fact) means a burst of mutation
-// commands issued while one push is still in flight all see ShouldPush =
-// false, so they never pile up redundant concurrent pushes against the same
-// remote (see cmd/md's autoPush, the only caller). The trade-off is that a
-// failed push also waits a full interval before the next attempt, rather
-// than retrying on the very next command; given pushInterval defaults to a
-// minute (gitconfig.go) and failures are usually transient connectivity,
-// that trade favours never accumulating redundant concurrent pushes over
-// faster retries.
+// Call this at the moment a push is TRIGGERED, not once it SUCCEEDS. Marking
+// first means concurrent callers using ShouldPush do not pile up redundant
+// pushes; the trade-off is that a failed attempt also consumes the interval.
 func (g *GitStore) MarkPushed(commonDir string) error {
 	dir := filepath.Join(commonDir, PushStateDir)
 	if err := os.MkdirAll(dir, 0755); err != nil {

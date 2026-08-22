@@ -31,8 +31,10 @@ const defaultPushInterval = "1m"
 // for everyone else, with no error surfacing anywhere. It lives only in this
 // shared ref.
 type Config struct {
-	RemoteLocking bool   `json:"remote_locking,omitempty"`
-	PushInterval  string `json:"push_interval,omitempty"` // a Go duration string
+	RemoteLocking bool `json:"remote_locking,omitempty"`
+	// PushInterval is the CLI background-sync debounce delay. The JSON name is
+	// retained for compatibility with repositories created by older releases.
+	PushInterval string `json:"push_interval,omitempty"` // a Go duration string
 }
 
 // knownConfigKeys are the config.json object keys Config's fields own.

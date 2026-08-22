@@ -183,7 +183,7 @@ func (c *addCmd) Run() error {
 	}
 	t.ID = id
 	postWebhook(g, "add", t)
-	autoPush(g)
+	scheduleSync(g)
 	fmt.Printf("added task %d\n", id)
 	return nil
 }

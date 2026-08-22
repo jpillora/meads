@@ -426,7 +426,7 @@ func (g *fetchFailingGit) pushes() int {
 }
 
 // TestGitTasks_Sync_FailedPullStillPushes pins the policy Sync inherited
-// from cmd/md's auto-push when the two were merged (task 80): a fetch that
+// from cmd/md's sync path when the two were merged (task 80): a fetch that
 // fails must NOT cost this clone the chance to publish work it has already
 // committed. The fetch is the half most likely to fail for a reason the
 // push does not share, and a rejected push is now reported and reconciled

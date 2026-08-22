@@ -126,6 +126,10 @@ type Tasks interface {
 	// GitStore.Doctor), then pushes refs/meads/*; file backends have
 	// nothing to sync and no-op.
 	//
+	// Mutations never call Sync implicitly. Embedders decide when network I/O
+	// is appropriate and invoke it themselves; the md CLI layers its own
+	// best-effort detached scheduler on top.
+	//
 	// The report says what happened, and is never nil - including
 	// alongside a non-nil error, so a caller can still tell a divergence
 	// (SyncReport.Rejected: local refs intact, the next sync reconciles)
@@ -373,8 +377,7 @@ func (t GitTasks) HardDelete(id int) error {
 // the push that follows converges instead of rejecting non-fast-forward.
 // The push uses an explicit refspec at push time - never a configured
 // remote.origin.push, which would replace git's default matching/simple
-// push behaviour for ordinary branches too (see cmd/md/push.go's
-// pushRefspec, the CLI auto-push path this shares the refspec shape with).
+// push behaviour for ordinary branches too.
 //
 // ctx bounds both network halves for real - the fetch inside PullContext
 // and the push below are killed the moment it is done, so a caller passing

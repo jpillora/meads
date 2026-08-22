@@ -224,13 +224,13 @@ func fastTasksFileExists(dir string) bool {
 // invokable either way - see this file's top comment - only their HELP
 // VISIBILITY changes.
 //
-// Nothing is hidden in file mode or helpModeUnknown: there is currently no
-// git-mode-only command to hide there symmetrically (every command either
-// works the same in both modes, like list/get/add..., or is one of the
-// three hidden above) - see cmd/md/import.go's errGitModeUnsupported doc
-// comment, which confirms beads-import is the only command still gated at
-// all.
+// `sync` is hidden symmetrically in file mode because there are no task refs
+// or remote operation to perform there. Unknown mode still shows everything:
+// a new directory has not chosen a backend yet.
 func hiddenCommands(m helpMode) map[string]bool {
+	if m == helpModeFile {
+		return map[string]bool{"sync": true}
+	}
 	if m != helpModeGit {
 		return nil
 	}

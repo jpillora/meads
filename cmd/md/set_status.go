@@ -38,7 +38,7 @@ func (c *setStatusCmd) Run() error {
 		return err
 	}
 	postWebhook(c.globals, "update", updated)
-	autoPush(c.globals)
+	scheduleSync(c.globals)
 	fmt.Printf("task %d status set to %s\n", id, c.Status)
 	return nil
 }

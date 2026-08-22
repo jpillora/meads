@@ -13,7 +13,7 @@ import (
 // while disconnected; each built a commit chain from a common parent, and
 // the second one to push was rejected non-fast-forward (see cmd/md/push.go's
 // divergenceMessage, which classifies that rejection). Since task 86 the
-// repair is GitStore.Doctor's convergent renumbering, which the auto-pull
+// repair is GitStore.Doctor's convergent renumbering, which the sync pull
 // path runs on every sync (see GitStore.Integrate).
 //
 // MergeBase is the shared ancestor commit - useful for anyone who wants to
@@ -40,7 +40,7 @@ type Divergence struct {
 // The corresponding REPAIR lives in GitStore.Doctor (task 86): a diverged
 // task's local version is re-homed at a fresh id and the id itself takes
 // the fetched-remote version - no merge, no force-push, no data loss - so
-// after a successful Doctor (or an auto-pull's Integrate) Diverged reports
+// after a successful Doctor (or a sync pull's Integrate) Diverged reports
 // nothing. Diverged remains the read-only way to inspect a divergence
 // before choosing to repair it.
 func (g *GitStore) Diverged() ([]Divergence, error) {

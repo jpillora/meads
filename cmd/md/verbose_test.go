@@ -62,15 +62,28 @@ func TestVerboseGitShowsFetchAndPushTimings(t *testing.T) {
 	var diagnostics bytes.Buffer
 	h.globals.Verbose = true
 	h.globals.VerboseOutput = &diagnostics
+	if err := (&initCmd{globals: h.globals, Git: true}).Run(); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	// Exercise ordinary auto-detection, not only the forced --git branch: the
+	// detector uses an explicit Git implementation for its probes and must
+	// rebind the returned store to that same verbose wrapper.
+	h.globals.GitMode = false
+	h.globals.TaskStoreCache = nil
+	diagnostics.Reset()
 
 	if err := (&addCmd{globals: h.globals, Args: []string{"verbose sync"}}).Run(); err != nil {
 		t.Fatalf("add: %v", err)
+	}
+	if err := (&syncCmd{globals: h.globals}).Run(); err != nil {
+		t.Fatalf("sync: %v", err)
 	}
 
 	out := diagnostics.String()
 	for _, want := range []string{
 		"add task...",
-		"remote sync due:",
+		"queue background sync...",
+		"queue background sync done in ",
 		"sync task refs with origin...",
 		"git fetch origin...",
 		"git fetch origin done in ",

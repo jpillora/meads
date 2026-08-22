@@ -36,7 +36,7 @@ func (c *delCmd) Run() error {
 	deleted := tasks[0]
 	deleted.Deleted = true
 	postWebhook(c.globals, "delete", deleted)
-	autoPush(c.globals)
+	scheduleSync(c.globals)
 	fmt.Printf("deleted task %d\n", id)
 	return nil
 }
@@ -72,7 +72,7 @@ func (c *delCmd) runForce(id int, task meads.Task) error {
 		return err
 	}
 	postWebhook(c.globals, "delete", task)
-	autoPush(c.globals)
+	scheduleSync(c.globals)
 	fmt.Printf("erased task %d — unrecoverable, not a tombstone\n", id)
 	if id == highest {
 		fmt.Fprintf(os.Stderr, "warning: %d was the highest id, so the next 'md add' will reuse it for a different task\n", id)

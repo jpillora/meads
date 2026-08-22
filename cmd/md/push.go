@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,36 +13,10 @@ import (
 	"github.com/jpillora/meads/pkg/meads"
 )
 
-// pushTimeout bounds how long autoPush will wait for `git push` before
-// giving up and letting the command return anyway.
-//
-// autoPush pushes SYNCHRONOUSLY - JP's call: with pushInterval defaulting
-// to a minute (gitconfig.go), only one command in roughly that many ever
-// pays a push's cost at all, so blocking that one command is an acceptable
-// trade for a much simpler implementation than an async/detached one. This
-// timeout is the one thing standing between that occasional synchronous
-// push and a genuinely wedged command, so it must actually bound the wait.
-//
-// A normal push, even over SSH, was measured at ~2.5s; an unreachable or
-// black-holed remote instead hangs for the OS's TCP connect timeout, which
-// is commonly tens of seconds (and unbounded in the worst case). 10s gives
-// a slow-but-working network real headroom above that ~2.5s baseline while
-// still capping the worst case - a wedged remote - to something a user
-// waiting on a single `md update` will tolerate rather than assume md
-// itself has hung.
-const pushTimeout = 10 * time.Second
+const defaultBackgroundSyncTimeout = 10 * time.Second
 
-// gitCommonDir resolves the git COMMON directory for g - shared by every
-// linked worktree of one repository, unlike --git-dir which is
-// per-worktree. meads.GitStore.ShouldPush/MarkPushed require this specific
-// directory (not --git-dir) so linked worktrees, which already share one
-// refs/meads/* ref store (see pkg/meads/gitstore.go), also share one push
-// cadence rather than each fighting to push on its own schedule.
-//
-// Always returns an absolute path: `git rev-parse --git-common-dir` alone
-// commonly prints a path relative to the invocation's cwd (a plain ".git",
-// confirmed experimentally - it is NOT auto-absolute like some other
-// rev-parse forms).
+// gitCommonDir resolves the git COMMON directory for g. Linked worktrees
+// share refs/meads/*, so they must also share one queued sync request.
 func gitCommonDir(g *globals) (string, error) {
 	out, err := g.git().Output("rev-parse", "--git-common-dir")
 	if err != nil {
@@ -57,133 +32,182 @@ func gitCommonDir(g *globals) (string, error) {
 			return "", fmt.Errorf("resolving cwd for relative --git-common-dir: %w", err)
 		}
 	}
-	return filepath.Join(base, out), nil
+	abs, err := filepath.Abs(filepath.Join(base, out))
+	if err != nil {
+		return "", err
+	}
+	return filepath.Clean(abs), nil
 }
 
-// syncFunc is the seam autoPush uses to actually run the sync: given a
-// context already carrying pushTimeout's deadline (see autoPush), it pulls
-// and pushes and returns what happened.
-//
-// It replaced a pair of pushFunc/fetchFunc seams wrapping cmd/md's own
-// fetch/Integrate/push, which duplicated meads.Tasks.Sync exactly (task
-// 80). There is one sequence now, in the library, so the CLI and any other
-// embedder cannot drift apart on it; what stays here is what genuinely
-// belongs to a CLI - the cadence gate, the timeout budget, and the stderr
-// rendering below, since nothing under pkg/meads prints.
-//
-// Implementations MUST respect ctx - returning once it is done rather than
-// actually blocking past its deadline - exactly as meads.Tasks.Sync does by
-// handing ctx to git. Tests override this var (restoring it via t.Cleanup)
-// with a fake that behaves the same way (selecting on ctx.Done() instead of
-// a real subprocess) to prove pushTimeout's context is what bounds autoPush
-// - not a coincidence of how fast a local push happens to be - without
-// needing a real hung network; see TestAutoPush_BoundedByTimeout in
-// push_test.go. Production always uses runSync.
+// syncFunc is the test seam around the library's explicit sync operation.
+// Library mutations never call it: foreground `md sync` and the detached CLI
+// worker are the only callers.
 var syncFunc = runSync
 
-// runSync pulls-then-pushes refs/meads/* via the library, bounded by ctx.
+// enqueueSyncFunc is separate from the worker's syncFunc so command tests can
+// disable process spawning while daemon integration tests exercise the real
+// scheduler directly.
+var enqueueSyncFunc = enqueueBackgroundSync
+
 func runSync(ctx context.Context, g *globals) (*meads.SyncReport, error) {
-	return meads.NewGitTasks(g.gitStore()).Sync(ctx)
+	tasks, err := g.tasks()
+	if err != nil {
+		return nil, err
+	}
+	return tasks.Sync(ctx)
 }
 
-// autoPush is called after every successful git-mode mutation
-// (add/update/set-status/add-dep/rm-dep/del - the same call sites as
-// postWebhook, right after it). Every exit besides the final sync attempt is
-// a silent, best-effort skip: syncing is a nice-to-have that must never turn
-// into a reason the command itself fails.
+type syncCmd struct {
+	globals *globals
+}
+
+// Run has two deliberately distinct modes behind one public command:
 //
-// Once per pushInterval it PULLS, then PUSHES (task 86): the pull fetches
-// origin and integrates what arrived - adopting other clones' tasks,
-// fast-forwarding unmoved ones, and re-homing contended local tasks at
-// fresh ids via Doctor - so the push that follows converges instead of
-// rejecting non-fast-forward. It syncs synchronously and reports on THIS
-// SAME invocation - a timeout, a pull summary, and a divergence are all
-// surfaced here, in the command that triggered the sync, rather than
-// deferred to a later command (the earlier async design's "surfaced one
-// command late" was exactly the confusing UX this synchronous design
-// avoids).
-func autoPush(g *globals) {
-	if g == nil || g.mode() != modeGit {
-		if g != nil {
-			g.verbosef("remote sync skipped: file mode\n")
-		}
-		return // git mode only - file mode has no refs/meads/* to push
+//   - `md sync` is a foreground, explicit operation. It always attempts a
+//     sync now and returns failure to the caller, so scripts can rely on its
+//     exit status.
+//   - CLI writes execute this same command with MEADS_SYNC_DAEMON set. Those
+//     internal modes own the detached debounce worker and are best-effort.
+func (c *syncCmd) Run() error {
+	if handled, err := syncDaemonDispatch(c.globals); handled {
+		return err
+	}
+	return runForegroundSync(c.globals)
+}
+
+func runForegroundSync(g *globals) error {
+	if g == nil {
+		return errors.New("sync: missing command context")
+	}
+	if g.mode() != modeGit {
+		return errors.New("sync is only available in git mode")
 	}
 	if err := g.git().Run("remote", "get-url", "origin"); err != nil {
-		g.verbosef("remote sync skipped: origin is not configured\n")
-		return // no origin remote configured: skip silently
-	}
-	commonDir, err := gitCommonDir(g)
-	if err != nil {
-		g.verbosef("remote sync skipped: cannot resolve git common directory: %v\n", err)
-		return
-	}
-	cfg, err := g.gitStore().Config()
-	if err != nil {
-		g.verbosef("remote sync skipped: cannot read config: %v\n", err)
-		return
-	}
-	should, err := g.gitStore().ShouldPush(commonDir, cfg.PushIntervalDuration())
-	if err != nil {
-		g.verbosef("remote sync skipped: cannot read cadence: %v\n", err)
-		return
-	}
-	if !should {
-		g.verbosef("remote sync skipped: %s interval has not elapsed\n", cfg.PushIntervalDuration())
-		return
-	}
-	g.verbosef("remote sync due: %s interval elapsed\n", cfg.PushIntervalDuration())
-	// Mark BEFORE attempting the sync, not after it succeeds: a failing or
-	// timed-out remote must not be retried on every single subsequent
-	// command, only once pushInterval has elapsed again - see MarkPushed's
-	// doc comment. The trade-off (a genuinely failed/timed-out sync also
-	// waits a full interval before the next attempt) is accepted for the
-	// same reason it always was: never piling up redundant pushes against a
-	// remote that isn't currently working.
-	if err := g.gitStore().MarkPushed(commonDir); err != nil {
-		return
+		return errors.New("sync requires an 'origin' remote")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), pushTimeout)
-	defer cancel()
+	ctx := context.Background()
+	if timeout, err := syncTimeoutFromEnv(false); err != nil {
+		return err
+	} else if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
 
-	// One call does the pull (task 86) and the push, both bounded by the
-	// same budget. The error is deliberately ignored: every failure here is
-	// non-fatal to the mutation that triggered it, and the three outcomes
-	// worth telling the user about are read off the report below instead.
-	done := g.verboseAction("sync task refs with origin")
-	report, syncErr := syncFunc(ctx, g)
-	done(syncErr)
+	report, err := syncFunc(ctx, g)
+	renderSyncReport(report)
+	if ctx.Err() != nil {
+		return fmt.Errorf("syncing %s* with origin: %w", meads.RefNamespace, ctx.Err())
+	}
+	if err != nil {
+		return err
+	}
+	fmt.Printf("synced %s* with origin\n", meads.RefNamespace)
+	return nil
+}
 
-	// What the pull integrated - most importantly a contended task re-homed
-	// at a fresh id, which renames a task the user may have just been
-	// looking at and so must never be silent. Printed before the timeout
-	// check because a pull that landed still happened even if the push that
-	// followed then ran out of budget.
-	if report != nil {
-		if msg := integrateMessage(report.Integrate); msg != "" {
-			fmt.Fprint(os.Stderr, msg)
+// syncTimeoutFromEnv returns no timeout for an ordinary foreground `md sync`:
+// that is the guaranteed/blocking path. Detached workers pass
+// MEADS_SYNC_TIMEOUT=10s unless the user supplied another value. Setting it
+// to 0 disables the deadline in either mode.
+func syncTimeoutFromEnv(background bool) (time.Duration, error) {
+	raw := strings.TrimSpace(os.Getenv("MEADS_SYNC_TIMEOUT"))
+	if raw == "" {
+		if background {
+			return defaultBackgroundSyncTimeout, nil
 		}
+		return 0, nil
 	}
+	d, err := time.ParseDuration(raw)
+	if err != nil || d < 0 {
+		return 0, fmt.Errorf("invalid MEADS_SYNC_TIMEOUT %q (expected a non-negative Go duration)", raw)
+	}
+	return d, nil
+}
 
-	if ctx.Err() == context.DeadlineExceeded {
-		fmt.Fprintf(os.Stderr, "meads: sync of refs/meads/* with origin timed out after %s; local changes are safe, will retry next interval\n", pushTimeout)
+func renderSyncReport(report *meads.SyncReport) {
+	if report == nil {
 		return
 	}
-	// Any other failure (offline, auth, no remote gone stale since the
-	// check above, etc.) is also non-fatal and, unlike a timeout or a
-	// divergence, not worth a dedicated message - Rejected is false for it
-	// and autoPush simply says nothing further.
+	if msg := integrateMessage(report.Integrate); msg != "" {
+		fmt.Fprint(os.Stderr, msg)
+	}
 	if msg := divergenceMessage(report); msg != "" {
 		fmt.Fprintln(os.Stderr, msg)
 	}
 }
 
+// scheduleSync is called only after a successful CLI mutation. Scheduling is
+// intentionally best-effort: a local task write must never fail because the
+// PID directory is unwritable, a worker cannot be started, or origin is down.
+// The explicit `md sync` command is the path for callers that need a result.
+func scheduleSync(g *globals) {
+	if syncDisabled() {
+		if g != nil {
+			g.verbosef("background sync disabled by MEADS_SYNC_DISABLE\n")
+		}
+		return
+	}
+	if g == nil || g.mode() != modeGit {
+		if g != nil {
+			g.verbosef("background sync skipped: file mode\n")
+		}
+		return
+	}
+	if err := g.git().Run("remote", "get-url", "origin"); err != nil {
+		g.verbosef("background sync skipped: origin is not configured\n")
+		return
+	}
+	commonDir, err := gitCommonDir(g)
+	if err != nil {
+		g.verbosef("background sync skipped: %v\n", err)
+		return
+	}
+	delay, err := syncDelay(g)
+	if err != nil {
+		g.verbosef("background sync skipped: %v\n", err)
+		return
+	}
+	timeout, err := syncTimeoutFromEnv(true)
+	if err != nil {
+		g.verbosef("background sync skipped: %v\n", err)
+		return
+	}
+
+	done := g.verboseAction("queue background sync")
+	err = enqueueSyncFunc(g, commonDir, delay, timeout)
+	done(err)
+	if err != nil {
+		g.verbosef("background sync scheduling failed (local change is safe): %v\n", err)
+	}
+}
+
+func syncDisabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("MEADS_SYNC_DISABLE"))) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
+}
+
+func syncDelay(g *globals) (time.Duration, error) {
+	if raw := strings.TrimSpace(os.Getenv("MEADS_SYNC_DELAY")); raw != "" {
+		d, err := time.ParseDuration(raw)
+		if err != nil || d < 0 {
+			return 0, fmt.Errorf("invalid MEADS_SYNC_DELAY %q (expected a non-negative Go duration)", raw)
+		}
+		return d, nil
+	}
+	cfg, err := g.gitStore().Config()
+	if err != nil {
+		return 0, fmt.Errorf("reading sync delay: %w", err)
+	}
+	return cfg.PushIntervalDuration(), nil
+}
+
 // integrateMessage renders an IntegrateReport as stderr lines ("" when
-// nothing happened, the common case): one summary each for adopted and
-// fast-forwarded tasks, and one line per Doctor repair - most importantly
-// the contended-task re-homings, which rename a local task the user may
-// have just been looking at and so must never be silent.
+// nothing happened, the common case).
 func integrateMessage(r *meads.IntegrateReport) string {
 	if r == nil {
 		return ""
@@ -211,7 +235,6 @@ func integrateMessage(r *meads.IntegrateReport) string {
 	return b.String()
 }
 
-// joinInts renders ids as a comma-separated list for integrateMessage.
 func joinInts(ids []int) string {
 	parts := make([]string, len(ids))
 	for i, id := range ids {
@@ -220,24 +243,6 @@ func joinInts(ids []int) string {
 	return strings.Join(parts, ", ")
 }
 
-// divergenceMessage renders a rejected push as a clear, actionable
-// explanation of what that means - rather than leaving git's bare
-// "! ... [rejected] (fetch first)" to speak for itself. Returns "" for a
-// clean push, or a different kind of failure (offline, auth, no remote -
-// none of which are diagnostic of divergence).
-//
-// The DETECTION lives in meads.PushRejected, over git's own porcelain
-// reasons, so every caller of Tasks.Sync classifies a rejection
-// identically; only this rendering is CLI-specific, because nothing under
-// pkg/meads prints.
-//
-// Since task 86 a divergence is normally resolved automatically, by the
-// pull half of the sync itself (fetch + Integrate, whose Doctor re-homes
-// contended tasks at fresh ids). So a rejection reaching here means that
-// reconciliation did not happen or did not settle it - origin moved again
-// between this sync's fetch and its push, or the fetch failed and the
-// integration was skipped - which is a "try again" situation, not the
-// permanent manual-attention dead end the message used to describe.
 func divergenceMessage(r *meads.SyncReport) string {
 	if r == nil || !r.Rejected {
 		return ""
@@ -245,9 +250,6 @@ func divergenceMessage(r *meads.SyncReport) string {
 	return "meads: push of refs/meads/* to origin was rejected: another " +
 		"clone pushed different changes while this sync was running " +
 		"(refs/meads/* has diverged). Your local changes are committed " +
-		"locally and are safe. The next sync pulls origin's version " +
-		"first and reconciles automatically - re-homing any contended " +
-		"task at a fresh id rather than losing it - or run 'md doctor' " +
-		"after 'git fetch origin' to do it now. meads will NOT " +
-		"force-push."
+		"locally and are safe. Run 'md sync' again to pull and reconcile; " +
+		"meads will NOT force-push."
 }

@@ -18,15 +18,12 @@ import (
 // timeout, commonly tens of seconds and unbounded in the worst case, so a
 // plain `md list` could block indefinitely - and, because a failed ask
 // deliberately writes no marker (see resolveCloneBackend), block again on
-// every subsequent command. Matching cmd/md's pushTimeout at 10s for the
-// same reason it picked that number: real headroom over a normal ~2.5s
-// round-trip, while capping a wedged remote to something a user waiting on
-// one command will tolerate.
+// every subsequent command. Ten seconds leaves real headroom over a normal
+// remote round-trip while capping a wedged remote to something a user waiting
+// on one command will tolerate.
 //
 // A var, not a const, purely so tests can shorten it and still assert the
-// bound in reasonable wall-clock time - the same seam cmd/md/push.go's
-// pushFunc/fetchFunc use, and for the same reason. Production never
-// reassigns it.
+// bound in reasonable wall-clock time. Production never reassigns it.
 var remoteProbeTimeout = 10 * time.Second
 
 // InitCheckRef is the marker ref recording "I have asked origin, and it has

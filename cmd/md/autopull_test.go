@@ -9,8 +9,8 @@ import (
 	"github.com/jpillora/meads/pkg/meads"
 )
 
-// Tests for task 86's auto-pull: once per pushInterval, a mutation PULLS
-// (fetch + integrate) before it pushes - adopting other clones' tasks,
+// Tests for task 86's explicit sync pull: `md sync` PULLS (fetch + integrate)
+// before it pushes - adopting other clones' tasks,
 // fast-forwarding unmoved ones, and re-homing contended local tasks at
 // fresh ids so the push converges. The pkg-level mechanics live in
 // pkg/meads/gitpull_test.go and gitdoctor_test.go; these prove the CLI
@@ -18,9 +18,8 @@ import (
 
 // setupSyncClones creates a bare origin and two git-mode clones of it,
 // seeded with one shared task created by clone1 and adopted by clone2 (via
-// `md init --git`'s adopt branch). Both clones get a zero push interval, so
-// every mutation syncs immediately. Returns both clones' globals and the
-// bare origin's dir.
+// `md init --git`'s adopt branch). Returns both clones' globals and the bare
+// origin's dir.
 func setupSyncClones(t *testing.T) (g1, g2 *globals, bareDir string) {
 	t.Helper()
 	bareDir = t.TempDir()
@@ -60,10 +59,7 @@ func setupSyncClones(t *testing.T) (g1, g2 *globals, bareDir string) {
 	return g1, g2, bareDir
 }
 
-// TestAutoPull_ImportsOtherClonesTasks: a mutation whose own changes don't
-// collide still pulls first - tasks another clone pushed since the last
-// sync arrive locally before the push goes out.
-func TestAutoPull_ImportsOtherClonesTasks(t *testing.T) {
+func TestExplicitSync_ImportsOtherClonesTasks(t *testing.T) {
 	g1, g2, bareDir := setupSyncClones(t)
 
 	// clone1 creates and pushes task 2, unknown to clone2.
@@ -77,6 +73,9 @@ func TestAutoPull_ImportsOtherClonesTasks(t *testing.T) {
 	stderr := captureStderr(t, func() {
 		if err := (&updateCmd{globals: g2, ID: "1", Title: "shared task (clone2's edit)"}).Run(); err != nil {
 			t.Fatalf("update (clone2): %v", err)
+		}
+		if err := (&syncCmd{globals: g2}).Run(); err != nil {
+			t.Fatalf("sync (clone2): %v", err)
 		}
 	})
 	if !strings.Contains(stderr, "pulled 1 new task(s) from origin (ids 2)") {
@@ -98,12 +97,12 @@ func TestAutoPull_ImportsOtherClonesTasks(t *testing.T) {
 	}
 }
 
-// TestAutoPull_ContentionReHomedThenPushes is the headline case: clone2
+// TestExplicitSync_ContentionReHomedThenPushes is the headline case: clone2
 // allocates the SAME id clone1 already pushed; the auto-pull detects the
 // contention, re-homes clone2's task at a fresh id, resets the contended
 // ref to origin's version, and the push then converges - reported on the
 // very command that caused it.
-func TestAutoPull_ContentionReHomedThenPushes(t *testing.T) {
+func TestExplicitSync_ContentionReHomedThenPushes(t *testing.T) {
 	g1, g2, bareDir := setupSyncClones(t)
 
 	// clone1 creates and pushes task 2, unknown to clone2.
@@ -117,6 +116,9 @@ func TestAutoPull_ContentionReHomedThenPushes(t *testing.T) {
 	stderr := captureStderr(t, func() {
 		if err := (&addCmd{globals: g2, Args: []string{"clone2's second"}}).Run(); err != nil {
 			t.Fatalf("add (clone2): %v", err)
+		}
+		if err := (&syncCmd{globals: g2}).Run(); err != nil {
+			t.Fatalf("sync (clone2): %v", err)
 		}
 	})
 	if !strings.Contains(stderr, "task 2 collided with a different task on origin; your version moved to task 3") {
@@ -147,6 +149,9 @@ func TestAutoPull_ContentionReHomedThenPushes(t *testing.T) {
 	if err := (&updateCmd{globals: g1, ID: "1", Title: "shared task (clone1's edit)"}).Run(); err != nil {
 		t.Fatalf("update (clone1): %v", err)
 	}
+	if err := (&syncCmd{globals: g1}).Run(); err != nil {
+		t.Fatalf("sync (clone1): %v", err)
+	}
 	gs1 := meads.NewGitStore(g1.git())
 	all1, err := gs1.Get(nil)
 	if err != nil || len(all1) != 3 {
@@ -161,9 +166,8 @@ func TestAutoPull_ContentionReHomedThenPushes(t *testing.T) {
 	}
 }
 
-// TestAutoPull_NoOriginSkipsPull: the no-origin path is unchanged - a
-// mutation succeeds and nothing is fetched or pushed.
-func TestAutoPull_NoOriginSkipsPull(t *testing.T) {
+// Background scheduling remains best-effort when origin is absent.
+func TestBackgroundSync_NoOriginSkips(t *testing.T) {
 	h := gitModeHarness(t)
 	h.git("remote", "remove", "origin")
 	if err := (&addCmd{globals: h.globals, Args: []string{"offline task"}}).Run(); err != nil {

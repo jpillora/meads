@@ -57,7 +57,7 @@ const (
 // It deliberately never touches remote.origin.push. Configuring ANY push
 // refspec on a remote replaces git's default matching/simple push behaviour
 // and would break ordinary `git push` for the user - see cmd/md's
-// TestIntegration_InitGit_DoesNotBreakNormalPush. The auto-push path passes
+// TestIntegration_InitGit_DoesNotBreakNormalPush. The sync path passes
 // an explicit refspec at push time instead.
 func EnsureFetchRefspec(git Git) (FetchRefspecOutcome, error) {
 	if err := git.Run("remote", "get-url", "origin"); err != nil {

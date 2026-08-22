@@ -50,7 +50,7 @@ The `md` MCP server is enabled. **Use MCP tools instead of CLI commands** for al
 - **There is no task file** - do NOT look for or try to read/edit `TASKS.md`/`TASKS.csv`; it does not exist in git mode. Always use MCP tools.
 - **Do NOT shell out to `md` CLI commands or raw `git` plumbing on `refs/meads/*`** - use the MCP tools above
 - **Nothing to stage or commit yourself** - every mutating tool call commits straight to that task's own ref the moment it runs.
-- If a remote (`origin`) is configured, meads pushes `refs/meads/*` there automatically, at most once per `pushInterval` (default 1m). The push is synchronous but bounded by a timeout, and never fails the operation if the remote is unreachable.
+- MCP tools use the meads library directly: mutations commit local refs but do not sync implicitly. A caller that needs remote delivery must explicitly invoke `Tasks.Sync(ctx)` in an embedded integration, or run `md sync` outside the MCP session.
 - `delete_task` never removes anything - it soft-deletes (the ref is kept forever), so a deleted id is never reused and `get_task` still resolves it.
 - Concurrent writes are safe via compare-and-swap on each task's own ref.
 - Task IDs are auto-assigned integers.

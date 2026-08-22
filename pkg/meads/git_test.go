@@ -1,10 +1,26 @@
 package meads
 
 import (
+	"context"
+	"errors"
 	"os/exec"
 	"strings"
 	"testing"
 )
+
+func TestSuccessfulWaitDelay(t *testing.T) {
+	if !successfulWaitDelay(context.Background(), exec.ErrWaitDelay) {
+		t.Fatal("a live context and ErrWaitDelay should mean the command itself succeeded")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if successfulWaitDelay(ctx, exec.ErrWaitDelay) {
+		t.Fatal("ErrWaitDelay after context cancellation must remain a failure")
+	}
+	if successfulWaitDelay(context.Background(), errors.New("exit status 1")) {
+		t.Fatal("an ordinary command failure must not be ignored")
+	}
+}
 
 // gitRepo initialises an empty repo in a temp dir and returns an ExecGit for it.
 func gitRepo(t *testing.T) *ExecGit {

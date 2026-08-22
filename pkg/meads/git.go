@@ -3,6 +3,7 @@ package meads
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -45,8 +46,7 @@ type Git interface {
 // unreachable or black-holed host hangs for the OS's TCP connect timeout,
 // commonly tens of seconds and unbounded in the worst case. Anything on a
 // command's critical path - clone resolution's ls-remote (clone.go), Sync's
-// fetch and push (tasks.go) - must therefore carry a deadline, exactly as
-// cmd/md's auto-push already does with its own exec.CommandContext.
+// fetch and push (tasks.go) - can therefore carry a caller-provided deadline.
 type ContextGit interface {
 	// RunContext is Run, bounded by ctx: the process is killed the moment
 	// ctx is done.
@@ -168,6 +168,9 @@ func (g *ExecGit) RunContext(ctx context.Context, args ...string) error {
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
+		if successfulWaitDelay(ctx, err) {
+			return nil
+		}
 		err = withContextErr(ctx, err)
 		// cmd.Run() alone discards stderr, leaving callers with a bare
 		// "exit status 128" — git's fatal message is the only thing that
@@ -193,6 +196,20 @@ func withContextErr(ctx context.Context, err error) error {
 	return fmt.Errorf("%w: %v", ctx.Err(), err)
 }
 
+// successfulWaitDelay identifies exec's unusual "the command succeeded, but
+// one of its descendants kept an output pipe open" result. Git transport
+// helpers can outlive the git process briefly (SSH control processes are the
+// common case), so Cmd.Wait returns exec.ErrWaitDelay even though git itself
+// exited zero and the push completed. Treating that as a failed sync caused a
+// healthy push to be reported as `exec: WaitDelay expired before I/O
+// complete`.
+//
+// It is success only while the caller's context is still live. If the context
+// expired, WaitDelay is part of the timeout path and must remain an error.
+func successfulWaitDelay(ctx context.Context, err error) bool {
+	return errors.Is(err, exec.ErrWaitDelay) && (ctx == nil || ctx.Err() == nil)
+}
+
 // IsIndexLocked reports whether err is git failing to take .git/index.lock
 // because another git process holds it ("fatal: Unable to create
 // '<dir>/.git/index.lock': File exists."). Any index-writing command — add,
@@ -212,6 +229,9 @@ func (g *ExecGit) Output(args ...string) (string, error) { return g.OutputContex
 func (g *ExecGit) OutputContext(ctx context.Context, args ...string) (string, error) {
 	out, err := g.command(ctx, args...).Output()
 	if err != nil {
+		if successfulWaitDelay(ctx, err) {
+			return strings.TrimSpace(string(out)), nil
+		}
 		return "", withContextErr(ctx, err)
 	}
 	return strings.TrimSpace(string(out)), nil
@@ -225,6 +245,9 @@ func (g *ExecGit) OutputContext(ctx context.Context, args ...string) (string, er
 func (g *ExecGit) CombinedOutputContext(ctx context.Context, args ...string) (string, error) {
 	out, err := g.command(ctx, args...).CombinedOutput()
 	if err != nil {
+		if successfulWaitDelay(ctx, err) {
+			return string(out), nil
+		}
 		return string(out), withContextErr(ctx, err)
 	}
 	return string(out), nil

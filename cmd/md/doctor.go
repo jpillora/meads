@@ -117,6 +117,9 @@ func (c *doctorCmd) runGit() error {
 	for _, cycle := range cycles {
 		fmt.Printf("Circular dependency detected: %s\n", meads.FormatCycle(cycle))
 	}
+	if len(fixes) > 0 || repaired > 0 {
+		scheduleSync(c.globals)
+	}
 
 	if len(fixes) == 0 && len(cycles) == 0 && repaired == 0 {
 		fmt.Println("no issues found")

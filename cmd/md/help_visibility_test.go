@@ -395,7 +395,7 @@ func TestHiddenCommands(t *testing.T) {
 		want map[string]bool
 	}{
 		{helpModeUnknown, nil},
-		{helpModeFile, nil},
+		{helpModeFile, map[string]bool{"sync": true}},
 		{helpModeGit, map[string]bool{"auto-save": true, "auto-delete": true, "beads-import": true}},
 	}
 	for _, tt := range tests {

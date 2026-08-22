@@ -131,6 +131,14 @@ func (c *convertCmd) runToGit() error {
 		}
 	}
 	fmt.Printf("converted %d tasks (%d recovered from git history): %s → %s*\n", len(tasks), len(recoveredIDs), c.File, meads.TasksRefPrefix)
+	// From this point the ref import itself has succeeded. Queue it on every
+	// return path, including a later setup warning, while forcing this
+	// one-shot command's globals away from its explicit source file.
+	c.globals.TaskStoreCache = nil
+	c.globals.TasksFile = bareDefaultTasksFile()
+	c.globals.FileMode = false
+	c.globals.GitMode = true
+	defer scheduleSync(c.globals)
 
 	// Importing task refs is not the whole of "now in git mode": origin's
 	// fetch refspec is the rest of it, and this used to skip it, leaving a
