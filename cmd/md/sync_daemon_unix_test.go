@@ -112,6 +112,10 @@ func TestIntegrationBackgroundSyncDebouncesAndRetires(t *testing.T) {
 		_, err := os.Stat(pidPath)
 		return os.IsNotExist(err)
 	}, "initial sync worker to retire")
+	logPath := strings.TrimSuffix(pidPath, ".pid") + ".log"
+	if err := os.Remove(logPath); err != nil && !os.IsNotExist(err) {
+		t.Fatalf("clearing initialization sync log: %v", err)
+	}
 
 	env := []string{
 		"MEADS_SYNC_DISABLE=0",
@@ -129,11 +133,16 @@ func TestIntegrationBackgroundSyncDebouncesAndRetires(t *testing.T) {
 	pid := readPIDPath(t, pidPath)
 	assertDetachedSession(t, pid)
 
-	time.Sleep(180 * time.Millisecond)
+	time.Sleep(120 * time.Millisecond)
 	if out, err := runMD(t, bin, h.dir, env, "add", "second"); err != nil {
 		t.Fatalf("second add: %v\n%s", err, out)
 	}
-	// 180ms + 180ms is past the first deadline but before the reset deadline.
+	time.Sleep(120 * time.Millisecond)
+	if out, err := runMD(t, bin, h.dir, env, "add", "third"); err != nil {
+		t.Fatalf("third add: %v\n%s", err, out)
+	}
+	// 120ms + 120ms + 180ms is past the first deadline but before the
+	// third write's reset deadline.
 	time.Sleep(180 * time.Millisecond)
 	if refs := remoteRefNames(t, originDir); hasTaskRef(refs) {
 		t.Fatalf("sync ran before reset debounce elapsed: %v", refs)
@@ -147,8 +156,8 @@ func TestIntegrationBackgroundSyncDebouncesAndRetires(t *testing.T) {
 				count++
 			}
 		}
-		return count == 2
-	}, "both task refs to reach origin")
+		return count == 3
+	}, "all three task refs to reach origin")
 	waitFor(t, 5*time.Second, func() bool {
 		_, err := os.Stat(pidPath)
 		return os.IsNotExist(err)
@@ -157,6 +166,13 @@ func TestIntegrationBackgroundSyncDebouncesAndRetires(t *testing.T) {
 		_, err := os.Stat(filepath.Join("/proc", strconv.Itoa(pid)))
 		return os.IsNotExist(err)
 	}, "sync worker to be reaped")
+	logData, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("reading sync worker log: %v", err)
+	}
+	if got := strings.Count(string(logData), " synced in "); got != 1 {
+		t.Fatalf("sync attempts after three debounced writes = %d, want exactly 1; log:\n%s", got, logData)
+	}
 }
 
 func TestIntegrationBackgroundWorkerExitsIfRuntimeDirectoryDisappears(t *testing.T) {
