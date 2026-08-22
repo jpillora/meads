@@ -149,14 +149,7 @@ func TestIntegrationBackgroundSyncDebouncesAndRetires(t *testing.T) {
 	}
 
 	waitFor(t, 5*time.Second, func() bool {
-		refs := remoteRefNames(t, originDir)
-		count := 0
-		for _, ref := range refs {
-			if strings.HasPrefix(ref, meads.TasksRefPrefix) {
-				count++
-			}
-		}
-		return count == 3
+		return remoteTaskRefCount(t, originDir) == 3
 	}, "all three task refs to reach origin")
 	waitFor(t, 5*time.Second, func() bool {
 		_, err := os.Stat(pidPath)
@@ -172,6 +165,89 @@ func TestIntegrationBackgroundSyncDebouncesAndRetires(t *testing.T) {
 	}
 	if got := strings.Count(string(logData), " synced in "); got != 1 {
 		t.Fatalf("sync attempts after three debounced writes = %d, want exactly 1; log:\n%s", got, logData)
+	}
+}
+
+func TestIntegrationWriteDuringSyncStartsAnotherDebouncedSync(t *testing.T) {
+	bin := buildMD(t)
+	h := newHarness(t)
+	originDir := h.git("remote", "get-url", "origin")
+	runtimeDir := t.TempDir()
+	pidPath := filepath.Join(runtimeDir, "meads-sync.pid")
+	logPath := strings.TrimSuffix(pidPath, ".pid") + ".log"
+	baseEnv := []string{
+		"MEADS_SYNC_DISABLE=0",
+		"MEADS_SYNC_PID=" + pidPath,
+		"MEADS_SYNC_DELAY=10ms",
+		"MEADS_SYNC_TIMEOUT=3s",
+	}
+	if out, err := runMD(t, bin, h.dir, baseEnv, "init", "--git"); err != nil {
+		t.Fatalf("init --git: %v\n%s", err, out)
+	}
+	waitFor(t, 5*time.Second, func() bool {
+		_, err := os.Stat(pidPath)
+		return os.IsNotExist(err)
+	}, "initial sync worker to retire")
+	if err := os.Remove(logPath); err != nil && !os.IsNotExist(err) {
+		t.Fatalf("clearing initialization sync log: %v", err)
+	}
+
+	// Block each receive long enough to issue another md write after Git has
+	// already expanded the first push's ref set. The marker proves the worker
+	// is inside that push—not merely waiting on its debounce timer.
+	hookStarted := filepath.Join(t.TempDir(), "pre-receive-started")
+	hook := "#!/bin/sh\n: > " + strconv.Quote(hookStarted) + "\nsleep 0.7\nexit 0\n"
+	if err := os.WriteFile(filepath.Join(originDir, "hooks", "pre-receive"), []byte(hook), 0755); err != nil {
+		t.Fatalf("installing slow pre-receive hook: %v", err)
+	}
+
+	env := []string{
+		"MEADS_SYNC_DISABLE=0",
+		"MEADS_SYNC_PID=" + pidPath,
+		"MEADS_SYNC_DELAY=300ms",
+		"MEADS_SYNC_TIMEOUT=3s",
+	}
+	if out, err := runMD(t, bin, h.dir, env, "add", "before in-flight write"); err != nil {
+		t.Fatalf("first add: %v\n%s", err, out)
+	}
+	workerPID := readPIDPath(t, pidPath)
+	waitFor(t, 3*time.Second, func() bool {
+		_, err := os.Stat(hookStarted)
+		return err == nil
+	}, "first push to enter pre-receive hook")
+
+	if out, err := runMD(t, bin, h.dir, env, "add", "written during sync"); err != nil {
+		t.Fatalf("mid-sync add: %v\n%s", err, out)
+	}
+	if got := readPIDPath(t, pidPath); got != workerPID {
+		t.Fatalf("mid-sync write replaced worker %d with %d; want the same worker to remain alive", workerPID, got)
+	}
+
+	waitFor(t, 3*time.Second, func() bool {
+		data, err := os.ReadFile(logPath)
+		return err == nil && strings.Count(string(data), " synced in ") >= 1
+	}, "first in-flight sync to finish")
+	if got := remoteTaskRefCount(t, originDir); got != 1 {
+		t.Fatalf("task refs after first sync = %d, want 1 (the mid-sync write must await the next timer)", got)
+	}
+	time.Sleep(100 * time.Millisecond)
+	if got := remoteTaskRefCount(t, originDir); got != 1 {
+		t.Fatalf("task refs before restarted debounce elapsed = %d, want still 1", got)
+	}
+
+	waitFor(t, 5*time.Second, func() bool {
+		return remoteTaskRefCount(t, originDir) == 2
+	}, "mid-sync write to reach origin on the second sync")
+	waitFor(t, 5*time.Second, func() bool {
+		_, err := os.Stat(pidPath)
+		return os.IsNotExist(err)
+	}, "worker to retire after the second sync")
+	logData, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("reading worker log: %v", err)
+	}
+	if got := strings.Count(string(logData), " synced in "); got != 2 {
+		t.Fatalf("sync attempts with one write during sync = %d, want exactly 2; log:\n%s", got, logData)
 	}
 }
 
@@ -209,6 +285,17 @@ func waitFor(t *testing.T, timeout time.Duration, ok func() bool, what string) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatalf("timed out waiting for %s", what)
+}
+
+func remoteTaskRefCount(t *testing.T, originDir string) int {
+	t.Helper()
+	count := 0
+	for _, ref := range remoteRefNames(t, originDir) {
+		if strings.HasPrefix(ref, meads.TasksRefPrefix) {
+			count++
+		}
+	}
+	return count
 }
 
 func readPIDPath(t *testing.T, path string) int {
