@@ -25,6 +25,7 @@ func postWebhook(g *globals, action string, data any) {
 	if g == nil || g.WebhookURI == "" {
 		return
 	}
+	done := g.verboseAction("post " + action + " webhook")
 	payload := webhookPayload{
 		Meads:  true,
 		Action: action,
@@ -33,6 +34,7 @@ func postWebhook(g *globals, action string, data any) {
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
+		done(err)
 		fmt.Fprintf(os.Stderr, "webhook: marshal error: %v\n", err)
 		return
 	}
@@ -42,19 +44,25 @@ func postWebhook(g *globals, action string, data any) {
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
+		done(err)
 		fmt.Fprintf(os.Stderr, "webhook: request error: %v\n", err)
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := client.Do(req)
 	if err != nil {
+		done(err)
 		fmt.Fprintf(os.Stderr, "webhook: post error: %v\n", err)
 		return
 	}
 	resp.Body.Close()
 	if resp.StatusCode >= 400 {
+		err := fmt.Errorf("server returned %d", resp.StatusCode)
+		done(err)
 		fmt.Fprintf(os.Stderr, "webhook: server returned %d\n", resp.StatusCode)
+		return
 	}
+	done(nil)
 }
 
 // parseUnixURI splits a unix:// URI into socket path and HTTP path.

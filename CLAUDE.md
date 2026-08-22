@@ -27,11 +27,17 @@ md prime --write CLAUDE.md
 
 ---
 
+<!-- md-prime:start -->
+# Meads (`md`) Task Tracking Context
+
 ## Overview
 
 `md` is running in **git mode**: tasks live as git refs (`refs/meads/tasks/<id>`), not in a file. There is no `TASKS.md` or `TASKS.csv` in this repo — nothing to read or edit directly. Every command below is exactly the same as file mode; only the storage differs.
 
 ## Essential Commands
+
+### Diagnostics
+- `md --verbose <command> ...` / `md -V <command> ...` - Show task, webhook, and Git actions with elapsed timings on stderr (global flag; place it before the command). When remote sync runs, fetch and push are timed separately. Lowercase `-v` remains the version flag
 
 ### Finding Work
 - `md ready` - Show open tasks not blocked by dependencies (sorted by priority)
@@ -82,6 +88,8 @@ md prime --write CLAUDE.md
 - `md update <id> --add-tags=docs` / `md update <id> --rm-tags=api` - Add or remove tags, keeping the rest
 - `md set-status <id> <status>` - Shorthand for status changes
 - `md del <id>` - Delete a task (soft delete — see Rules)
+- `md restore <id>` / `md restore --all` - Undo a soft delete, returning the task(s) to `md list`/`md ready`. `--dry-run` reports what it would restore
+- `md del <id> --force` - Erase a task instead of tombstoning it — see Rules
 
 ### Dependencies
 - `md add-dep <child> <parent>` - Make child depend on parent
@@ -113,9 +121,11 @@ md set-status <id> closed    # Mark task done
 - **There is no task file** - do NOT look for or try to edit `TASKS.md`/`TASKS.csv`; it does not exist in git mode. Always use `md` commands to read and modify tasks, never raw `git` plumbing on `refs/meads/*`.
 - **Nothing to stage or commit yourself** - every `md add`/`update`/`set-status`/`add-dep`/`rm-dep`/`del` commits straight to that task's own ref the moment it runs. There is no "commit the tasks file" step.
 - If a remote (`origin`) is configured, meads pushes `refs/meads/*` there automatically — you do not need to `git push` for task changes to reach it. The push runs at most once per `pushInterval` (default 1m), so roughly one command per interval waits for it; it is bounded by a timeout and never fails your command if the remote is unreachable.
-- `md del` never removes anything - it soft-deletes (the ref is kept forever), so a deleted id is never reused and `md get <id>` still resolves it.
+- `md del` never removes anything - it soft-deletes (the ref is kept forever), so a deleted id is never reused and `md get <id>` still resolves it. `md restore <id>` puts it back.
+- `md del --force` is the exception, and the only irreversible command here: it deletes the ref outright, so `md get`, `md list --history` and `md restore` all lose the task together. It also gives up the never-reused guarantee — ids come from the highest ref that still exists, so erasing the highest id hands that number to the next `md add`, and anything already referring to it (a commit message, a branch name, a link in another task) silently retargets. Prefer `md del`.
 - Concurrent writes are safe via compare-and-swap on each task's own ref.
 - `md auto-save` and `md auto-delete` are file-mode git hooks; both no-op in git mode (there is no tasks file to stage or prune).
 - `md beads-import` is not supported in git mode (it only imports into a tasks file).
 - `md doctor` also detects tasks that have diverged after independent edits in two clones, and repairs duplicate ids left by two clones creating a task offline at the same id; a genuine divergence needs manual resolution.
 - Task IDs are auto-assigned integers.
+<!-- md-prime:end -->

@@ -107,6 +107,7 @@ md doctor                             Detect and fix duplicate task IDs (in git 
 md prime                              Print LLM context for using md
 md mcp                                Start MCP server over stdio
 md webui                              Launch web UI for the current task store
+md --verbose update <id> ...          Show actions and elapsed timings on stderr (-V also works)
 ```
 
 ### Web UI
@@ -193,6 +194,13 @@ remote is configured, so you don't need to `git push` for task changes to
 reach it. The push runs at most once per `pushInterval` (default `1m`), so
 roughly one command per interval waits for it; it is bounded by a timeout
 and never fails your command if the remote is unreachable.
+
+Use the global `--verbose` flag (`-V`) before a command to see each task,
+webhook, and Git action with its elapsed time. Diagnostics go to stderr, so
+structured stdout stays safe to pipe or parse. For example,
+`md --verbose update 42 --priority=P1` shows the local update and, when a
+sync is due, separate `git fetch` and `git push` timings. Lowercase `-v`
+remains the version flag.
 
 Run `md doctor` after fetching: it renumbers a duplicate id left behind when
 two clones each created a task offline at the same id, and reports (but does

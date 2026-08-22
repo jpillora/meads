@@ -104,23 +104,35 @@ func runSync(ctx context.Context, g *globals) (*meads.SyncReport, error) {
 // avoids).
 func autoPush(g *globals) {
 	if g == nil || g.mode() != modeGit {
+		if g != nil {
+			g.verbosef("remote sync skipped: file mode\n")
+		}
 		return // git mode only - file mode has no refs/meads/* to push
 	}
 	if err := g.git().Run("remote", "get-url", "origin"); err != nil {
+		g.verbosef("remote sync skipped: origin is not configured\n")
 		return // no origin remote configured: skip silently
 	}
 	commonDir, err := gitCommonDir(g)
 	if err != nil {
+		g.verbosef("remote sync skipped: cannot resolve git common directory: %v\n", err)
 		return
 	}
 	cfg, err := g.gitStore().Config()
 	if err != nil {
+		g.verbosef("remote sync skipped: cannot read config: %v\n", err)
 		return
 	}
 	should, err := g.gitStore().ShouldPush(commonDir, cfg.PushIntervalDuration())
-	if err != nil || !should {
+	if err != nil {
+		g.verbosef("remote sync skipped: cannot read cadence: %v\n", err)
 		return
 	}
+	if !should {
+		g.verbosef("remote sync skipped: %s interval has not elapsed\n", cfg.PushIntervalDuration())
+		return
+	}
+	g.verbosef("remote sync due: %s interval elapsed\n", cfg.PushIntervalDuration())
 	// Mark BEFORE attempting the sync, not after it succeeds: a failing or
 	// timed-out remote must not be retried on every single subsequent
 	// command, only once pushInterval has elapsed again - see MarkPushed's
@@ -139,7 +151,9 @@ func autoPush(g *globals) {
 	// same budget. The error is deliberately ignored: every failure here is
 	// non-fatal to the mutation that triggered it, and the three outcomes
 	// worth telling the user about are read off the report below instead.
-	report, _ := syncFunc(ctx, g)
+	done := g.verboseAction("sync task refs with origin")
+	report, syncErr := syncFunc(ctx, g)
+	done(syncErr)
 
 	// What the pull integrated - most importantly a contended task re-homed
 	// at a fresh id, which renames a task the user may have just been

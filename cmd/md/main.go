@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/jpillora/meads/pkg/meads"
 	"github.com/jpillora/opts"
@@ -54,13 +55,15 @@ func defaultGitMode() bool {
 }
 
 type globals struct {
-	Store      *meads.Store    `opts:"-"`
-	GitStore   *meads.GitStore `opts:"-"`
-	Git        meads.Git       `opts:"-"`
-	Stdin      io.Reader       `opts:"-"`
-	TasksFile  string          `help:"the tasks markdown file to manage (env MEADS_TASK_FILE)"`
-	WebhookURI string          `help:"a uri to POST to with {meads:true,action,file,data}; http(s):// or unix:///path/to/sock or unix://[/path/to/sock]/http/path (env MEADS_WEBHOOK_URI)"`
-	Dir        string          `opts:"-"`
+	Store         *meads.Store    `opts:"-"`
+	GitStore      *meads.GitStore `opts:"-"`
+	Git           meads.Git       `opts:"-"`
+	Stdin         io.Reader       `opts:"-"`
+	VerboseOutput io.Writer       `opts:"-"`
+	TasksFile     string          `help:"the tasks markdown file to manage (env MEADS_TASK_FILE)"`
+	WebhookURI    string          `help:"a uri to POST to with {meads:true,action,file,data}; http(s):// or unix:///path/to/sock or unix://[/path/to/sock]/http/path (env MEADS_WEBHOOK_URI)"`
+	Dir           string          `opts:"-"`
+	Verbose       bool            `opts:"short=V" help:"Show actions and elapsed timings on stderr"`
 
 	// GitMode/FileMode force git-mode (refs/meads/*) or file-mode
 	// (TasksFile) storage, overriding auto-detection (see mode). Go field
@@ -174,6 +177,11 @@ func (g *globals) gitStore() *meads.GitStore {
 func (g *globals) git() meads.Git {
 	if g.Git == nil {
 		g.Git = &meads.ExecGit{Dir: g.Dir}
+	}
+	if g.Verbose {
+		if _, wrapped := g.Git.(*verboseGit); !wrapped {
+			g.Git = &verboseGit{base: g.Git, g: g}
+		}
 	}
 	return g.Git
 }
@@ -314,30 +322,40 @@ func (g *globals) modeConflictErr() error {
 // or MEADS_GIT) outside a git repository has no cheap silent fallback the
 // way auto-detection does, so it errors clearly instead of leaving the first
 // git-plumbing call downstream to fail with a raw git error.
-func (g *globals) tasks() (meads.Tasks, error) {
+func (g *globals) tasks() (tasks meads.Tasks, err error) {
 	if g.TaskStoreCache != nil {
 		return g.TaskStoreCache, nil
 	}
+	done := g.verboseAction("resolve task store")
+	defer func() { done(err) }()
 	if err := g.modeConflictErr(); err != nil {
 		return nil, err
 	}
 	if g.FileMode || g.explicitTasksFile() {
-		g.TaskStoreCache = meads.NewFileTasks(g.store(), g.git())
+		g.cacheTasks(meads.NewFileTasks(g.store(), g.git()))
 		return g.TaskStoreCache, nil
 	}
 	if g.GitMode {
 		if !g.inGitRepo() {
 			return nil, fmt.Errorf("--git requires a git repository")
 		}
-		g.TaskStoreCache = meads.NewGitTasks(g.gitStore())
+		g.cacheTasks(meads.NewGitTasks(g.gitStore()))
 		return g.TaskStoreCache, nil
 	}
-	tasks, err := meads.OpenTasksGit(g.Dir, g.git())
+	tasks, err = meads.OpenTasksGit(g.Dir, g.git())
 	if err != nil {
 		return nil, err
 	}
+	g.cacheTasks(tasks)
+	return g.TaskStoreCache, nil
+}
+
+func (g *globals) cacheTasks(tasks meads.Tasks) {
+	if g.Verbose {
+		g.verbosef("using %s task store at %s\n", tasks.Backend(), tasks.Location())
+		tasks = &verboseTasks{Tasks: tasks, g: g}
+	}
 	g.TaskStoreCache = tasks
-	return tasks, nil
 }
 
 type root struct {
@@ -366,6 +384,7 @@ type root struct {
 }
 
 func main() {
+	started := time.Now()
 	c := root{}
 	c.Globals.TasksFile = defaultTasksFile()
 	c.Globals.WebhookURI = defaultWebhookURI()
@@ -422,7 +441,22 @@ func main() {
 		fmt.Println(filterHelp(p.Help(), hidden))
 		return
 	}
-	p.RunFatal()
+	if g.Verbose {
+		g.verbosef("command...\n")
+	}
+	err = p.Run()
+	if g.Verbose {
+		elapsed := verboseDuration(time.Since(started))
+		if err != nil {
+			g.verbosef("command failed in %s\n", elapsed)
+		} else {
+			g.verbosef("command done in %s\n", elapsed)
+		}
+	}
+	if err != nil {
+		fmt.Fprint(os.Stderr, err.Error())
+		os.Exit(1)
+	}
 }
 
 // optsFailureText reproduces exactly what opts v1.4.0's own auto-exiting

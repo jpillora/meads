@@ -6,6 +6,9 @@
 
 ## Essential Commands
 
+### Diagnostics
+- `md --verbose <command> ...` / `md -V <command> ...` - Show task, webhook, and Git actions with elapsed timings on stderr (global flag; place it before the command). When remote sync runs, fetch and push are timed separately. Lowercase `-v` remains the version flag
+
 ### Finding Work
 - `md ready` - Show open tasks not blocked by dependencies (sorted by priority)
 - `md list` - List all tasks
