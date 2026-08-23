@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"hash/fnv"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -465,5 +466,70 @@ func TestGitTasks_Sync_FailedPullStillPushes(t *testing.T) {
 	out, _ := (&ExecGit{Dir: bare}).Output("for-each-ref", "--format=%(refname)", TasksRefPrefix)
 	if !strings.Contains(out, TasksRefPrefix+"1") {
 		t.Errorf("origin task refs = %q, want the locally committed task pushed", out)
+	}
+}
+
+// waitDelayPushGit runs the real push, then reports exec.ErrWaitDelay on top
+// of its success - faithfully, since os/exec only ever yields that error when
+// the process exited ZERO but a descendant still held the output pipes past
+// WaitDelay (git's transport helpers outliving git, an SSH ControlMaster most
+// of all). Only CombinedOutputContext is overridden: that is the single call
+// Sync's push goes through.
+type waitDelayPushGit struct {
+	Git
+	pushes int
+}
+
+func (g *waitDelayPushGit) CombinedOutputContext(ctx context.Context, args ...string) (string, error) {
+	out, err := combinedOutputContext(ctx, g.Git, args...)
+	if len(args) > 0 && args[0] == "push" {
+		g.pushes++
+		if err == nil {
+			return out, exec.ErrWaitDelay
+		}
+	}
+	return out, err
+}
+
+// TestGitTasks_Sync_PushWaitDelayIsSuccess pins the one "failure" from the
+// push that actually means success. Left alone it made `md sync` exit
+// non-zero with `exec: WaitDelay expired before I/O complete` while the refs
+// were demonstrably on origin - the symptom that motivated successfulWaitDelay
+// in the first place.
+//
+// Deliberately asserted HERE and not in ExecGit: CombinedOutputContext keeps
+// returning the error, because only this caller knows the truncation it warns
+// about cannot matter. See Sync, and TestExecGitWaitDelayHandling for the
+// other side of that split.
+func TestGitTasks_Sync_PushWaitDelayIsSuccess(t *testing.T) {
+	bare := t.TempDir()
+	runGit(t, bare, "init", "--bare", "-b", "main")
+
+	dir := newDetectRepo(t)
+	runGit(t, dir, "remote", "add", "origin", bare)
+	spy := &waitDelayPushGit{Git: &ExecGit{Dir: dir}}
+	gs := NewGitStore(spy)
+	if err := gs.SetConfig(DefaultConfig()); err != nil {
+		t.Fatalf("SetConfig: %v", err)
+	}
+	if _, err := gs.Create(Task{Title: "published anyway", Status: "open"}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	report, err := NewGitTasks(gs).Sync(t.Context())
+	if err != nil {
+		t.Fatalf("Sync err = %v, want nil: ErrWaitDelay means git exited zero and the push landed", err)
+	}
+	if spy.pushes != 1 {
+		t.Fatalf("push attempts = %d, want 1", spy.pushes)
+	}
+	if report.Rejected {
+		t.Error("Rejected = true, want false: a zero exit rejected nothing")
+	}
+	// The refs really are on origin, so tolerating ErrWaitDelay reports a
+	// fact rather than papering over a failure.
+	out, _ := (&ExecGit{Dir: bare}).Output("for-each-ref", "--format=%(refname)", TasksRefPrefix)
+	if !strings.Contains(out, TasksRefPrefix+"1") {
+		t.Errorf("origin task refs = %q, want the pushed task", out)
 	}
 }

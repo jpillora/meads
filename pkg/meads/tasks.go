@@ -415,6 +415,24 @@ func (t GitTasks) Sync(ctx context.Context) (*SyncReport, error) {
 	out, pushErr := combinedOutputContext(ctx, t.gs.git, "push", "--porcelain", "origin", refspec)
 	report.PushOutput = out
 	report.Rejected = PushRejected(out)
+	// exec.ErrWaitDelay is the one "failure" that means the push SUCCEEDED.
+	// os/exec only ever reports it when the process exited zero (see its own
+	// doc comment) but a descendant still held the output pipes past
+	// WaitDelay - git's transport helpers outliving git is the ordinary case,
+	// an SSH ControlMaster most of all. Left alone it turns a healthy push
+	// into `md sync` exiting non-zero with `exec: WaitDelay expired before I/O
+	// complete` while the refs are demonstrably on origin.
+	//
+	// It is swallowed HERE rather than inside ExecGit.CombinedOutputContext
+	// because only this caller knows the truncation it warns about is
+	// harmless: `out` feeds PushRejected alone, and a zero exit means git did
+	// not reject anything, so "not rejected" is the right answer whether or
+	// not the porcelain lines arrived in full. OutputContext deliberately
+	// keeps the error - clone.go's ls-remote DOES decide on its output, and a
+	// short read there is cached in a marker ref (resolveCloneBackend).
+	if successfulWaitDelay(ctx, pushErr) {
+		pushErr = nil
+	}
 	if pushErr != nil {
 		pushErr = fmt.Errorf("pushing %s to origin: %w", RefNamespace+"*", pushErr)
 	}
