@@ -104,6 +104,9 @@ func (g *GitStore) PullContext(ctx context.Context) (*IntegrateReport, error) {
 // then runs its own batch as usual. refs/meads-remote/* itself is strictly
 // read-only input - it is owned by `git fetch`, never written here.
 func (g *GitStore) Integrate() (*IntegrateReport, error) {
+	if _, err := g.EnsureGitRefProtocolVersion(); err != nil {
+		return nil, err
+	}
 	report, err := g.integrateRefs()
 	if err != nil {
 		return nil, err

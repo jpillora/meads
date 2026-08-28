@@ -277,21 +277,43 @@ func (r *RefStore) ReadFileAtRef(ref, path string) (content []byte, refOID OID, 
 // created with its task.json in the same commit (CommitFile), so a missing
 // one means a corrupt store rather than a legitimately empty slot.
 func (r *RefStore) ReadFilesAtCommits(commits []OID, path string) ([][]byte, error) {
+	paths := make([]string, len(commits))
+	for i := range paths {
+		paths[i] = path
+	}
+	return r.ReadFilesAtCommitsPaths(commits, paths)
+}
+
+// ReadFilesAtCommitsPaths is ReadFilesAtCommits with one path per commit.
+// It lets callers batch heterogeneous objects (notably config.json plus every
+// task.json) through the same single cat-file process. commits and paths must
+// have equal lengths; results preserve their order.
+func (r *RefStore) ReadFilesAtCommitsPaths(commits []OID, paths []string) ([][]byte, error) {
+	if len(commits) != len(paths) {
+		return nil, fmt.Errorf("cat-file --batch: %d commits but %d paths", len(commits), len(paths))
+	}
 	if len(commits) == 0 {
 		return nil, nil
 	}
 	var stdin strings.Builder
-	for _, oid := range commits {
+	for i, oid := range commits {
 		stdin.WriteString(string(oid))
 		stdin.WriteString(":")
-		stdin.WriteString(path)
+		stdin.WriteString(paths[i])
 		stdin.WriteString("\n")
 	}
 	out, err := r.git.OutputRawWithInput(stdin.String(), "cat-file", "--batch")
 	if err != nil {
 		return nil, fmt.Errorf("cat-file --batch over %d commits: %w", len(commits), err)
 	}
-	return parseCatFileBatch(out, len(commits), path)
+	pathLabel := paths[0]
+	for _, path := range paths[1:] {
+		if path != pathLabel {
+			pathLabel = "requested paths"
+			break
+		}
+	}
+	return parseCatFileBatch(out, len(commits), pathLabel)
 }
 
 // parseCatFileBatch splits `git cat-file --batch` output into its want

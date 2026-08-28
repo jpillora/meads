@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -301,6 +303,26 @@ func TestIntegration_GitMode_Webui_NoLongerGated(t *testing.T) {
 	rev, err := store.Revision()
 	if err != nil || rev == "" {
 		t.Fatalf("Revision() = %q, err=%v, want a non-empty change token for the watcher", rev, err)
+	}
+}
+
+func TestIntegration_GitMode_LongRunningCommandsRejectNewerProtocolAtStartup(t *testing.T) {
+	commands := map[string]func(*globals) error{
+		"mcp":   func(g *globals) error { return (&mcpCmd{globals: g}).Run() },
+		"webui": func(g *globals) error { return (&webuiCmd{globals: g, Print: "none"}).Run() },
+	}
+	for name, run := range commands {
+		t.Run(name, func(t *testing.T) {
+			h := gitModeHarness(t)
+			future := meads.GitRefProtocolVersion + 1
+			raw := []byte(fmt.Sprintf(`{"git_ref_protocol_version":%d}`, future))
+			if _, err := meads.NewRefStore(h.globals.git()).CommitFile(meads.ConfigRef, meads.ConfigFileName, raw, meads.ZeroOID, "future protocol"); err != nil {
+				t.Fatalf("seeding future protocol: %v", err)
+			}
+			if err := run(h.globals); !errors.Is(err, meads.ErrGitRefProtocolUpgradeRequired) {
+				t.Fatalf("%s error = %v, want ErrGitRefProtocolUpgradeRequired", name, err)
+			}
+		})
 	}
 }
 

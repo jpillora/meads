@@ -3,6 +3,7 @@ package meads
 import (
 	"context"
 	"errors"
+	"fmt"
 	"hash/fnv"
 	"os/exec"
 	"path/filepath"
@@ -356,6 +357,52 @@ func TestGitTasks_Sync_ReportsReHomeToCaller(t *testing.T) {
 	}
 	if report.PushOutput == "" {
 		t.Error("PushOutput is empty, want the push's porcelain output captured")
+	}
+}
+
+type pushCountingGit struct {
+	Git
+	pushCalls int
+}
+
+func (g *pushCountingGit) Output(args ...string) (string, error) {
+	if len(args) > 0 && args[0] == "push" {
+		g.pushCalls++
+	}
+	return g.Git.Output(args...)
+}
+
+func TestGitTasks_Sync_NewerFetchedProtocolDoesNotPush(t *testing.T) {
+	bare := t.TempDir()
+	runGit(t, bare, "init", "--bare", "-b", "main")
+
+	producer := newDetectRepo(t)
+	runGit(t, producer, "remote", "add", "origin", bare)
+	producerRefs := NewRefStore(&ExecGit{Dir: producer})
+	future := GitRefProtocolVersion + 1
+	raw := []byte(fmt.Sprintf(`{"git_ref_protocol_version":%d}`, future))
+	if _, err := producerRefs.CommitFile(ConfigRef, ConfigFileName, raw, ZeroOID, "future protocol"); err != nil {
+		t.Fatalf("seeding future protocol: %v", err)
+	}
+	runGit(t, producer, "push", "origin", ConfigRef+":"+ConfigRef)
+
+	consumer := newDetectRepo(t)
+	runGit(t, consumer, "remote", "add", "origin", bare)
+	base := &ExecGit{Dir: consumer}
+	if _, err := EnsureFetchRefspec(base); err != nil {
+		t.Fatalf("EnsureFetchRefspec: %v", err)
+	}
+	spy := &pushCountingGit{Git: base}
+	gs := NewGitStore(spy)
+	if err := gs.SetConfig(DefaultConfig()); err != nil {
+		t.Fatalf("SetConfig: %v", err)
+	}
+
+	if _, err := NewGitTasks(gs).Sync(t.Context()); !errors.Is(err, ErrGitRefProtocolUpgradeRequired) {
+		t.Fatalf("Sync error = %v, want ErrGitRefProtocolUpgradeRequired", err)
+	}
+	if spy.pushCalls != 0 {
+		t.Errorf("push attempts = %d, want 0 after detecting a newer fetched protocol", spy.pushCalls)
 	}
 }
 

@@ -108,6 +108,9 @@ type Lock struct {
 // no expiry at all, by design - the kernel releases it the instant this
 // process ends, for any reason, so nothing needs to time it out.
 func (g *GitStore) Acquire(commonDir string, lease time.Duration) (*Lock, error) {
+	if _, err := g.EnsureGitRefProtocolVersion(); err != nil {
+		return nil, err
+	}
 	path := filepath.Join(commonDir, LockFileName)
 	local, err := acquireLocal(path)
 	if err != nil {

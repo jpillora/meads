@@ -105,9 +105,15 @@ func (c *doctorCmd) runGit() error {
 	repaired := 0
 	if setup, err := meads.EnsureGitInit(c.globals.git()); err != nil {
 		fmt.Fprintf(os.Stderr, "meads: could not check git-mode setup: %v\n", err)
-	} else if !setup.Skipped && setup.FetchRefspec == meads.FetchRefspecAdded {
-		fmt.Printf("Missing fetch refspec detected. Added %s to origin.\n", meads.FetchRefspec)
-		repaired++
+	} else if !setup.Skipped {
+		if setup.ProtocolVersionWritten {
+			fmt.Printf("Missing git-ref protocol marker detected. Wrote version %d.\n", meads.GitRefProtocolVersion)
+			repaired++
+		}
+		if setup.FetchRefspec == meads.FetchRefspecAdded {
+			fmt.Printf("Missing fetch refspec detected. Added %s to origin.\n", meads.FetchRefspec)
+			repaired++
+		}
 	}
 
 	cycles, err := gs.FindCycles()

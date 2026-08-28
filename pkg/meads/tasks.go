@@ -389,6 +389,9 @@ func (t GitTasks) Sync(ctx context.Context) (*SyncReport, error) {
 	if err := ctx.Err(); err != nil {
 		return report, err
 	}
+	if _, err := t.gs.EnsureGitRefProtocolVersion(); err != nil {
+		return report, err
+	}
 	integrated, pullErr := t.gs.PullContext(ctx)
 	if integrated != nil {
 		report.Integrate = integrated
@@ -405,6 +408,17 @@ func (t GitTasks) Sync(ctx context.Context) (*SyncReport, error) {
 	// An expired context is the one exception - there is no point starting
 	// a second network command against a deadline that has already passed.
 	if err := ctx.Err(); err != nil {
+		return report, errors.Join(pullErr, err)
+	}
+	// A newer fetched protocol is not an ordinary pull failure. Pushing this
+	// older binary's refs after detecting it could publish data with semantics
+	// the repository has explicitly moved beyond.
+	if errors.Is(pullErr, ErrGitRefProtocolUpgradeRequired) {
+		return report, pullErr
+	}
+	// Integration may have adopted an older/missing config marker. Re-stamp
+	// the local protocol immediately before advertising any refs.
+	if _, err := t.gs.EnsureGitRefProtocolVersion(); err != nil {
 		return report, errors.Join(pullErr, err)
 	}
 	// The push output is captured rather than discarded because a

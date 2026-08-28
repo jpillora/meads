@@ -140,12 +140,10 @@ func (c *convertCmd) runToGit() error {
 	c.globals.GitMode = true
 	defer scheduleSync(c.globals)
 
-	// Importing task refs is not the whole of "now in git mode": origin's
-	// fetch refspec is the rest of it, and this used to skip it, leaving a
-	// migrated repo unable to fetch anyone else's task refs - with no way
-	// back, since `md init --git` refuses once RefNamespace has any ref (task
-	// 91). Doing it here means either entry point leaves a repo that can
-	// actually share.
+	// ImportTask has already stamped the shared git-ref protocol marker. The
+	// remaining setup is origin's fetch refspec; older conversions skipped it,
+	// leaving no way to fetch anyone else's task refs because `md init --git`
+	// refuses once RefNamespace has any ref (task 91).
 	//
 	// After the import deliberately, not before: a failed import should leave
 	// nothing behind to explain, and this step is additive and idempotent, so

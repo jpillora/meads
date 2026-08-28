@@ -147,6 +147,12 @@ is no `TASKS.md`/`TASKS.csv` in the working tree at all. Every linked
 worktree of the same repo automatically shares the same task list — they
 already share one `.git`, and therefore one set of refs.
 
+The shared config also records `git_ref_protocol_version`. Meads writes the
+marker before every git-mode mutation; repositories created before the marker
+are treated as protocol v1. If a newer meads release changes ref semantics,
+older `md` binaries stop with an upgrade instruction instead of silently
+reading or writing the new protocol.
+
 **Enable it:**
 
 ```bash

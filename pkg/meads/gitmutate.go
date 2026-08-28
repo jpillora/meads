@@ -53,8 +53,9 @@ func (g *GitStore) readTaskAndOID(id int) (Task, OID, error) {
 // extra round trip per task for no benefit, since ListRefs already returns
 // every oid up front.
 //
-// Exactly two git processes regardless of task count: the ListRefs above
-// and one cat-file --batch for every blob (RefStore.ReadFilesAtCommits).
+// Exactly two git processes regardless of task count: one ListRefs over the
+// task namespace plus its config marker, and one cat-file --batch for
+// config.json and every task.json (RefStore.ReadFilesAtCommitsPaths).
 // Reading each blob with its own readTaskAtCommit was one process per task,
 // which mattered doubly here - a single auto-sync calls this FOUR times
 // (local and remote-tracking, in planIntegration and again in
@@ -65,7 +66,17 @@ func (g *GitStore) readTaskAndOID(id int) (Task, OID, error) {
 // deliberately randomised by Go and would otherwise differ between building
 // the request and reading the response.
 func (g *GitStore) loadAllWithOIDs(prefix string) (map[int]Task, map[int]OID, error) {
-	refs, err := g.refs.ListRefs(prefix)
+	listPrefix := prefix
+	configRef := ""
+	switch prefix {
+	case TasksRefPrefix:
+		listPrefix = RefNamespace
+		configRef = ConfigRef
+	case RemoteTasksRefPrefix:
+		listPrefix = RemoteRefNamespace
+		configRef = RemoteRefNamespace + "config"
+	}
+	refs, err := g.refs.ListRefs(listPrefix)
 	if err != nil {
 		return nil, nil, fmt.Errorf("listing task refs: %w", err)
 	}
@@ -80,19 +91,33 @@ func (g *GitStore) loadAllWithOIDs(prefix string) (map[int]Task, map[int]OID, er
 		ids = append(ids, id)
 	}
 	sort.Ints(ids)
-	commits := make([]OID, len(ids))
-	for i, id := range ids {
-		commits[i] = oids[id]
+	commits := make([]OID, 0, len(ids)+1)
+	paths := make([]string, 0, len(ids)+1)
+	hasConfig := false
+	if configOID, ok := refs[configRef]; configRef != "" && ok {
+		commits = append(commits, configOID)
+		paths = append(paths, ConfigFileName)
+		hasConfig = true
 	}
-	blobs, err := g.refs.ReadFilesAtCommits(commits, TaskFileName)
+	for _, id := range ids {
+		commits = append(commits, oids[id])
+		paths = append(paths, TaskFileName)
+	}
+	blobs, err := g.refs.ReadFilesAtCommitsPaths(commits, paths)
 	if err != nil {
 		return nil, nil, err
+	}
+	if hasConfig {
+		if _, _, err := gitRefProtocolVersionFromJSON(blobs[0], configRef); err != nil {
+			return nil, nil, err
+		}
+		blobs = blobs[1:]
 	}
 	tasks := make(map[int]Task, len(ids))
 	for i, id := range ids {
 		var t Task
 		if err := json.Unmarshal(blobs[i], &t); err != nil {
-			return nil, nil, fmt.Errorf("parsing %s at %s: %w", TaskFileName, commits[i], err)
+			return nil, nil, fmt.Errorf("parsing %s at %s: %w", TaskFileName, oids[id], err)
 		}
 		tasks[id] = t
 	}
@@ -144,7 +169,7 @@ func (g *GitStore) buildTaskVersion(id int, task Task, prev OID, message string)
 // against the full active task set with candidate substituted for id (or
 // appended, when id isn't in the set yet: a Create in flight).
 func (g *GitStore) validateTaskDeps(id int, candidate Task) error {
-	all, err := g.LoadAll()
+	all, err := g.loadAllUnchecked()
 	if err != nil {
 		return err
 	}
@@ -235,6 +260,9 @@ func withClonedMeta(t Task) Task {
 // Claim as well as Update. An aborted decide stamps nothing - nothing was
 // written, so nothing was updated.
 func (g *GitStore) casUpdate(id int, action string, decide func(current Task) (next Task, ok bool, err error)) (Task, error) {
+	if _, err := g.EnsureGitRefProtocolVersion(); err != nil {
+		return Task{}, err
+	}
 	message := fmt.Sprintf("%s task %d", action, id)
 	var lastErr error
 	for attempt := 0; attempt < maxCASRetries; attempt++ {
@@ -279,6 +307,9 @@ func (g *GitStore) casUpdate(id int, action string, decide func(current Task) (n
 // retries. Deliberately no shared counter ref and no atomic multi-ref batch
 // - either would force every create to queue behind one contention point.
 func (g *GitStore) Create(t Task) (Task, error) {
+	if _, err := g.EnsureGitRefProtocolVersion(); err != nil {
+		return Task{}, err
+	}
 	if t.ID != 0 {
 		return Task{}, fmt.Errorf("task ID must not be set (got %d)", t.ID)
 	}
@@ -287,7 +318,7 @@ func (g *GitStore) Create(t Task) (Task, error) {
 	}
 	var lastErr error
 	for attempt := 0; attempt < maxCASRetries; attempt++ {
-		id, err := g.NextID()
+		id, err := g.nextIDUnchecked()
 		if err != nil {
 			return Task{}, err
 		}
@@ -343,6 +374,9 @@ func (g *GitStore) Create(t Task) (Task, error) {
 // the batch as a whole once every task has been imported, e.g. via
 // FindCycles.
 func (g *GitStore) ImportTask(t Task) error {
+	if _, err := g.EnsureGitRefProtocolVersion(); err != nil {
+		return err
+	}
 	if t.ID <= 0 {
 		return fmt.Errorf("import task: id must be positive (got %d)", t.ID)
 	}
@@ -412,6 +446,9 @@ func (g *GitStore) Update(id int, mutate func(*Task) (bool, error)) (Task, error
 // repeat delete comes from tombstone pruning dropping the row, git mode
 // never prunes, so the ref is always still there to check idempotently.
 func (g *GitStore) SoftDelete(id int) (Task, error) {
+	if _, err := g.EnsureGitRefProtocolVersion(); err != nil {
+		return Task{}, err
+	}
 	var lastErr error
 	for attempt := 0; attempt < maxCASRetries; attempt++ {
 		tasks, oids, err := g.loadAllWithOIDs(TasksRefPrefix)
@@ -509,6 +546,9 @@ func (g *GitStore) SoftDelete(id int) (Task, error) {
 // task set, so leaving the edges behind would make every dependent
 // unwritable through Add/Update until someone hand-repaired it.
 func (g *GitStore) HardDelete(id int) (Task, error) {
+	if _, err := g.EnsureGitRefProtocolVersion(); err != nil {
+		return Task{}, err
+	}
 	var lastErr error
 	for attempt := 0; attempt < maxCASRetries; attempt++ {
 		tasks, oids, err := g.loadAllWithOIDs(TasksRefPrefix)

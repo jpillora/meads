@@ -92,6 +92,9 @@ func (g *GitStore) Doctor() ([]DoctorFix, error) {
 		if len(updates) == 0 {
 			return nil, nil // nothing to fix; do not even open an AtomicUpdate transaction
 		}
+		if _, err := g.EnsureGitRefProtocolVersion(); err != nil {
+			return nil, err
+		}
 		if err := g.refs.AtomicUpdate(updates); err != nil {
 			if !errors.Is(err, ErrCASConflict) {
 				return nil, err

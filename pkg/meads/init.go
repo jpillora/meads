@@ -84,6 +84,10 @@ type GitInitState struct {
 	Skipped bool
 	// FetchRefspec is what EnsureFetchRefspec did.
 	FetchRefspec FetchRefspecOutcome
+	// ProtocolVersionWritten reports that the shared config was missing the
+	// git-ref protocol marker and was updated (or created) with the current
+	// version.
+	ProtocolVersionWritten bool
 }
 
 // EnsureGitInit finishes git-mode setup for a repo that is ALREADY in git
@@ -97,26 +101,15 @@ type GitInitState struct {
 // does `md doctor`, so repos an older binary already left that way can be
 // fixed.
 //
-// It ensures the fetch refspec and NOTHING ELSE - in particular it does not
-// seed ConfigRef, even though InitTasks does. That asymmetry is deliberate.
-// An absent ConfigRef is harmless: Config() degrades to DefaultConfig(), which
-// is why task 91 concluded only the refspec is genuinely lost. But a PRESENT
-// one is the marker that says "this repo is in git mode" (see InitTasks' doc
-// comment on why it writes one), so seeding it here would not repair a repo,
-// it would convert one - flipping a file-mode repo run with `md --git doctor`
-// into an empty git-mode repo whose TASKS.md tasks all vanish from `md list`,
-// and short-circuiting a fresh clone's adoption of origin's refs with a rival
-// config ref of unrelated history.
+// It ensures both pieces of shared protocol setup: the fetch refspec and the
+// git_ref_protocol_version marker in ConfigRef. Repositories converted by an
+// older md can have task refs but no ConfigRef; once RefNamespace is already
+// non-empty, creating the config is a repair rather than a mode change.
 //
-// The refspec has none of that power: it lands fetched refs in
-// RemoteRefNamespace, which no mode detection looks at, and adding it is
-// idempotent (EnsureFetchRefspec never duplicates one).
-//
-// The guard below is the other half. Everything above assumes the repo really
-// is in git mode, and neither caller can promise that on its own - doctor runs
-// wherever the user points it, and convert populates the namespace itself
-// moments earlier, so a convert that imported nothing must not leave a mark.
-// So this checks rather than trusts.
+// The guard below is the safety boundary. Doctor can be forced into git mode
+// in a file-mode repository, and convert can import an empty file, so neither
+// caller alone proves that shared refs exist. Nothing is written until the
+// namespace itself does.
 func EnsureGitInit(git Git) (GitInitState, error) {
 	refs, err := NewRefStore(git).ListRefs(RefNamespace)
 	if err != nil {
@@ -125,11 +118,15 @@ func EnsureGitInit(git Git) (GitInitState, error) {
 	if len(refs) == 0 {
 		return GitInitState{Skipped: true}, nil
 	}
+	protocolWritten, err := NewGitStore(git).EnsureGitRefProtocolVersion()
+	if err != nil {
+		return GitInitState{}, err
+	}
 	outcome, err := EnsureFetchRefspec(git)
 	if err != nil {
 		return GitInitState{}, err
 	}
-	return GitInitState{FetchRefspec: outcome}, nil
+	return GitInitState{FetchRefspec: outcome, ProtocolVersionWritten: protocolWritten}, nil
 }
 
 // InitResult describes what InitTasks did, as data - the reason InitTasks

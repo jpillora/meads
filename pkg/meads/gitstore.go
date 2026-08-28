@@ -49,10 +49,10 @@ type GitStore struct {
 	refs *RefStore
 	git  Git
 
-	// configMu guards configOID/configCache - the Config() cache (see
+	// configMu guards the oid-keyed config and protocol cache (see
 	// gitconfig.go). GitStore is used from multiple goroutines (gitmutate.go's
 	// Create/Update/Claim races already exercise that), so every access to
-	// these two fields goes through the mutex.
+	// these fields goes through the mutex.
 	configMu sync.RWMutex
 	// configOID is the ConfigRef oid configCache was parsed from. The zero
 	// value "" means "never populated" - distinct from ZeroOID, which means
@@ -60,6 +60,10 @@ type GitStore struct {
 	// always misses the cache on its first Config() call.
 	configOID   OID
 	configCache Config
+	// configProtocolVersion/configProtocolExplicit describe the protocol
+	// marker parsed from the same ConfigRef oid as configCache.
+	configProtocolVersion  int
+	configProtocolExplicit bool
 }
 
 // NewGitStore creates a GitStore backed by git.
@@ -81,6 +85,13 @@ func (g *GitStore) TaskRef(id int) string {
 // a for-each-ref AND a cat-file each - so a read scaled linearly in
 // processes and a 100-task store spent most of a second in fork/exec.
 func (g *GitStore) LoadAll() ([]Task, error) {
+	return g.loadAllUnchecked()
+}
+
+// loadAllUnchecked is LoadAll after its caller has validated the protocol.
+// Mutating operations use it after EnsureGitRefProtocolVersion so one logical
+// operation does not repeatedly resolve and parse ConfigRef.
+func (g *GitStore) loadAllUnchecked() ([]Task, error) {
 	tasks, _, err := g.loadAllWithOIDs(TasksRefPrefix)
 	if err != nil {
 		return nil, err
@@ -167,6 +178,9 @@ func taskIDFromRef(prefix, name string) (int, bool) {
 // pkg/webui/watch.go's refSnapshotter). A plain wrapper over
 // RefStore.ListRefs, exported here since RefStore itself is not.
 func (g *GitStore) TaskRefOIDs() (map[string]OID, error) {
+	if err := g.CheckGitRefProtocol(); err != nil {
+		return nil, err
+	}
 	return g.refs.ListRefs(TasksRefPrefix)
 }
 
@@ -182,6 +196,13 @@ func (g *GitStore) TaskRefOIDs() (map[string]OID, error) {
 // mode, so ids must never be reused, and the max is taken over every ref
 // regardless of the task's deleted status.
 func (g *GitStore) NextID() (int, error) {
+	if err := g.CheckGitRefProtocol(); err != nil {
+		return 0, err
+	}
+	return g.nextIDUnchecked()
+}
+
+func (g *GitStore) nextIDUnchecked() (int, error) {
 	refs, err := g.refs.ListRefs(TasksRefPrefix)
 	if err != nil {
 		return 0, fmt.Errorf("listing task refs: %w", err)
@@ -202,6 +223,9 @@ func (g *GitStore) NextID() (int, error) {
 // History returns every version of task id, newest first, by walking the
 // commit chain of its ref. Returns ErrRefNotFound if the task ref is absent.
 func (g *GitStore) History(id int) ([]Task, error) {
+	if err := g.CheckGitRefProtocol(); err != nil {
+		return nil, err
+	}
 	ref := g.TaskRef(id)
 	// Resolve first so a missing ref reports ErrRefNotFound: RefStore.History
 	// runs "rev-list <ref>" directly, which fails with a plain git error (not

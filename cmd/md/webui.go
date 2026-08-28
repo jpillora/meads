@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jpillora/meads/pkg/meads"
 	"github.com/jpillora/meads/pkg/webui"
 )
 
@@ -29,6 +30,11 @@ func (c *webuiCmd) Run() error {
 	store, err := c.globals.tasks()
 	if err != nil {
 		return err
+	}
+	if store.Backend() == meads.BackendGit {
+		if err := c.globals.gitStore().CheckGitRefProtocol(); err != nil {
+			return err
+		}
 	}
 	srv, err := webui.New(webui.Config{
 		Store:   store,

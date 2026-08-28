@@ -2,6 +2,10 @@ package meads
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -327,6 +331,9 @@ func TestGitConfig_SetConfig_PreservesUnknownFields(t *testing.T) {
 	if stored["push_interval"] != "6m" {
 		t.Errorf("config.json after SetConfig = %v, want push_interval=6m", stored)
 	}
+	if stored[gitRefProtocolVersionKey] != float64(GitRefProtocolVersion) {
+		t.Errorf("config.json after SetConfig = %v, want %s=%d", stored, gitRefProtocolVersionKey, GitRefProtocolVersion)
+	}
 
 	// An unknown field must not break a normal Config() read either.
 	cfg, err := gs.Config()
@@ -335,5 +342,77 @@ func TestGitConfig_SetConfig_PreservesUnknownFields(t *testing.T) {
 	}
 	if want := (Config{RemoteLocking: true, PushInterval: "6m"}); cfg != want {
 		t.Errorf("Config() = %+v, want %+v", cfg, want)
+	}
+}
+
+func TestGitConfig_LegacyConfigIsAcceptedAndNextMutationWritesProtocolVersion(t *testing.T) {
+	gs, rs, _ := newGitStoreRepo(t)
+	// This is exactly the config shape written before the protocol marker was
+	// introduced. It is the v1 protocol, not an unknown protocol.
+	if _, err := rs.CommitFile(ConfigRef, ConfigFileName, []byte(`{"push_interval":"7m"}`), ZeroOID, "legacy config"); err != nil {
+		t.Fatalf("seeding legacy config: %v", err)
+	}
+	if _, err := gs.LoadAll(); err != nil {
+		t.Fatalf("LoadAll with legacy config: %v", err)
+	}
+	if _, err := gs.Create(Task{Title: "stamps protocol"}); err != nil {
+		t.Fatalf("Create with legacy config: %v", err)
+	}
+	content, _, err := rs.ReadFileAtRef(ConfigRef, ConfigFileName)
+	if err != nil {
+		t.Fatalf("reading stamped config: %v", err)
+	}
+	var stored map[string]any
+	if err := json.Unmarshal(content, &stored); err != nil {
+		t.Fatalf("parsing stamped config: %v", err)
+	}
+	if got := stored[gitRefProtocolVersionKey]; got != float64(GitRefProtocolVersion) {
+		t.Errorf("%s = %v, want %d", gitRefProtocolVersionKey, got, GitRefProtocolVersion)
+	}
+	if got := stored["push_interval"]; got != "7m" {
+		t.Errorf("push_interval = %v, want legacy setting preserved", got)
+	}
+}
+
+func TestGitConfig_NewerProtocolRequiresMdUpgradeBeforeReadOrWrite(t *testing.T) {
+	gs, rs, _ := newGitStoreRepo(t)
+	future := GitRefProtocolVersion + 1
+	raw := []byte(fmt.Sprintf(`{"git_ref_protocol_version":%d}`, future))
+	if _, err := rs.CommitFile(ConfigRef, ConfigFileName, raw, ZeroOID, "future protocol"); err != nil {
+		t.Fatalf("seeding future config: %v", err)
+	}
+
+	_, err := gs.LoadAll()
+	if !errors.Is(err, ErrGitRefProtocolUpgradeRequired) {
+		t.Fatalf("LoadAll error = %v, want ErrGitRefProtocolUpgradeRequired", err)
+	}
+	if !strings.Contains(err.Error(), "upgrade md") || !strings.Contains(err.Error(), strconv.Itoa(future)) {
+		t.Errorf("LoadAll error = %q, want upgrade instruction and protocol version", err)
+	}
+	if _, err := gs.Create(Task{Title: "must not be written"}); !errors.Is(err, ErrGitRefProtocolUpgradeRequired) {
+		t.Fatalf("Create error = %v, want ErrGitRefProtocolUpgradeRequired", err)
+	}
+	refs, err := rs.ListRefs(TasksRefPrefix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(refs) != 0 {
+		t.Errorf("Create under future protocol wrote task refs: %v", refs)
+	}
+}
+
+func TestGitConfig_NewerFetchedProtocolStopsIntegration(t *testing.T) {
+	gs, rs, _ := newGitStoreRepo(t)
+	if err := gs.SetConfig(DefaultConfig()); err != nil {
+		t.Fatalf("SetConfig: %v", err)
+	}
+	future := GitRefProtocolVersion + 1
+	raw := []byte(fmt.Sprintf(`{"git_ref_protocol_version":%d}`, future))
+	remoteConfigRef := RemoteRefNamespace + "config"
+	if _, err := rs.CommitFile(remoteConfigRef, ConfigFileName, raw, ZeroOID, "future remote protocol"); err != nil {
+		t.Fatalf("seeding future remote config: %v", err)
+	}
+	if _, err := gs.Integrate(); !errors.Is(err, ErrGitRefProtocolUpgradeRequired) {
+		t.Fatalf("Integrate error = %v, want ErrGitRefProtocolUpgradeRequired", err)
 	}
 }

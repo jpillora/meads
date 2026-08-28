@@ -1,6 +1,7 @@
 package meads
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -81,6 +82,17 @@ func TestInitTasks_Git(t *testing.T) {
 	}
 	if want := DefaultConfig(); cfg != want {
 		t.Errorf("Config() after init = %+v, want defaults %+v", cfg, want)
+	}
+	content, _, err := gt.GitStore().refs.ReadFileAtRef(ConfigRef, ConfigFileName)
+	if err != nil {
+		t.Fatalf("reading config.json after init: %v", err)
+	}
+	var stored map[string]any
+	if err := json.Unmarshal(content, &stored); err != nil {
+		t.Fatalf("parsing config.json after init: %v", err)
+	}
+	if got := stored[gitRefProtocolVersionKey]; got != float64(GitRefProtocolVersion) {
+		t.Errorf("%s after init = %v, want %d", gitRefProtocolVersionKey, got, GitRefProtocolVersion)
 	}
 	if tasks, err := res.Tasks.Get(nil); err != nil || len(tasks) != 0 {
 		t.Errorf("Get(nil) after init = %v, %v; want no tasks", tasks, err)

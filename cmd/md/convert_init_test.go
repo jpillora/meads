@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -79,18 +80,26 @@ func TestConvert_FileToGit_MatchesInitGitRefspec(t *testing.T) {
 	}
 }
 
-// TestConvert_FileToGit_DoesNotSeedConfigRef pins the deliberate asymmetry
-// with init --git (see meads.EnsureGitInit): an absent config ref is harmless,
-// but a present one is the marker that says "this repo is in git mode", so
-// writing one is how a repair turns into an unrequested conversion.
-func TestConvert_FileToGit_DoesNotSeedConfigRef(t *testing.T) {
+// TestConvert_FileToGit_WritesProtocolVersion pins the compatibility marker
+// for the second supported route into git mode. ImportTask writes it before
+// the first task ref, so a future md can change ref semantics without older
+// binaries silently interpreting the new representation.
+func TestConvert_FileToGit_WritesProtocolVersion(t *testing.T) {
 	h := newHarness(t)
 	h.addTask("One")
 	if err := (&convertCmd{globals: h.globals, File: h.globals.TasksFile, ToGit: true}).Run(); err != nil {
 		t.Fatalf("convert --to-git: %v", err)
 	}
-	if _, err := meads.NewRefStore(h.globals.git()).ResolveRef(meads.ConfigRef); err == nil {
-		t.Errorf("%s was seeded; only the fetch refspec should have been touched", meads.ConfigRef)
+	content, _, err := meads.NewRefStore(h.globals.git()).ReadFileAtRef(meads.ConfigRef, meads.ConfigFileName)
+	if err != nil {
+		t.Fatalf("reading %s after conversion: %v", meads.ConfigRef, err)
+	}
+	var config map[string]any
+	if err := json.Unmarshal(content, &config); err != nil {
+		t.Fatalf("parsing %s: %v", meads.ConfigFileName, err)
+	}
+	if got := config["git_ref_protocol_version"]; got != float64(meads.GitRefProtocolVersion) {
+		t.Errorf("git_ref_protocol_version = %v, want %d", got, meads.GitRefProtocolVersion)
 	}
 }
 
