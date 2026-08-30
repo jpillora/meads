@@ -1,44 +1,29 @@
 package meads
 
 import (
-	"bytes"
 	"context"
-	"crypto/rand"
-	_ "embed"
 	"errors"
-	"fmt"
 	"os"
-	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
-	"github.com/tetratelabs/wazero"
-	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
-	"github.com/tetratelabs/wazero/sys"
+	"github.com/jpillora/tigo"
 )
 
-//go:embed wasigit.wasm
-var wazeroGitModule []byte
-
-// WazeroGit implements Git with an upstream C Git WASI module for Meads' local
-// object and ref plumbing. A capability-controlled Go host bridge handles
-// HTTP, SSH and git:// remote transfers. Commands outside those two
-// deliberately small sets fall back to ExecGit.
+// WazeroGit adapts tigo's embedded upstream Git runtime to Meads' Git
+// interface. Meads delegates its local object/ref hot path and supported
+// network operations; commands whose host-path semantics matter retain the
+// native ExecGit fallback.
 //
-// Each command gets a fresh WASI instance, while the expensive WebAssembly
-// compilation is shared for the life of WazeroGit. The instance can access
-// only the repository's Git directory, mounted read/write at /git; it never
-// receives the process environment or the working tree.
+// The historical name is retained for API compatibility. New code that wants
+// embedded Git directly should import github.com/jpillora/tigo.
 type WazeroGit struct {
 	Dir string
 
 	native  *ExecGit
 	once    sync.Once
-	rt      wazero.Runtime
-	module  wazero.CompiledModule
-	cache   wazero.CompilationCache
-	mount   string
-	gitDir  string
+	repo    *tigo.Repo
 	initErr error
 }
 
@@ -48,28 +33,21 @@ var (
 	_ CombinedOutputGit = (*WazeroGit)(nil)
 )
 
-// NewWazeroGit returns a hybrid Git implementation whose local Meads plumbing
-// runs in wazero. Initialization and compilation are lazy, so construction is
-// cheap and an unsupported command does not start the WebAssembly runtime.
+// NewWazeroGit returns a lazy tigo-backed Meads Git adapter.
 func NewWazeroGit(dir string) *WazeroGit {
 	return &WazeroGit{Dir: dir, native: &ExecGit{Dir: dir}}
 }
 
-// Close releases compiled WebAssembly code and the wazero runtime. A short
-// lived md process may let process exit do this; benchmarks and long-lived
-// library users should close explicitly.
+// Close releases the tigo repository and wazero runtime.
 func (g *WazeroGit) Close(ctx context.Context) error {
-	var errs []error
-	if g.rt != nil {
-		errs = append(errs, g.rt.Close(ctx))
+	if g.repo == nil {
+		return nil
 	}
-	if g.cache != nil {
-		errs = append(errs, g.cache.Close(ctx))
-	}
-	return errors.Join(errs...)
+	return g.repo.Close(ctx)
 }
 
-// WASMCommandError is returned when the embedded command exits non-zero.
+// WASMCommandError is retained for callers that classified the old embedded
+// backend's non-zero exits. New tigo users should use tigo.ExitError directly.
 type WASMCommandError struct {
 	Code   uint32
 	Stderr string
@@ -77,7 +55,7 @@ type WASMCommandError struct {
 }
 
 func (e *WASMCommandError) Error() string {
-	message := fmt.Sprintf("wasigit exited with code %d", e.Code)
+	message := "tigo exited with code " + strconv.FormatUint(uint64(e.Code), 10)
 	if e.Stderr != "" {
 		message += ": " + e.Stderr
 	}
@@ -88,127 +66,29 @@ func (e *WASMCommandError) Unwrap() error { return e.Cause }
 
 func (g *WazeroGit) initialize() {
 	g.once.Do(func() {
-		g.mount, g.gitDir, g.initErr = discoverGitMount(g.Dir)
-		if g.initErr != nil {
-			return
-		}
-		ctx := context.Background()
-		runtimeConfig := wazero.NewRuntimeConfig()
-		if cacheDir, err := wazeroGitCacheDir(); err == nil {
-			g.cache, err = wazero.NewCompilationCacheWithDir(cacheDir)
-			if err != nil {
-				g.initErr = fmt.Errorf("open wazero compilation cache: %w", err)
-				return
-			}
-			runtimeConfig = runtimeConfig.WithCompilationCache(g.cache)
-		}
-		g.rt = wazero.NewRuntimeWithConfig(ctx, runtimeConfig)
-		if _, err := wasi_snapshot_preview1.Instantiate(ctx, g.rt); err != nil {
-			g.initErr = fmt.Errorf("instantiate WASI: %w", err)
-			return
-		}
-		g.module, g.initErr = g.rt.CompileModule(ctx, wazeroGitModule)
-		if g.initErr != nil {
-			g.initErr = fmt.Errorf("compile wasigit: %w", g.initErr)
-		}
+		g.repo, g.initErr = tigo.OpenWithOptions(context.Background(), g.Dir, tigoOptionsFromEnv())
 	})
 }
 
-func wazeroGitCacheDir() (string, error) {
-	if dir := os.Getenv("MEADS_WAZERO_CACHE"); dir != "" {
-		return dir, nil
+func tigoOptionsFromEnv() tigo.Options {
+	return tigo.Options{
+		CacheDir:   os.Getenv("MEADS_WAZERO_CACHE"),
+		GitDirOnly: true,
+		HTTPAuth: tigo.HTTPAuth{
+			Username: os.Getenv("MEADS_GIT_HTTP_USERNAME"),
+			Password: os.Getenv("MEADS_GIT_HTTP_PASSWORD"),
+			Token:    os.Getenv("MEADS_GIT_HTTP_TOKEN"),
+		},
+		SSHAuth: tigo.SSHAuth{
+			PrivateKeyPath: os.Getenv("MEADS_GIT_SSH_KEY"),
+			Passphrase:     os.Getenv("MEADS_GIT_SSH_PASSPHRASE"),
+		},
 	}
-	root, err := os.UserCacheDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(root, "meads", "wazero"), nil
 }
 
-// discoverGitMount resolves .git without invoking Git. For linked worktrees it
-// mounts the common Git directory and opens the worktree's administrative
-// directory beneath it, preserving the relative commondir link.
-func discoverGitMount(dir string) (mount, guestGitDir string, err error) {
-	if dir == "" {
-		dir, err = os.Getwd()
-		if err != nil {
-			return "", "", err
-		}
-	}
-	dir, err = filepath.Abs(dir)
-	if err != nil {
-		return "", "", err
-	}
-	for current := dir; ; current = filepath.Dir(current) {
-		candidate := filepath.Join(current, ".git")
-		info, statErr := os.Stat(candidate)
-		if statErr == nil {
-			gitDir := candidate
-			if !info.IsDir() {
-				data, readErr := os.ReadFile(candidate)
-				if readErr != nil {
-					return "", "", fmt.Errorf("read %s: %w", candidate, readErr)
-				}
-				const prefix = "gitdir:"
-				value := strings.TrimSpace(string(data))
-				if !strings.HasPrefix(strings.ToLower(value), prefix) {
-					return "", "", fmt.Errorf("invalid gitdir file %s", candidate)
-				}
-				gitDir = strings.TrimSpace(value[len(prefix):])
-				if !filepath.IsAbs(gitDir) {
-					gitDir = filepath.Join(current, gitDir)
-				}
-				gitDir = filepath.Clean(gitDir)
-			}
-			return gitMountForDir(gitDir)
-		}
-		if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
-			return "", "", fmt.Errorf("stat %s: %w", candidate, statErr)
-		}
-		if isBareGitDir(current) {
-			return gitMountForDir(current)
-		}
-		parent := filepath.Dir(current)
-		if parent == current {
-			break
-		}
-	}
-	return "", "", fmt.Errorf("not a git repository: %s", dir)
-}
-
-func isBareGitDir(dir string) bool {
-	if info, err := os.Stat(filepath.Join(dir, "HEAD")); err != nil || info.IsDir() {
-		return false
-	}
-	info, err := os.Stat(filepath.Join(dir, "objects"))
-	return err == nil && info.IsDir()
-}
-
-func gitMountForDir(gitDir string) (mount, guestGitDir string, err error) {
-	gitDir, err = filepath.Abs(gitDir)
-	if err != nil {
-		return "", "", err
-	}
-	commondirPath := filepath.Join(gitDir, "commondir")
-	data, readErr := os.ReadFile(commondirPath)
-	if errors.Is(readErr, os.ErrNotExist) {
-		return gitDir, "/git", nil
-	}
-	if readErr != nil {
-		return "", "", fmt.Errorf("read %s: %w", commondirPath, readErr)
-	}
-	common := strings.TrimSpace(string(data))
-	if !filepath.IsAbs(common) {
-		common = filepath.Join(gitDir, common)
-	}
-	common = filepath.Clean(common)
-	rel, err := filepath.Rel(common, gitDir)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", "", fmt.Errorf("git dir %s is outside common dir %s", gitDir, common)
-	}
-	return common, filepath.ToSlash(filepath.Join("/git", rel)), nil
-}
-
+// wasmGitCommand is Meads' narrower delegation set. Tigo itself exposes more
+// compiled builtins, but several return WASI guest paths or touch the mounted
+// worktree and therefore are not transparent replacements for ExecGit here.
 func wasmGitCommand(args []string) bool {
 	commandPos := 0
 	for commandPos+1 < len(args) && args[commandPos] == "-c" {
@@ -225,44 +105,40 @@ func wasmGitCommand(args []string) bool {
 	}
 }
 
-func (g *WazeroGit) execute(ctx context.Context, stdin string, args ...string) ([]byte, string, error) {
+func remoteGitCommand(args []string) bool {
+	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
+		return false
+	}
+	switch args[0] {
+	case "fetch", "push", "ls-remote":
+		return true
+	case "remote":
+		return len(args) > 1 && args[1] == "get-url"
+	default:
+		return false
+	}
+}
+
+func (g *WazeroGit) shouldDelegate(args []string) bool {
+	return wasmGitCommand(args) || remoteGitCommand(args)
+}
+
+func (g *WazeroGit) command(args ...string) (*tigo.Cmd, error) {
 	g.initialize()
 	if g.initErr != nil {
-		return nil, "", g.initErr
+		return nil, g.initErr
 	}
-	var stdout, stderr bytes.Buffer
-	moduleArgs := make([]string, 1, len(args)+1)
-	moduleArgs[0] = "git"
-	moduleArgs = append(moduleArgs, args...)
-	config := wazero.NewModuleConfig().
-		WithName("").
-		WithArgs(moduleArgs...).
-		WithEnv("HOME", "/git").
-		WithEnv("GIT_DIR", g.gitDir).
-		WithStdin(strings.NewReader(stdin)).
-		WithStdout(&stdout).
-		WithStderr(&stderr).
-		WithRandSource(rand.Reader).
-		WithSysWalltime().
-		WithSysNanotime().
-		WithFSConfig(wazero.NewFSConfig().WithDirMount(g.mount, "/git"))
-	instance, err := g.rt.InstantiateModule(ctx, g.module, config)
-	if instance != nil {
-		_ = instance.Close(ctx)
+	return g.repo.Command(args...), nil
+}
+
+func adapterError(err error) error {
+	var exitErr *tigo.ExitError
+	if !errors.As(err, &exitErr) {
+		return err
 	}
-	if err == nil {
-		return stdout.Bytes(), stderr.String(), nil
+	return &WASMCommandError{
+		Code: exitErr.Code, Stderr: strings.TrimSpace(string(exitErr.Stderr)), Cause: err,
 	}
-	if ctxErr := ctx.Err(); ctxErr != nil {
-		return nil, stderr.String(), ctxErr
-	}
-	var exitErr *sys.ExitError
-	if errors.As(err, &exitErr) {
-		return nil, stderr.String(), &WASMCommandError{
-			Code: exitErr.ExitCode(), Stderr: strings.TrimSpace(stderr.String()), Cause: err,
-		}
-	}
-	return nil, stderr.String(), fmt.Errorf("run wasigit: %w", err)
 }
 
 func (g *WazeroGit) Run(args ...string) error {
@@ -270,14 +146,18 @@ func (g *WazeroGit) Run(args ...string) error {
 }
 
 func (g *WazeroGit) RunContext(ctx context.Context, args ...string) error {
-	if result := g.remoteBridgeCommand(ctx, args...); result.handled {
-		return result.err
-	}
-	if !wasmGitCommand(args) {
+	if !g.shouldDelegate(args) {
 		return g.native.RunContext(ctx, args...)
 	}
-	_, _, err := g.execute(ctx, "", args...)
-	return err
+	cmd, err := g.command(args...)
+	if err != nil {
+		return err
+	}
+	err = cmd.Run(ctx)
+	if errors.Is(err, tigo.ErrUnsupported) {
+		return g.native.RunContext(ctx, args...)
+	}
+	return adapterError(err)
 }
 
 func (g *WazeroGit) Output(args ...string) (string, error) {
@@ -285,27 +165,25 @@ func (g *WazeroGit) Output(args ...string) (string, error) {
 }
 
 func (g *WazeroGit) OutputContext(ctx context.Context, args ...string) (string, error) {
-	if result := g.remoteBridgeCommand(ctx, args...); result.handled {
-		if result.err != nil {
-			return "", result.err
-		}
-		return strings.TrimSpace(result.stdout), nil
-	}
-	if !wasmGitCommand(args) {
+	if !g.shouldDelegate(args) {
 		return g.native.OutputContext(ctx, args...)
 	}
-	out, _, err := g.execute(ctx, "", args...)
+	cmd, err := g.command(args...)
 	if err != nil {
 		return "", err
+	}
+	out, err := cmd.Output(ctx)
+	if errors.Is(err, tigo.ErrUnsupported) {
+		return g.native.OutputContext(ctx, args...)
+	}
+	if err != nil {
+		return "", adapterError(err)
 	}
 	return strings.TrimSpace(string(out)), nil
 }
 
 func (g *WazeroGit) OutputWithInput(stdin string, args ...string) (string, error) {
-	if !wasmGitCommand(args) {
-		return g.native.OutputWithInput(stdin, args...)
-	}
-	out, _, err := g.execute(context.Background(), stdin, args...)
+	out, err := g.outputRawWithInput(context.Background(), stdin, args...)
 	if err != nil {
 		return "", err
 	}
@@ -313,28 +191,46 @@ func (g *WazeroGit) OutputWithInput(stdin string, args ...string) (string, error
 }
 
 func (g *WazeroGit) OutputRaw(args ...string) ([]byte, error) {
-	if !wasmGitCommand(args) {
-		return g.native.OutputRaw(args...)
-	}
-	out, _, err := g.execute(context.Background(), "", args...)
-	return out, err
+	return g.outputRawWithInput(context.Background(), "", args...)
 }
 
 func (g *WazeroGit) OutputRawWithInput(stdin string, args ...string) ([]byte, error) {
-	if !wasmGitCommand(args) {
+	return g.outputRawWithInput(context.Background(), stdin, args...)
+}
+
+func (g *WazeroGit) outputRawWithInput(ctx context.Context, stdin string, args ...string) ([]byte, error) {
+	if !g.shouldDelegate(args) {
+		if stdin == "" {
+			return g.native.OutputRaw(args...)
+		}
 		return g.native.OutputRawWithInput(stdin, args...)
 	}
-	out, _, err := g.execute(context.Background(), stdin, args...)
-	return out, err
+	cmd, err := g.command(args...)
+	if err != nil {
+		return nil, err
+	}
+	cmd.Stdin = strings.NewReader(stdin)
+	out, err := cmd.Output(ctx)
+	if errors.Is(err, tigo.ErrUnsupported) {
+		if stdin == "" {
+			return g.native.OutputRaw(args...)
+		}
+		return g.native.OutputRawWithInput(stdin, args...)
+	}
+	return out, adapterError(err)
 }
 
 func (g *WazeroGit) CombinedOutputContext(ctx context.Context, args ...string) (string, error) {
-	if result := g.remoteBridgeCommand(ctx, args...); result.handled {
-		return result.stdout + result.stderr, result.err
-	}
-	if !wasmGitCommand(args) {
+	if !g.shouldDelegate(args) {
 		return g.native.CombinedOutputContext(ctx, args...)
 	}
-	out, stderr, err := g.execute(ctx, "", args...)
-	return string(out) + stderr, err
+	cmd, err := g.command(args...)
+	if err != nil {
+		return "", err
+	}
+	out, err := cmd.CombinedOutput(ctx)
+	if errors.Is(err, tigo.ErrUnsupported) {
+		return g.native.CombinedOutputContext(ctx, args...)
+	}
+	return string(out), adapterError(err)
 }

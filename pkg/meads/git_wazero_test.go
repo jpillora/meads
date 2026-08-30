@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"sync"
 	"testing"
 )
@@ -150,6 +149,50 @@ func TestWasmGitCommandCoverage(t *testing.T) {
 	}
 }
 
+func TestTigoOptionsFromEnv(t *testing.T) {
+	t.Setenv("MEADS_WAZERO_CACHE", "/tmp/meads-tigo-cache")
+	t.Setenv("MEADS_GIT_HTTP_USERNAME", "http-user")
+	t.Setenv("MEADS_GIT_HTTP_PASSWORD", "http-password")
+	t.Setenv("MEADS_GIT_HTTP_TOKEN", "http-token")
+	t.Setenv("MEADS_GIT_SSH_KEY", "/tmp/id_ed25519")
+	t.Setenv("MEADS_GIT_SSH_PASSPHRASE", "ssh-passphrase")
+	options := tigoOptionsFromEnv()
+	if options.CacheDir != "/tmp/meads-tigo-cache" ||
+		options.HTTPAuth.Username != "http-user" ||
+		options.HTTPAuth.Password != "http-password" ||
+		options.HTTPAuth.Token != "http-token" ||
+		options.SSHAuth.PrivateKeyPath != "/tmp/id_ed25519" ||
+		options.SSHAuth.Passphrase != "ssh-passphrase" {
+		t.Fatalf("tigoOptionsFromEnv = %#v", options)
+	}
+}
+
+func TestWazeroGitLocalRemoteFallsBack(t *testing.T) {
+	remoteDir := t.TempDir()
+	remoteNative := &ExecGit{Dir: remoteDir}
+	if err := remoteNative.Run("init", "--quiet", "--bare", "."); err != nil {
+		t.Fatalf("init remote: %v", err)
+	}
+	wasm, refs, _ := newWazeroTestRepo(t)
+	if err := wasm.native.Run("remote", "add", "origin", remoteDir); err != nil {
+		t.Fatalf("add origin: %v", err)
+	}
+	commit, err := refs.CommitFile(
+		"refs/meads/tasks/12", "task.json", []byte(`{"id":12}`), ZeroOID, "create task 12",
+	)
+	if err != nil {
+		t.Fatalf("CommitFile: %v", err)
+	}
+	out, err := wasm.CombinedOutputContext(context.Background(),
+		"push", "--porcelain", "origin", RefNamespace+"*:"+RefNamespace+"*")
+	if err != nil {
+		t.Fatalf("local fallback push: %v\n%s", err, out)
+	}
+	if got, err := NewRefStore(remoteNative).ResolveRef("refs/meads/tasks/12"); err != nil || got != commit {
+		t.Fatalf("remote ref = %s, %v; want %s", got, err, commit)
+	}
+}
+
 func TestWazeroGitLinkedWorktree(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("linked-worktree mount assertion uses POSIX guest paths")
@@ -170,18 +213,6 @@ func TestWazeroGitLinkedWorktree(t *testing.T) {
 	}
 	if err := native.Run("worktree", "add", "--quiet", "-b", "wasm-test", linkedDir); err != nil {
 		t.Fatalf("worktree add: %v", err)
-	}
-
-	mount, guest, err := discoverGitMount(linkedDir)
-	if err != nil {
-		t.Fatalf("discoverGitMount: %v", err)
-	}
-	wantMount := filepath.Join(mainDir, ".git")
-	if mount != wantMount {
-		t.Fatalf("mount = %q, want %q", mount, wantMount)
-	}
-	if !strings.HasPrefix(guest, "/git/worktrees/") {
-		t.Fatalf("guest git dir = %q, want /git/worktrees/*", guest)
 	}
 
 	wasm := NewWazeroGit(linkedDir)

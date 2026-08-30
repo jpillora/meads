@@ -21,7 +21,7 @@ func benchmarkGitBackends(b *testing.B, run func(*testing.B, Git)) {
 	b.Run("native-git", func(b *testing.B) {
 		run(b, &ExecGit{Dir: benchmarkBareRepo(b)})
 	})
-	b.Run("wazero-wasi", func(b *testing.B) {
+	b.Run("tigo", func(b *testing.B) {
 		git := NewWazeroGit(benchmarkBareRepo(b))
 		b.Cleanup(func() { _ = git.Close(context.Background()) })
 		run(b, git)
@@ -82,7 +82,7 @@ func BenchmarkGitBackendLoadAll100(b *testing.B) {
 		new  func() Git
 	}{
 		{name: "native-git", new: func() Git { return &ExecGit{Dir: dir} }},
-		{name: "wazero-wasi", new: func() Git { return NewWazeroGit(dir) }},
+		{name: "tigo", new: func() Git { return NewWazeroGit(dir) }},
 	} {
 		b.Run(backend.name, func(b *testing.B) {
 			git := backend.new()
@@ -120,7 +120,7 @@ func BenchmarkGitBackendStartupAndList(b *testing.B) {
 			}
 		}
 	})
-	b.Run("wazero-wasi", func(b *testing.B) {
+	b.Run("tigo", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
 			git := NewWazeroGit(dir)
