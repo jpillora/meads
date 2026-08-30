@@ -19,6 +19,10 @@ Task tracking that lives entirely in git. No database, no server, no dependencie
 - Concurrent-write safe via optimistic locking, with retry on contention — multiple processes or AI agents can write simultaneously
 - `md prime` prints LLM context, `md mcp` runs an MCP server over stdio
 
+The experimental [`wasm-git` backend](doc/WASM_GIT.md) embeds local Git
+plumbing with wazero and WASI for native-vs-WASM performance comparison. It is
+opt-in with `MEADS_GIT_RUNTIME=wasm` and is not the default.
+
 ### Install
 
 **Binaries**

@@ -1,0 +1,19 @@
+diff --git a/src/libgit2/CMakeLists.txt b/src/libgit2/CMakeLists.txt
+--- a/src/libgit2/CMakeLists.txt
++++ b/src/libgit2/CMakeLists.txt
+@@ -26,0 +27,7 @@
++
++# WASI Preview 1 deliberately has no sockets. HTTPS and SSH are disabled for
++# the embedded local-plumbing build; the command supplies a no-op stream
++# initializer for libgit2's otherwise unconditional startup hook.
++if(CMAKE_SYSTEM_NAME STREQUAL "WASI")
++	list(REMOVE_ITEM SRC_GIT2 "${PROJECT_SOURCE_DIR}/src/libgit2/streams/socket.c")
++endif()
+diff --git a/src/util/CMakeLists.txt b/src/util/CMakeLists.txt
+--- a/src/util/CMakeLists.txt
++++ b/src/util/CMakeLists.txt
+@@ -22,0 +23,4 @@
++
++if(CMAKE_SYSTEM_NAME STREQUAL "WASI")
++	list(REMOVE_ITEM UTIL_SRC_OS "${PROJECT_SOURCE_DIR}/src/util/unix/process.c")
++endif()

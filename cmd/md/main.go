@@ -176,7 +176,11 @@ func (g *globals) gitStore() *meads.GitStore {
 // git returns the Git implementation, lazily initializing if not set.
 func (g *globals) git() meads.Git {
 	if g.Git == nil {
-		g.Git = &meads.ExecGit{Dir: g.Dir}
+		if strings.EqualFold(strings.TrimSpace(os.Getenv("MEADS_GIT_RUNTIME")), "wasm") {
+			g.Git = meads.NewWazeroGit(g.Dir)
+		} else {
+			g.Git = &meads.ExecGit{Dir: g.Dir}
+		}
 	}
 	if g.Verbose {
 		if _, wrapped := g.Git.(*verboseGit); !wrapped {

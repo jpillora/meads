@@ -6,7 +6,8 @@ require (
 	github.com/go-git/go-billy/v5 v5.7.0
 	github.com/jpillora/opts v1.4.0
 	github.com/modelcontextprotocol/go-sdk v1.3.0
-	golang.org/x/sys v0.31.0
+	github.com/tetratelabs/wazero v1.12.0
+	golang.org/x/sys v0.44.0
 )
 
 require (
