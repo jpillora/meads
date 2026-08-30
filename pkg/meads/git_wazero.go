@@ -17,12 +17,13 @@ import (
 	"github.com/tetratelabs/wazero/sys"
 )
 
-//go:embed wasmgit.wasm
+//go:embed wasigit.wasm
 var wazeroGitModule []byte
 
-// WazeroGit implements Git with the wasm-git/libgit2 WASI module for Meads'
-// local object and ref plumbing. Commands outside that deliberately small set
-// (notably fetch, push and repository discovery) fall back to ExecGit.
+// WazeroGit implements Git with an upstream C Git WASI module for Meads' local
+// object and ref plumbing. A capability-controlled Go host bridge handles
+// HTTP, SSH and git:// remote transfers. Commands outside those two
+// deliberately small sets fall back to ExecGit.
 //
 // Each command gets a fresh WASI instance, while the expensive WebAssembly
 // compilation is shared for the life of WazeroGit. The instance can access
@@ -76,7 +77,7 @@ type WASMCommandError struct {
 }
 
 func (e *WASMCommandError) Error() string {
-	message := fmt.Sprintf("wasm-git exited with code %d", e.Code)
+	message := fmt.Sprintf("wasigit exited with code %d", e.Code)
 	if e.Stderr != "" {
 		message += ": " + e.Stderr
 	}
@@ -108,7 +109,7 @@ func (g *WazeroGit) initialize() {
 		}
 		g.module, g.initErr = g.rt.CompileModule(ctx, wazeroGitModule)
 		if g.initErr != nil {
-			g.initErr = fmt.Errorf("compile wasm-git: %w", g.initErr)
+			g.initErr = fmt.Errorf("compile wasigit: %w", g.initErr)
 		}
 	})
 }
@@ -217,19 +218,7 @@ func wasmGitCommand(args []string) bool {
 		return false
 	}
 	switch args[commandPos] {
-	case "hash-object", "mktree", "commit-tree", "for-each-ref", "cat-file", "rev-list":
-		return true
-	case "update-ref":
-		// libgit2 locks every ref before committing a transaction, but its
-		// multi-ref commit can still stop partway through on an I/O failure.
-		// Native `git update-ref --stdin` provides Meads' stronger all-or-none
-		// guarantee, so retain it for batch updates. Single-ref CAS is atomic
-		// in libgit2 and is the mutation hot path measured by this experiment.
-		for _, arg := range args[commandPos+1:] {
-			if arg == "--stdin" {
-				return false
-			}
-		}
+	case "hash-object", "mktree", "commit-tree", "for-each-ref", "cat-file", "rev-list", "update-ref":
 		return true
 	default:
 		return false
@@ -249,7 +238,7 @@ func (g *WazeroGit) execute(ctx context.Context, stdin string, args ...string) (
 		WithName("").
 		WithArgs(moduleArgs...).
 		WithEnv("HOME", "/git").
-		WithEnv("MEADS_GIT_DIR", g.gitDir).
+		WithEnv("GIT_DIR", g.gitDir).
 		WithStdin(strings.NewReader(stdin)).
 		WithStdout(&stdout).
 		WithStderr(&stderr).
@@ -273,7 +262,7 @@ func (g *WazeroGit) execute(ctx context.Context, stdin string, args ...string) (
 			Code: exitErr.ExitCode(), Stderr: strings.TrimSpace(stderr.String()), Cause: err,
 		}
 	}
-	return nil, stderr.String(), fmt.Errorf("run wasm-git: %w", err)
+	return nil, stderr.String(), fmt.Errorf("run wasigit: %w", err)
 }
 
 func (g *WazeroGit) Run(args ...string) error {
@@ -281,6 +270,9 @@ func (g *WazeroGit) Run(args ...string) error {
 }
 
 func (g *WazeroGit) RunContext(ctx context.Context, args ...string) error {
+	if result := g.remoteBridgeCommand(ctx, args...); result.handled {
+		return result.err
+	}
 	if !wasmGitCommand(args) {
 		return g.native.RunContext(ctx, args...)
 	}
@@ -293,6 +285,12 @@ func (g *WazeroGit) Output(args ...string) (string, error) {
 }
 
 func (g *WazeroGit) OutputContext(ctx context.Context, args ...string) (string, error) {
+	if result := g.remoteBridgeCommand(ctx, args...); result.handled {
+		if result.err != nil {
+			return "", result.err
+		}
+		return strings.TrimSpace(result.stdout), nil
+	}
 	if !wasmGitCommand(args) {
 		return g.native.OutputContext(ctx, args...)
 	}
@@ -331,6 +329,9 @@ func (g *WazeroGit) OutputRawWithInput(stdin string, args ...string) ([]byte, er
 }
 
 func (g *WazeroGit) CombinedOutputContext(ctx context.Context, args ...string) (string, error) {
+	if result := g.remoteBridgeCommand(ctx, args...); result.handled {
+		return result.stdout + result.stderr, result.err
+	}
 	if !wasmGitCommand(args) {
 		return g.native.CombinedOutputContext(ctx, args...)
 	}

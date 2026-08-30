@@ -117,6 +117,37 @@ func TestWazeroGitRefStoreParity(t *testing.T) {
 			t.Errorf("ResolveRef(%s) = %s, %v; want %s", name, got, err, want)
 		}
 	}
+	if err := refs.AtomicUpdate([]RefUpdate{
+		{Name: "refs/meads/config", Next: second, Prev: first},
+		{Name: "refs/meads/tasks/2", Next: first, Prev: first},
+	}); !errors.Is(err, ErrCASConflict) {
+		t.Fatalf("stale AtomicUpdate = %v, want ErrCASConflict", err)
+	}
+	for name, want := range map[string]OID{
+		"refs/meads/config":  first,
+		"refs/meads/tasks/2": second,
+	} {
+		if got, err := refs.ResolveRef(name); err != nil || got != want {
+			t.Errorf("ResolveRef(%s) after rejected transaction = %s, %v; want %s", name, got, err, want)
+		}
+	}
+}
+
+func TestWasmGitCommandCoverage(t *testing.T) {
+	for _, test := range []struct {
+		args []string
+		want bool
+	}{
+		{args: []string{"hash-object", "-w", "--stdin"}, want: true},
+		{args: []string{"-c", "user.name=meads", "commit-tree", "deadbeef"}, want: true},
+		{args: []string{"update-ref", "--stdin"}, want: true},
+		{args: []string{"fetch", "origin"}, want: false},
+		{args: []string{"config", "--get", "user.name"}, want: false},
+	} {
+		if got := wasmGitCommand(test.args); got != test.want {
+			t.Errorf("wasmGitCommand(%q) = %v, want %v", test.args, got, test.want)
+		}
+	}
 }
 
 func TestWazeroGitLinkedWorktree(t *testing.T) {

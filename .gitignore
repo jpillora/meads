@@ -1,7 +1,6 @@
 /md
 /tmp/
 /dist/
-/experimental/wasmgit/build/
 coverage.out
 # Scratch files from Store.atomicWrite, left behind only if a write is
 # interrupted between the temp write and the rename.
