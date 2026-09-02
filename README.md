@@ -38,6 +38,18 @@ curl "https://i.jpillora.com/meads!?as=md" | bash
 go install github.com/jpillora/meads/cmd/md@latest
 ```
 
+### Claude Code plugin marketplace
+
+Add the Meads marketplace and install the `drive-task` plugin:
+
+```sh
+claude plugin marketplace add jpillora/meads
+claude plugin install drive-task@meads
+```
+
+The plugin drives a Meads task through planning, isolated worktree implementation,
+verification, human review, local integration, and cleanup.
+
 ### Quick Start
 
 ```bash

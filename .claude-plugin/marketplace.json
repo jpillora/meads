@@ -1,0 +1,16 @@
+{
+  "name": "meads",
+  "owner": {
+    "name": "Meads maintainers",
+    "url": "https://github.com/jpillora/meads"
+  },
+  "description": "Claude Code plugins for Meads task workflows.",
+  "version": "1.0.0",
+  "plugins": [
+    {
+      "name": "drive-task",
+      "source": "./plugins/drive-task",
+      "description": "Drive a Meads task from intake through reviewed local integration and cleanup."
+    }
+  ]
+}

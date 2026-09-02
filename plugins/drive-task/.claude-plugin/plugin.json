@@ -1,0 +1,19 @@
+{
+  "name": "drive-task",
+  "displayName": "Drive Task",
+  "description": "Drive a Meads task from intake through reviewed local integration and cleanup.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Meads maintainers",
+    "url": "https://github.com/jpillora/meads"
+  },
+  "homepage": "https://github.com/jpillora/meads",
+  "repository": "https://github.com/jpillora/meads",
+  "license": "MIT",
+  "keywords": [
+    "meads",
+    "tasks",
+    "git",
+    "workflow"
+  ]
+}
