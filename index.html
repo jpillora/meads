@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src https://api.github.com https://raw.githubusercontent.com; img-src 'self' data:; style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://api.github.com https://raw.githubusercontent.com; img-src 'self' data:; style-src 'self'; script-src 'self' 'wasm-unsafe-eval'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="description" content="A browser frontend for Meads tasks stored in GitHub refs.">
 <title>Meads on GitHub</title>
 <link rel="stylesheet" href="./app.css">
@@ -14,6 +14,7 @@
   <div class="title">
     <strong id="file-path">jpillora/meads</strong>
     <span id="file-meta" class="muted"></span>
+    <span id="core-status" class="core-status loading" title="Loading the Meads Go core">Go WASM…</span>
   </div>
   <div class="actions">
     <input type="search" id="filter" placeholder="Filter…  type:bug tag:api  (/ to focus)" autocomplete="off">
@@ -52,6 +53,7 @@
   <form method="dialog" id="connect-form">
     <h2>Connect to GitHub</h2>
     <p class="connect-copy">Public repositories can be viewed without a token. To edit, use a fine-grained personal access token restricted to this repository with <strong>Contents: read and write</strong>.</p>
+    <p class="connect-copy muted">A static GitHub Pages site cannot safely complete GitHub OAuth by itself: the authorization-code exchange needs a server-side client secret. A future “Sign in with GitHub” button therefore needs a small token-broker service.</p>
     <div class="repo-fields">
       <label>Owner
         <input name="owner" required autocomplete="off" spellcheck="false" placeholder="jpillora">
@@ -66,7 +68,7 @@
     <label class="toggle token-retention">
       <input name="keep" type="checkbox" checked> Keep token in this tab until it is closed
     </label>
-    <p class="security-note">The token is sent only to <code>api.github.com</code>. It is never added to the URL or permanent browser storage.</p>
+    <p class="security-note">The token is sent only to <code>api.github.com</code>. It is never added to the URL or permanent browser storage. Meads Go runs locally in WebAssembly to validate and normalize writes before JavaScript commits them through GitHub’s API.</p>
     <p id="connect-error" class="form-error" role="alert" hidden></p>
     <div class="footer">
       <button type="button" data-action="disconnect">Clear token</button>
@@ -206,6 +208,7 @@
   </article>
 </template>
 
+<script src="./wasm_exec.js"></script>
 <script type="module" src="./app.js"></script>
 </body>
 </html>

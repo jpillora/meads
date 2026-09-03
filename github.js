@@ -5,6 +5,7 @@ const TASK_PREFIX = "refs/meads/tasks/";
 const CONFIG_REF = "refs/meads/config";
 const PROTOCOL_VERSION = 1;
 const MAX_RETRIES = 5;
+const CACHE_VERSION = 1;
 
 export class GitHubAPIError extends Error {
   constructor(message, status, body = null) {
@@ -68,10 +69,19 @@ async function mapLimit(items, limit, fn) {
 }
 
 export class GitHubMeads {
-  constructor({ owner = "jpillora", repo = "meads", token = "", fetchImpl = fetch } = {}) {
+  constructor({
+    owner = "jpillora",
+    repo = "meads",
+    token = "",
+    fetchImpl = fetch,
+    core = null,
+    storageImpl = storage(),
+  } = {}) {
     // Native window.fetch requires Window as its receiver in some browsers;
     // wrapping it avoids an "Illegal invocation" when called as a store method.
     this.fetch = (...args) => fetchImpl(...args);
+    this.core = core;
+    this.storage = storageImpl;
     this.memory = new Map();
     this.last = null;
     this.setTarget({ owner, repo, token });
@@ -98,6 +108,9 @@ export class GitHubMeads {
     body,
     accept = "application/vnd.github+json",
     allow404 = false,
+    allow304 = false,
+    ifNoneMatch = "",
+    withResponse = false,
     raw = false,
   } = {}) {
     const headers = {
@@ -106,12 +119,16 @@ export class GitHubMeads {
     };
     if (this.token) headers.Authorization = `Bearer ${this.token}`;
     if (body !== undefined) headers["Content-Type"] = "application/json";
+    if (ifNoneMatch) headers["If-None-Match"] = ifNoneMatch;
     const response = await this.fetch(`${API_ROOT}/repos/${this.owner}/${this.repo}${path}`, {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     if (allow404 && response.status === 404) return null;
+    if (allow304 && response.status === 304) {
+      return { value: null, status: 304, etag: response.headers.get("etag") || ifNoneMatch };
+    }
     if (!response.ok) {
       const text = await response.text();
       let payload = null;
@@ -119,8 +136,12 @@ export class GitHubMeads {
       const detail = payload?.message || text || response.statusText;
       throw new GitHubAPIError(`${method} ${path} → ${response.status}: ${detail}`, response.status, payload);
     }
-    if (response.status === 204) return null;
-    return raw ? response.text() : response.json();
+    if (response.status === 204) return withResponse ? { value: null, status: 204, etag: "" } : null;
+    const value = raw ? await response.text() : await response.json();
+    if (withResponse) {
+      return { value, status: response.status, etag: response.headers.get("etag") || "" };
+    }
+    return value;
   }
 
   async connect() {
@@ -145,7 +166,7 @@ export class GitHubMeads {
     const key = this.objectCacheKey(sha, filename);
     if (this.memory.has(key)) return this.memory.get(key);
     if (this.repository?.private) return null;
-    const store = storage();
+    const store = this.storage;
     if (!store) return null;
     try {
       const value = store.getItem(key);
@@ -161,7 +182,63 @@ export class GitHubMeads {
     const key = this.objectCacheKey(sha, filename);
     this.memory.set(key, value);
     if (this.repository?.private || value.length > 100_000) return;
-    try { storage()?.setItem(key, value); } catch { /* quota/privacy mode */ }
+    try { this.storage?.setItem(key, value); } catch { /* quota/privacy mode */ }
+  }
+
+  refIndexKey(namespace) {
+    return `meads:github-refs:v${CACHE_VERSION}:${this.slug}:${namespace}`;
+  }
+
+  snapshotKey() {
+    return `meads:github-snapshot:v${CACHE_VERSION}:${this.slug}`;
+  }
+
+  readCache(key) {
+    try {
+      const value = this.storage?.getItem(key);
+      return value ? JSON.parse(value) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  writeCache(key, value) {
+    if (this.repository?.private) return;
+    try { this.storage?.setItem(key, JSON.stringify(value)); } catch { /* quota/privacy mode */ }
+  }
+
+  async matchingRefs(namespace) {
+    const key = this.refIndexKey(namespace);
+    const cached = this.repository?.private ? null : this.readCache(key);
+    const result = await this.request(`/git/matching-refs/${namespace}`, {
+      allow304: true,
+      ifNoneMatch: cached?.etag || "",
+      withResponse: true,
+    });
+    if (result.status === 304 && Array.isArray(cached?.refs)) return cached.refs;
+    const refs = result.value;
+    if (!Array.isArray(refs)) throw new Error(`GitHub returned an invalid ${namespace} ref list`);
+    this.writeCache(key, { etag: result.etag, refs, savedAt: new Date().toISOString() });
+    return refs;
+  }
+
+  cachedSnapshot() {
+    const cached = this.readCache(this.snapshotKey());
+    if (cached?.public !== true || !cached.snapshot || !Array.isArray(cached.snapshot.tasks)) return null;
+    return { ...clone(cached.snapshot), canWrite: false, cached: true, cachedAt: cached.savedAt || "" };
+  }
+
+  cacheSnapshot(snapshot) {
+    if (this.repository?.private) return;
+    const safe = clone(snapshot);
+    safe.canWrite = false;
+    delete safe.cached;
+    delete safe.cachedAt;
+    this.writeCache(this.snapshotKey(), {
+      public: true,
+      savedAt: new Date().toISOString(),
+      snapshot: safe,
+    });
   }
 
   async readFileAtCommit(filename, sha) {
@@ -198,7 +275,7 @@ export class GitHubMeads {
 
   async load() {
     if (!this.repository) await this.connect();
-    const refs = await this.request("/git/matching-refs/meads");
+    const refs = await this.matchingRefs("meads");
     const configRef = refs.find((entry) => entry.ref === CONFIG_REF);
     const config = configRef
       ? this.validateConfig(await this.readFileAtCommit("config.json", configRef.object.sha))
@@ -232,6 +309,7 @@ export class GitHubMeads {
       config,
       canWrite: this.canWrite,
     };
+    this.cacheSnapshot(this.last);
     return this.last;
   }
 
@@ -333,7 +411,7 @@ export class GitHubMeads {
     if (deps.some((id) => !Number.isInteger(id) || id <= 0 || id === task.id)) throw new Error("Invalid task dependency");
   }
 
-  async mutateTask(id, action, decide) {
+  async mutateTask(id, action, decide, coreRequest = null) {
     await this.ensureWritable();
     const relative = `meads/tasks/${id}`;
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
@@ -341,10 +419,29 @@ export class GitHubMeads {
       if (!ref) throw new Error(`Task #${id} not found`);
       const current = normaliseTask(await this.readFileAtCommit("task.json", ref.object.sha), id);
       if (current.deleted && action !== "restore") throw new Error(`Task #${id} not found`);
-      const next = decide(clone(current));
+      let next;
+      if (this.core && coreRequest) {
+        // Like GitStore.validateTaskDeps, validate against a fresh view of all
+        // refs on every CAS attempt. Substitute the just-read target so the
+        // core never makes a decision from a stale version of that task.
+        const snapshot = await this.load();
+        const tasks = snapshot.allTasks.filter((task) => task.id !== id);
+        tasks.push(current);
+        next = await this.core.apply({
+          ...coreRequest,
+          id,
+          tasks,
+        });
+      } else {
+        next = decide(clone(current));
+      }
       if (!next) return current;
       next.id = id;
-      next.meta = { ...(next.meta || {}), updated: new Date().toISOString() };
+      // The Go core stamps canonical RFC3339 metadata. Keep this fallback for
+      // transport-only tests and embedders that intentionally omit the core.
+      if (!(this.core && coreRequest)) {
+        next.meta = { ...(next.meta || {}), updated: new Date().toISOString() };
+      }
       this.validateTask(next);
       const sha = await this.createCommit("task.json", next, ref.object.sha, `${action} task ${id}`);
       try {
@@ -362,19 +459,29 @@ export class GitHubMeads {
   async addTask(input) {
     await this.ensureWritable();
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-      const refs = await this.request("/git/matching-refs/meads/tasks");
-      const highest = refs.reduce((max, entry) => Math.max(max, taskID(entry.ref) || 0), 0);
-      const id = highest + 1;
-      const now = new Date().toISOString();
-      const task = {
-        ...clone(input),
-        id,
-        status: input.status || "open",
-        priority: input.priority || "P2",
-        type: input.type || "task",
-        meta: { ...(input.meta || {}), created: now },
-      };
-      delete task.meta.updated;
+      let task;
+      if (this.core) {
+        const snapshot = await this.load();
+        task = await this.core.apply({
+          operation: "create",
+          tasks: snapshot.allTasks,
+          input,
+        });
+      } else {
+        const refs = await this.matchingRefs("meads/tasks");
+        const highest = refs.reduce((max, entry) => Math.max(max, taskID(entry.ref) || 0), 0);
+        const now = new Date().toISOString();
+        task = {
+          ...clone(input),
+          id: highest + 1,
+          status: input.status || "open",
+          priority: input.priority || "P2",
+          type: input.type || "task",
+          meta: { ...(input.meta || {}), created: now },
+        };
+        delete task.meta.updated;
+      }
+      const id = task.id;
       this.validateTask(task);
       const sha = await this.createCommit("task.json", task, null, `create task ${id}`);
       try {
@@ -400,35 +507,37 @@ export class GitHubMeads {
       if (Array.isArray(task.tags)) task.tags = [...new Set(task.tags.map((tag) => String(tag).trim().toLowerCase()).filter(Boolean))];
       if (Array.isArray(task.depends_on)) task.depends_on = [...new Set(task.depends_on)].sort((a, b) => a - b);
       return task;
-    });
+    }, { operation: "update", input: patch });
   }
 
   async addDependency(id, parent) {
-    const snapshot = await this.load();
-    const parentRef = await this.getRef(`meads/tasks/${parent}`, true);
-    if (!parentRef) throw new Error(`Task #${parent} not found`);
-    const parentTask = await this.readFileAtCommit("task.json", parentRef.object.sha);
-    if (parentTask.deleted) throw new Error(`Task #${parent} not found`);
-    const byID = new Map(snapshot.tasks.map((task) => [task.id, task]));
-    byID.set(parent, parentTask);
-    const reaches = (from, wanted, seen = new Set()) => {
-      if (from === wanted) return true;
-      if (seen.has(from)) return false;
-      seen.add(from);
-      return (byID.get(from)?.depends_on || []).some((next) => reaches(next, wanted, seen));
-    };
-    if (reaches(parent, id)) throw new Error(`Dependency #${id} → #${parent} would create a cycle`);
+    if (!this.core) {
+      const snapshot = await this.load();
+      const parentRef = await this.getRef(`meads/tasks/${parent}`, true);
+      if (!parentRef) throw new Error(`Task #${parent} not found`);
+      const parentTask = await this.readFileAtCommit("task.json", parentRef.object.sha);
+      if (parentTask.deleted) throw new Error(`Task #${parent} not found`);
+      const byID = new Map(snapshot.tasks.map((task) => [task.id, task]));
+      byID.set(parent, parentTask);
+      const reaches = (from, wanted, seen = new Set()) => {
+        if (from === wanted) return true;
+        if (seen.has(from)) return false;
+        seen.add(from);
+        return (byID.get(from)?.depends_on || []).some((next) => reaches(next, wanted, seen));
+      };
+      if (reaches(parent, id)) throw new Error(`Dependency #${id} → #${parent} would create a cycle`);
+    }
     return this.mutateTask(id, "update", (task) => {
       task.depends_on = [...new Set([...(task.depends_on || []), parent])].sort((a, b) => a - b);
       return task;
-    });
+    }, { operation: "add-dependency", parent });
   }
 
   async removeDependency(id, parent) {
     return this.mutateTask(id, "update", (task) => {
       task.depends_on = (task.depends_on || []).filter((value) => value !== parent);
       return task;
-    });
+    }, { operation: "remove-dependency", parent });
   }
 
   async deleteTask(id) {
@@ -442,6 +551,6 @@ export class GitHubMeads {
     return this.mutateTask(id, "soft delete", (task) => {
       task.deleted = true;
       return task;
-    });
+    }, { operation: "soft-delete" });
   }
 }

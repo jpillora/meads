@@ -8,7 +8,7 @@ no runtime CDN. Third-party JavaScript is brought in as plain ESM instead.
 - These files are committed here and embedded into the `md` binary by
   `//go:embed assets` (`pkg/webui/assets.go`); the server serves them with a
   plain `http.FileServer`, so each is reachable at its path, e.g.
-  `assets/vendor/marked.esm.js` → `GET /vendor/marked.esm.js`.
+  `web_vendor/marked.esm.js` → `GET /web_vendor/marked.esm.js`.
 - `index.html` declares an [import map](https://developer.mozilla.org/docs/Web/HTML/Element/script/type/importmap)
   mapping bare specifiers to those paths, so `app.js` (a `<script type="module">`)
   can `import { marked } from "marked"` with no bundler.

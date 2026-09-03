@@ -2,6 +2,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test"
+    "build:wasm": "GOOS=js GOARCH=wasm go build -trimpath -ldflags='-s -w' -o meads.wasm ./wasm && cp \"$(go env GOROOT)/lib/wasm/wasm_exec.js\" wasm_exec.js",
+    "test": "go test ./wasm && node --test"
   }
 }

@@ -89,6 +89,17 @@ html, body {
    the meta sits beside it on wide screens and wraps below when squeezed. */
 .bar .title { display: flex; align-items: baseline; gap: 0.5rem; min-width: 0; flex-wrap: wrap; }
 .bar .title strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; max-width: 100%; }
+.core-status {
+  padding: 1px 6px;
+  border: 1px solid color-mix(in srgb, var(--success) 55%, var(--border));
+  border-radius: 999px;
+  color: var(--success);
+  font: 600 10px/1.5 var(--vscode-editor-font-family, ui-monospace, monospace);
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+.core-status.loading { color: var(--muted); border-color: var(--border); }
+.core-status.error { color: var(--danger); border-color: var(--danger); }
 /* Tighter gap (0.35rem) keeps the 7 controls on one row in the awkward
    1000-1100px range; the wider 0.5rem version used to push '?' alone to
    a second row whenever the file-meta string ran long. */

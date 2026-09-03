@@ -1,16 +1,17 @@
 // Minimal vanilla UI for meads. No framework, no build step.
 // Third-party dependencies are vendored so a token-bearing page never executes
 // code from another origin.
-import { marked } from "./vendor/marked.esm.js";
-import DOMPurify from "./vendor/purify.es.mjs";
+import { marked } from "./web_vendor/marked.esm.js";
+import DOMPurify from "./web_vendor/purify.es.mjs";
 import { GitHubMeads } from "./github.js";
+import { meadsCore } from "./wasm.js";
 
 const qs = new URLSearchParams(location.search);
 const savedSlug = qs.get("repo") || localStorage.getItem("meads.github.repo") || "jpillora/meads";
 const [initialOwner, initialRepo] = savedSlug.includes("/") ? savedSlug.split("/", 2) : ["jpillora", "meads"];
 const tokenKey = (owner, repo) => `meads.github.token:${owner}/${repo}`;
 const initialToken = sessionStorage.getItem(tokenKey(initialOwner, initialRepo)) || "";
-const github = new GitHubMeads({ owner: initialOwner, repo: initialRepo, token: initialToken });
+const github = new GitHubMeads({ owner: initialOwner, repo: initialRepo, token: initialToken, core: meadsCore });
 
 let state = {
   file: null,
@@ -18,6 +19,7 @@ let state = {
   tasksById: new Map(),
   canWrite: false,
   loading: true,
+  cached: false,
   filter: "",
   editing: null, // task being edited, or null for new task
   focusedId: null, // id of the keyboard-focused card, or null
@@ -104,7 +106,7 @@ function statusColor(status, hasReason) {
 // renderMarkdown parses CommonMark/GFM with marked, then sanitises the HTML
 // with DOMPurify so any embedded markup can never inject scripts. Cards and the
 // editor preview both call this, so they render identically. marked + DOMPurify
-// are vendored ESM (see assets/vendor/).
+// are vendored ESM (see web_vendor/).
 marked.setOptions({ gfm: true, breaks: true });
 // Open links in a new, isolated tab.
 DOMPurify.addHook("afterSanitizeAttributes", (node) => {
@@ -593,7 +595,7 @@ function renderMeta(matched) {
     ? `${matched} of ${total} task${total === 1 ? "" : "s"}`
     : `${total} task${total === 1 ? "" : "s"}`;
   const rel = relativeTime(state.file.updated_at);
-  meta.textContent = `· ${count}${rel ? " · updated " + rel : ""}`;
+  meta.textContent = `· ${count}${rel ? " · updated " + rel : ""}${state.cached ? " · cached" : ""}`;
   meta.title = state.file.updated_at || "";
 }
 
@@ -1641,6 +1643,20 @@ descriptionInput()?.addEventListener("input", renderPreview);
 
 // --- GitHub connection + loading --------------------------------------
 
+async function initialiseCore() {
+  const badge = document.getElementById("core-status");
+  try {
+    await meadsCore.ready();
+    badge.textContent = "Go WASM";
+    badge.className = "core-status";
+    badge.title = "Meads Go core is running locally in WebAssembly";
+  } catch (error) {
+    badge.textContent = "WASM error";
+    badge.className = "core-status error";
+    badge.title = error.message;
+  }
+}
+
 function updateConnectionUI() {
   const button = document.getElementById("connect-github");
   if (!button) return;
@@ -1671,6 +1687,11 @@ function showLoadError(error) {
   const list = document.getElementById("list");
   list.removeAttribute("aria-busy");
   document.getElementById("refresh").disabled = false;
+  if (state.cached && state.tasks.length) {
+    toast(`Showing cached tasks; sync failed: ${error.message}`, "err");
+    updateConnectionUI();
+    return;
+  }
   list.innerHTML = "";
   const box = el("div");
   box.className = "empty load-error";
@@ -1684,21 +1705,29 @@ function showLoadError(error) {
   updateConnectionUI();
 }
 
+function applySnapshot(snapshot, { cached = false } = {}) {
+  state.file = snapshot.file;
+  state.tasks = snapshot.tasks;
+  state.tasksById = new Map(state.tasks.map((t) => [t.id, t]));
+  // A persisted public snapshot never grants authority. Write controls are
+  // enabled only after GitHub has verified the current token this session.
+  state.canWrite = cached ? false : snapshot.canWrite;
+  state.loading = false;
+  state.cached = cached;
+  document.body.dataset.cache = cached ? "stale" : "fresh";
+  updateConnectionUI();
+  renderList();
+}
+
 async function reload() {
   const list = document.getElementById("list");
   state.loading = true;
   list.setAttribute("aria-busy", "true");
   document.getElementById("refresh").disabled = true;
   const snapshot = await github.load();
-  state.file = snapshot.file;
-  state.tasks = snapshot.tasks;
-  state.tasksById = new Map(state.tasks.map((t) => [t.id, t]));
-  state.canWrite = snapshot.canWrite;
-  state.loading = false;
+  applySnapshot(snapshot);
   list.removeAttribute("aria-busy");
   document.getElementById("refresh").disabled = false;
-  updateConnectionUI();
-  renderList();
 }
 
 document.getElementById("connect-form").addEventListener("submit", async (event) => {
@@ -1758,6 +1787,9 @@ setInterval(() => {
 }, 300_000);
 
 (async function init() {
+  const cached = github.cachedSnapshot();
+  if (cached) applySnapshot(cached, { cached: true });
+  void initialiseCore();
   updateConnectionUI();
   try {
     await reload();
