@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src https://api.github.com https://raw.githubusercontent.com; img-src 'self' data:; style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="description" content="A browser frontend for Meads tasks stored in GitHub refs.">
+<title>Meads on GitHub</title>
+<link rel="stylesheet" href="./app.css">
+</head>
+<body>
+<header class="bar">
+  <div class="title">
+    <strong id="file-path">jpillora/meads</strong>
+    <span id="file-meta" class="muted"></span>
+  </div>
+  <div class="actions">
+    <input type="search" id="filter" placeholder="Filter…  type:bug tag:api  (/ to focus)" autocomplete="off">
+    <div class="overflow-group">
+      <select id="sort-by" title="Sort tasks">
+        <option value="default">Sort: status</option>
+        <option value="priority">Sort: priority</option>
+        <option value="id">Sort: id</option>
+        <option value="updated">Sort: updated</option>
+      </select>
+      <label class="toggle" title="Show status group headers">
+        <input type="checkbox" id="group-by-status"> group
+      </label>
+      <label class="toggle" title="Show tasks with status=closed">
+        <input type="checkbox" id="show-closed"> show closed
+      </label>
+      <label class="toggle" title="Compact one-line rows">
+        <input type="checkbox" id="compact"> compact
+      </label>
+      <button id="refresh" title="Refresh GitHub refs">refresh</button>
+      <button id="connect-github" title="Choose repository or connect a write token">read only</button>
+      <button id="theme-toggle" title="Theme — click to cycle auto / light / dark" aria-label="Theme">auto</button>
+      <button id="graph-toggle" title="Dependency graph">graph</button>
+      <button id="help-toggle" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">?</button>
+    </div>
+    <button id="new-task">+ New task</button>
+    <button id="overflow-toggle" title="More options" aria-label="More options" aria-expanded="false" aria-haspopup="true">⋮</button>
+  </div>
+</header>
+
+<main id="list" aria-live="polite" role="list" aria-label="Tasks">
+  <div class="empty loading">Loading Meads refs from GitHub…</div>
+</main>
+
+<dialog id="connect">
+  <form method="dialog" id="connect-form">
+    <h2>Connect to GitHub</h2>
+    <p class="connect-copy">Public repositories can be viewed without a token. To edit, use a fine-grained personal access token restricted to this repository with <strong>Contents: read and write</strong>.</p>
+    <div class="repo-fields">
+      <label>Owner
+        <input name="owner" required autocomplete="off" spellcheck="false" placeholder="jpillora">
+      </label>
+      <label>Repository
+        <input name="repo" required autocomplete="off" spellcheck="false" placeholder="meads">
+      </label>
+    </div>
+    <label>Fine-grained token <span class="muted">— optional for public read-only access</span>
+      <input name="token" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_…">
+    </label>
+    <label class="toggle token-retention">
+      <input name="keep" type="checkbox" checked> Keep token in this tab until it is closed
+    </label>
+    <p class="security-note">The token is sent only to <code>api.github.com</code>. It is never added to the URL or permanent browser storage.</p>
+    <p id="connect-error" class="form-error" role="alert" hidden></p>
+    <div class="footer">
+      <button type="button" data-action="disconnect">Clear token</button>
+      <span class="spacer"></span>
+      <button type="button" data-action="cancel-connect">Cancel</button>
+      <button type="submit" class="primary">Connect</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="editor">
+  <form method="dialog" id="editor-form">
+    <h2 id="editor-title">New task</h2>
+    <div class="row">
+      <label>Type
+        <select name="type">
+          <option value="task">task</option>
+          <option value="bug">bug</option>
+          <option value="feature">feature</option>
+          <option value="idea">idea</option>
+        </select>
+      </label>
+      <label>Priority
+        <select name="priority">
+          <option value="P0">P0</option>
+          <option value="P1">P1</option>
+          <option value="P2" selected>P2</option>
+          <option value="P3">P3</option>
+          <option value="P4">P4</option>
+        </select>
+      </label>
+      <label>Status
+        <select name="status">
+          <option value="draft">draft</option>
+          <option value="open" selected>open</option>
+          <option value="inprogress">inprogress</option>
+          <option value="blocked">blocked</option>
+          <option value="closed">closed</option>
+        </select>
+      </label>
+    </div>
+    <label id="reason-field" hidden>Status reason
+      <input name="status_reason" id="editor-reason" autocomplete="off" placeholder="Why blocked/closed (optional)">
+    </label>
+    <label>Tags <span class="muted">— comma separated; lowercase letters, numbers and dashes</span>
+      <input name="tags" id="editor-tags" autocomplete="off" placeholder="api, web-ui" list="tag-suggestions">
+    </label>
+    <datalist id="tag-suggestions"></datalist>
+    <label for="editor-description">Task <span class="muted">— first line becomes the title</span></label>
+    <div class="md-editor">
+      <div class="md-toolbar" role="toolbar" aria-label="Format">
+        <button type="button" data-md="bold" title="Bold"><strong>B</strong></button>
+        <button type="button" data-md="italic" title="Italic"><em>I</em></button>
+        <button type="button" data-md="code" title="Inline code"><code>&lt;/&gt;</code></button>
+        <button type="button" data-md="link" title="Link">link</button>
+        <button type="button" data-md="ul" title="Bulleted list">• list</button>
+        <button type="button" data-md="ol" title="Numbered list">1. list</button>
+        <button type="button" data-md="heading" title="Heading (cycles H1→H2→H3→off)">H</button>
+      </div>
+      <textarea id="editor-description" name="description" rows="6" required class="md-source"
+        placeholder="First line is the title. Add details below — markdown supported."></textarea>
+      <div class="md-preview" aria-live="polite"></div>
+    </div>
+    <div class="derived-title muted" id="derived-title"></div>
+    <label for="dep-search">Depends on</label>
+    <div class="dep-picker">
+      <div class="dep-chips" id="dep-chips"></div>
+      <input id="dep-search" type="text" class="dep-search" placeholder="Search tasks by id or title…" autocomplete="off">
+      <div class="dep-results" id="dep-results" hidden></div>
+      <input type="hidden" name="depends_on" id="depends_on">
+    </div>
+    <div class="footer">
+      <button type="button" data-action="cancel">Cancel</button>
+      <button type="submit" class="primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="help">
+  <h2>Keyboard shortcuts</h2>
+  <dl class="shortcuts">
+    <dt>j / k</dt><dd>Move focus down / up between cards</dd>
+    <dt>n</dt><dd>New task</dd>
+    <dt>e</dt><dd>Edit focused task</dd>
+    <dt>d</dt><dd>Delete focused task (with undo)</dd>
+    <dt>Enter</dt><dd>Run the focused task's primary action (Start / Done / Reopen)</dd>
+    <dt>/</dt><dd>Focus the filter input</dd>
+    <dt>Esc</dt><dd>Clear filter / close dialog</dd>
+    <dt>?</dt><dd>Toggle this help</dd>
+  </dl>
+  <div class="footer">
+    <button type="button" data-action="close-help">Close</button>
+  </div>
+</dialog>
+
+<dialog id="prompt">
+  <form method="dialog" id="prompt-form">
+    <h2 class="prompt-title"></h2>
+    <label class="prompt-label" for="prompt-field"></label>
+    <textarea id="prompt-field" class="prompt-field" rows="3"></textarea>
+    <div class="footer">
+      <button type="button" data-action="prompt-cancel">Cancel</button>
+      <button type="submit" class="primary" data-action="prompt-ok">OK</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="graph">
+  <div class="graph-header">
+    <h2>Dependency graph</h2>
+    <span class="graph-legend">
+      <span class="lg ready">ready</span>
+      <span class="lg blocked">blocked</span>
+      <span class="lg inprogress">in&nbsp;progress</span>
+      <span class="lg closed">closed</span>
+    </span>
+    <button type="button" data-action="close-graph">Close</button>
+  </div>
+  <div class="graph-body"></div>
+</dialog>
+
+<template id="task-card">
+  <article class="card">
+    <header>
+      <span class="id"></span>
+      <span class="title"></span>
+      <span class="chips"></span>
+      <span class="deps"></span>
+    </header>
+    <div class="description"></div>
+    <footer>
+      <button data-action="status-next">Advance status</button>
+      <select data-action="set-status" class="status-menu" title="Set status" aria-label="Set status"></select>
+      <button data-action="edit">Edit</button>
+      <button data-action="delete" class="danger">Delete</button>
+    </footer>
+  </article>
+</template>
+
+<script type="module" src="./app.js"></script>
+</body>
+</html>
