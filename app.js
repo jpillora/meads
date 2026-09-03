@@ -3,8 +3,8 @@
 // code from another origin.
 import { marked } from "./web_vendor/marked.esm.js";
 import DOMPurify from "./web_vendor/purify.es.mjs";
-import { GitHubMeads } from "./github.js";
-import { meadsCore } from "./wasm.js";
+import { GitHubMeads } from "./github.js?v=wasm-1";
+import { meadsCore } from "./wasm.js?v=wasm-1";
 
 const qs = new URLSearchParams(location.search);
 const savedSlug = qs.get("repo") || localStorage.getItem("meads.github.repo") || "jpillora/meads";

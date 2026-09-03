@@ -7,7 +7,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://api.github.com https://raw.githubusercontent.com; img-src 'self' data:; style-src 'self'; script-src 'self' 'wasm-unsafe-eval'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="description" content="A browser frontend for Meads tasks stored in GitHub refs.">
 <title>Meads on GitHub</title>
-<link rel="stylesheet" href="./app.css">
+<link rel="stylesheet" href="./app.css?v=wasm-1">
 </head>
 <body>
 <header class="bar">
@@ -208,7 +208,7 @@
   </article>
 </template>
 
-<script src="./wasm_exec.js"></script>
-<script type="module" src="./app.js"></script>
+<script src="./wasm_exec.js?v=wasm-1"></script>
+<script type="module" src="./app.js?v=wasm-1"></script>
 </body>
 </html>
