@@ -1,4 +1,7 @@
 {
+  "name": "meads",
+  "version": "1.0.0",
+  "description": "Meads browser frontend and GitHub OAuth broker",
   "private": true,
   "type": "module",
   "scripts": {
