@@ -1,0 +1,10 @@
+name = "meads"
+main = "src/worker.js"
+compatibility_date = "2025-10-11"
+account_id = "393b259aa91af02962f99ab9fe15ce7c"
+
+[[routes]]
+pattern = "meads.jpillora.com"
+custom_domain = true
+
+# GITHUB_CLIENT_SECRET is the only runtime secret.

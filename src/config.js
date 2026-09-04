@@ -1,0 +1,15 @@
+export const PUBLIC_CONFIG = Object.freeze({
+  publicOrigin: "https://meads.jpillora.com",
+  githubCallbackURL: "https://meads.jpillora.com/_/github/callback",
+  upstreamAssetOrigin: "https://jpillora.github.io",
+  upstreamAssetPrefix: "/meads/",
+  githubClientID: "Iv23liw7OyyeQFu2bI9t",
+  githubAppSlug: "meads-tasks",
+  githubAppID: 4827121,
+  pendingCookie: "__Host-meads_github_pending",
+  sessionCookie: "__Host-meads_github_session",
+  cookieVersion: "v1",
+  githubAuthorizeURL: "https://github.com/login/oauth/authorize",
+  githubTokenURL: "https://github.com/login/oauth/access_token",
+  githubAPIOrigin: "https://api.github.com",
+});

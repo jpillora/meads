@@ -3,6 +3,7 @@
   "type": "module",
   "scripts": {
     "build:wasm": "GOOS=js GOARCH=wasm go build -trimpath -ldflags='-s -w' -o meads.wasm ./wasm && cp \"$(go env GOROOT)/lib/wasm/wasm_exec.js\" wasm_exec.js",
-    "test": "go test ./wasm && node --test"
+    "test": "go test ./wasm && node --test",
+    "typecheck": "node --check src/worker.js && node --check app.js && node --check github-auth.js && node --check github.js"
   }
 }

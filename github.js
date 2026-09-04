@@ -133,8 +133,7 @@ export class GitHubMeads {
       const text = await response.text();
       let payload = null;
       try { payload = JSON.parse(text); } catch { payload = text; }
-      const detail = payload?.message || text || response.statusText;
-      throw new GitHubAPIError(`${method} ${path} → ${response.status}: ${detail}`, response.status, payload);
+      throw new GitHubAPIError(`GitHub request failed (${response.status})`, response.status, payload);
     }
     if (response.status === 204) return withResponse ? { value: null, status: 204, etag: "" } : null;
     const value = raw ? await response.text() : await response.json();

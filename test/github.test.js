@@ -160,3 +160,15 @@ test("refuses a non-atomic delete when another task depends on it", async () => 
   store.load = async () => ({ tasks: [{ id: 8, title: "Dependent", depends_on: [7] }] });
   await assert.rejects(() => store.deleteTask(7), /Cannot safely delete #7/);
 });
+
+test("does not expose raw GitHub response details in displayed errors", async () => {
+  const store = new GitHubMeads({
+    owner: "acme",
+    repo: "demo",
+    fetchImpl: async () => json({ message: "sensitive upstream detail" }, 403),
+  });
+  await assert.rejects(
+    () => store.connect(),
+    (error) => error.message === "GitHub request failed (403)" && !error.message.includes("sensitive"),
+  );
+});
