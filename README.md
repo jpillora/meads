@@ -33,6 +33,32 @@ repositories work read-only, and a fine-grained PAT remains the write-access
 fallback. The frontend discovers the broker at runtime, so the same checked-in
 assets support both origins without embedding a client secret or token.
 
+## Hosted Worker and GitHub App
+
+The `gh-pages` branch also contains the Cloudflare Worker entrypoint under
+`src/`. It proxies `GET`/`HEAD` assets from `https://jpillora.github.io/meads/`
+and handles only the same-origin `/_/github/*` OAuth routes. Public settings are
+checked into `src/config.js`; `GITHUB_CLIENT_SECRET` is its sole runtime secret.
+
+GitHub does not expose App creation or owner settings through the user REST or
+GraphQL APIs. The reproducible one-time browser configuration under **Settings
+→ Developer settings → GitHub Apps → Meads Tasks** is:
+
+- GitHub App name/slug: **Meads Tasks** / `meads-tasks`
+- Homepage URL: `https://meads.jpillora.com`
+- User authorization callback: `https://meads.jpillora.com/_/github/callback`
+- Setup URL: `https://meads.jpillora.com/`
+- Expire user authorization tokens: enabled
+- Webhook: inactive, with no subscribed events
+- Repository permissions: Metadata read; Contents read and write
+- Organization and account permissions: none
+- Installation scope: **Any account**
+
+Deploy from the `jpilloracom` monorepo with `bun dev.ts deploy meads`. Install
+or rotate the secret from `sites/meads` with
+`wrangler secret put GITHUB_CLIENT_SECRET`; no code or public configuration
+change is needed when the secret rotates.
+
 ## Development
 
 ```sh
