@@ -43,10 +43,10 @@ function githubFixture(log, options = {}) {
       const body = new URLSearchParams(init.body);
       if (body.get("grant_type") === "refresh_token") {
         if (options.refreshFails) return Response.json({ error: "bad_refresh" }, { status: 400 });
-        return Response.json({ access_token: "refreshed-token", token_type: "bearer", expires_in: 28800, refresh_token: "rotated-refresh", refresh_token_expires_in: 15_552_000 });
+        return Response.json({ access_token: "refreshed-token", token_type: "bearer", expires_in: 28800, refresh_token: "rotated-refresh", refresh_token_expires_in: 15_811_200 });
       }
       if (options.exchangeFails) return Response.json({ error: "bad_verification_code" }, { status: 400 });
-      return Response.json({ access_token: "access-token", token_type: "bearer", expires_in: options.expiresIn ?? 28800, refresh_token: "refresh-token", refresh_token_expires_in: 15_552_000 });
+      return Response.json({ access_token: "access-token", token_type: "bearer", expires_in: options.expiresIn ?? 28800, refresh_token: "refresh-token", refresh_token_expires_in: 15_811_200 });
     }
     if (url === `${config.githubAPIOrigin}/user`) {
       if (options.identityFails) return Response.json({ message: "no" }, { status: 401 });

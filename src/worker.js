@@ -4,7 +4,9 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const PENDING_SECONDS = 10 * 60;
 const REFRESH_WINDOW_MS = 5 * 60 * 1000;
-const MAX_SESSION_SECONDS = 180 * 24 * 60 * 60;
+// GitHub currently reports its six-month refresh lifetime as 15,811,200
+// seconds (183 days). Keep a tight defensive cap with enough calendar slack.
+const MAX_SESSION_SECONDS = 200 * 24 * 60 * 60;
 const COOKIE_WIRE_LIMIT = 7000;
 const GITHUB_API_VERSION = "2026-03-10";
 
