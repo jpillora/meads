@@ -365,7 +365,7 @@ export class GitHubMeads {
   }
 
   async ensureWritable() {
-    if (!this.token) throw new Error("Connect a GitHub token with Contents: write permission first");
+    if (!this.token) throw new Error("Sign in with GitHub or connect a token with Contents: write permission first");
     if (!this.repository) await this.connect();
     if (!this.canWrite) throw new Error(`The connected GitHub token cannot write ${this.slug}`);
 

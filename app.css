@@ -453,6 +453,29 @@ dialog .footer .spacer { flex: 1; }
 
 #connect { width: min(92vw, 560px); }
 #connect .connect-copy { margin: 0 0 0.9rem; color: var(--muted); }
+#connect .oauth-panel {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0 0 0.9rem;
+  padding: 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+}
+#connect .oauth-panel[hidden] { display: none; }
+#connect .oauth-panel > div:first-child { display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; }
+#connect .oauth-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+#connect .auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin: 0 0 0.75rem;
+  color: var(--muted);
+  font-size: 0.85em;
+}
+#connect .auth-divider[hidden] { display: none; }
+#connect .auth-divider::before, #connect .auth-divider::after { content: ""; flex: 1; border-top: 1px solid var(--border); }
+#connect .auth-divider span { white-space: nowrap; }
 #connect .repo-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
 #connect .token-retention { display: flex; grid-template-columns: none; align-items: center; gap: 0.45rem; }
 #connect .security-note {

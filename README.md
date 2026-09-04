@@ -21,11 +21,17 @@ fine-grained personal access token restricted to the selected repository with
 `sessionStorage` for the current browser tab, never in a URL or permanent
 storage.
 
-A true **Sign in with GitHub** flow cannot be implemented safely by GitHub
-Pages alone. GitHub's authorization-code exchange requires a client secret and
-its token endpoints are not a browser-CORS authentication API. Adding that UX
-requires a small OAuth token broker (for example, a serverless endpoint); no
-client secret should ever be embedded in this site.
+The canonical hosted app is **https://meads.jpillora.com**. Its same-origin
+Cloudflare Worker exposes a small GitHub App OAuth broker under
+`/_/github/*`; the browser obtains the current user token from
+`GET /_/github/session` after each load and keeps it in memory only. The token
+still goes directly from the browser to `api.github.com` and is never passed to
+WASM or persisted by the ref cache.
+
+The static GitHub Pages origin remains usable without that broker: public
+repositories work read-only, and a fine-grained PAT remains the write-access
+fallback. The frontend discovers the broker at runtime, so the same checked-in
+assets support both origins without embedding a client secret or token.
 
 ## Development
 

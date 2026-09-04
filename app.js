@@ -4,14 +4,17 @@
 import { marked } from "./web_vendor/marked.esm.js";
 import DOMPurify from "./web_vendor/purify.es.mjs";
 import { GitHubMeads } from "./github.js?v=wasm-1";
+import { GitHubBroker, oauthErrorMessage } from "./github-auth.js?v=oauth-1";
 import { meadsCore } from "./wasm.js?v=wasm-1";
 
 const qs = new URLSearchParams(location.search);
 const savedSlug = qs.get("repo") || localStorage.getItem("meads.github.repo") || "jpillora/meads";
 const [initialOwner, initialRepo] = savedSlug.includes("/") ? savedSlug.split("/", 2) : ["jpillora", "meads"];
 const tokenKey = (owner, repo) => `meads.github.token:${owner}/${repo}`;
-const initialToken = sessionStorage.getItem(tokenKey(initialOwner, initialRepo)) || "";
-const github = new GitHubMeads({ owner: initialOwner, repo: initialRepo, token: initialToken, core: meadsCore });
+const initialPAT = sessionStorage.getItem(tokenKey(initialOwner, initialRepo)) || "";
+const github = new GitHubMeads({ owner: initialOwner, repo: initialRepo, token: initialPAT, core: meadsCore });
+const broker = new GitHubBroker();
+let credentialSource = initialPAT ? "pat" : "none";
 
 let state = {
   file: null,
@@ -282,7 +285,7 @@ function taskCard(t) {
     node.querySelectorAll(".chip.editable").forEach((item) => item.classList.remove("editable"));
     node.querySelectorAll("footer button, footer select, .dep-remove").forEach((control) => {
       control.disabled = true;
-      control.title = "Connect a GitHub token with Contents: write permission to edit";
+      control.title = "Sign in with GitHub or connect a token with Contents: write permission to edit";
     });
   }
   return node;
@@ -350,7 +353,7 @@ function taskRow(t) {
 
   row.addEventListener("click", () => {
     if (state.canWrite) openEditor(t);
-    else openConnection("Connect a write token to edit tasks.");
+    else openConnection("Sign in with GitHub or connect a write token to edit tasks.");
   });
   return row;
 }
@@ -1318,7 +1321,7 @@ document.addEventListener("click", async (e) => {
   }
   if (btn.id === "new-task") {
     setOverflowOpen(false);
-    if (!state.canWrite) return openConnection("Connect a write token to create tasks.");
+    if (!state.canWrite) return openConnection("Sign in with GitHub or connect a write token to create tasks.");
     return openEditor(null);
   }
   if (btn.id === "help-toggle") { setOverflowOpen(false); return toggleHelp(); }
@@ -1540,7 +1543,8 @@ function toggleHelp() {
   else dlg.showModal();
 }
 
-// copyShareUrl puts the current URL (including ?token=) on the clipboard.
+// copyShareUrl puts the current repository/filter URL on the clipboard. Auth
+// credentials are never represented in the URL.
 // navigator.clipboard requires https or localhost; the webui binds to
 // loopback by default, so this path is available.
 async function copyShareUrl() {
@@ -1604,12 +1608,12 @@ document.addEventListener("keydown", (e) => {
       moveFocus(-1); e.preventDefault(); break;
     case "n":
       if (state.canWrite) openEditor(null);
-      else openConnection("Connect a write token to create tasks.");
+      else openConnection("Sign in with GitHub or connect a write token to create tasks.");
       e.preventDefault(); break;
     case "e": {
       const t = focusedTask();
       if (t && state.canWrite) openEditor(t);
-      else if (t) openConnection("Connect a write token to edit tasks.");
+      else if (t) openConnection("Sign in with GitHub or connect a write token to edit tasks.");
       if (t) e.preventDefault();
       break;
     }
@@ -1618,7 +1622,7 @@ document.addEventListener("keydown", (e) => {
       if (!t) break;
       e.preventDefault();
       if (state.canWrite) deleteWithUndo(t);
-      else openConnection("Connect a write token to delete tasks.");
+      else openConnection("Sign in with GitHub or connect a write token to delete tasks.");
       break;
     }
     case "Enter": {
@@ -1626,7 +1630,7 @@ document.addEventListener("keydown", (e) => {
       if (!t) break;
       e.preventDefault();
       if (state.canWrite) advanceStatus(t).catch((err) => toast(err.message, "err"));
-      else openConnection("Connect a write token to edit tasks.");
+      else openConnection("Sign in with GitHub or connect a write token to edit tasks.");
       break;
     }
   }
@@ -1660,12 +1664,46 @@ async function initialiseCore() {
 function updateConnectionUI() {
   const button = document.getElementById("connect-github");
   if (!button) return;
-  button.textContent = state.canWrite ? "connected" : "read only";
+  const oauthUser = broker.authenticated ? broker.user : null;
+  button.textContent = credentialSource === "oauth" && oauthUser
+    ? `@${oauthUser.login}`
+    : state.canWrite ? "connected" : "read only";
   button.classList.toggle("connected", state.canWrite);
-  button.title = state.canWrite
-    ? `Connected to ${github.slug} with write access`
-    : `Viewing ${github.slug}; connect a token to edit`;
+  button.title = credentialSource === "oauth" && oauthUser
+    ? `Signed in as @${oauthUser.login}${state.canWrite ? ` with write access to ${github.slug}` : ""}`
+    : state.canWrite
+      ? `Connected to ${github.slug} with write access`
+      : `Viewing ${github.slug}; sign in or connect a token to edit`;
   document.body.dataset.readonly = state.canWrite ? "false" : "true";
+  updateOAuthUI();
+}
+
+function updateOAuthUI() {
+  const panel = document.getElementById("github-oauth");
+  const divider = document.getElementById("auth-divider");
+  const copy = document.getElementById("connect-copy");
+  if (!panel) return;
+  panel.hidden = !broker.available;
+  divider.hidden = !broker.available;
+  copy.textContent = broker.available
+    ? "Public repositories can be viewed without signing in. Sign in with GitHub to access repositories where the Meads GitHub App is installed."
+    : "Public repositories can be viewed without a token. To edit from this static origin, use a fine-grained personal access token.";
+  if (!broker.available) return;
+
+  const login = document.getElementById("github-oauth-login");
+  const install = document.getElementById("github-oauth-install");
+  const logout = document.getElementById("github-oauth-logout");
+  const status = document.getElementById("github-oauth-status");
+  login.hidden = broker.authenticated;
+  logout.hidden = !broker.authenticated;
+  install.hidden = false;
+  if (broker.authenticated) {
+    status.textContent = `Signed in as @${broker.user.login}`;
+    logout.textContent = `Sign out @${broker.user.login}`;
+  } else {
+    status.textContent = broker.problem || "Use the Meads GitHub App; no PAT needed.";
+    logout.textContent = "Sign out";
+  }
 }
 
 function openConnection(message = "") {
@@ -1673,13 +1711,17 @@ function openConnection(message = "") {
   const form = document.getElementById("connect-form");
   form.owner.value = github.owner;
   form.repo.value = github.repo;
-  form.token.value = github.token;
-  form.keep.checked = Boolean(sessionStorage.getItem(tokenKey(github.owner, github.repo)) || github.token);
+  const savedPAT = sessionStorage.getItem(tokenKey(github.owner, github.repo)) || "";
+  form.token.value = credentialSource === "pat" ? github.token : savedPAT;
+  form.keep.checked = Boolean(savedPAT || credentialSource === "pat");
+  updateOAuthUI();
   const error = document.getElementById("connect-error");
   error.textContent = message;
   error.hidden = !message;
   dialog.showModal();
-  (github.token ? form.repo : form.token).focus();
+  (broker.authenticated || form.token.value ? form.repo : broker.available
+    ? document.getElementById("github-oauth-login")
+    : form.token).focus();
 }
 
 function showLoadError(error) {
@@ -1742,12 +1784,14 @@ document.getElementById("connect-form").addEventListener("submit", async (event)
   try {
     const owner = form.owner.value.trim();
     const repo = form.repo.value.trim();
-    const token = form.token.value.trim();
+    const pat = form.token.value.trim();
+    const token = pat || broker.accessToken;
+    credentialSource = pat ? "pat" : token ? "oauth" : "none";
     github.setTarget({ owner, repo, token });
     await github.connect();
     localStorage.setItem("meads.github.repo", github.slug);
     sessionStorage.removeItem(previousKey);
-    if (token && form.keep.checked) sessionStorage.setItem(tokenKey(owner, repo), token);
+    if (pat && form.keep.checked) sessionStorage.setItem(tokenKey(owner, repo), pat);
     else sessionStorage.removeItem(tokenKey(owner, repo));
     const url = new URL(location.href);
     if (github.slug === "jpillora/meads") url.searchParams.delete("repo");
@@ -1772,10 +1816,57 @@ document.querySelector('[data-action="cancel-connect"]')?.addEventListener("clic
 document.querySelector('[data-action="disconnect"]')?.addEventListener("click", async () => {
   const form = document.getElementById("connect-form");
   sessionStorage.removeItem(tokenKey(github.owner, github.repo));
-  github.setTarget({ owner: form.owner.value.trim(), repo: form.repo.value.trim(), token: "" });
+  const token = broker.accessToken;
+  credentialSource = token ? "oauth" : "none";
+  github.setTarget({ owner: form.owner.value.trim(), repo: form.repo.value.trim(), token });
   form.token.value = "";
   document.getElementById("connect").close();
   await reload().catch(showLoadError);
+});
+
+function returnPath() {
+  const url = new URL(location.href);
+  url.searchParams.delete("github_auth_error");
+  return url.pathname + url.search;
+}
+
+document.getElementById("github-oauth-login")?.addEventListener("click", () => {
+  try {
+    location.assign(broker.loginURL(returnPath()));
+  } catch {
+    const error = document.getElementById("connect-error");
+    error.textContent = "GitHub sign-in is temporarily unavailable.";
+    error.hidden = false;
+  }
+});
+
+document.getElementById("github-oauth-install")?.addEventListener("click", () => {
+  try {
+    location.assign(broker.installURL());
+  } catch {
+    const error = document.getElementById("connect-error");
+    error.textContent = "The GitHub App installation page is temporarily unavailable.";
+    error.hidden = false;
+  }
+});
+
+document.getElementById("github-oauth-logout")?.addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  let confirmed = true;
+  try {
+    await broker.logout();
+  } catch {
+    confirmed = false;
+  }
+  sessionStorage.removeItem(tokenKey(github.owner, github.repo));
+  credentialSource = "none";
+  github.setTarget({ owner: github.owner, repo: github.repo, token: "" });
+  document.getElementById("connect-form").token.value = "";
+  document.getElementById("connect").close();
+  await reload().catch(showLoadError);
+  toast(confirmed ? "Signed out of GitHub" : "Signed out locally; server confirmation failed", confirmed ? "ok" : "err");
+  button.disabled = false;
 });
 
 // GitHub asks API clients not to poll this endpoint more often than every five
@@ -1790,6 +1881,19 @@ setInterval(() => {
   const cached = github.cachedSnapshot();
   if (cached) applySnapshot(cached, { cached: true });
   void initialiseCore();
+  updateConnectionUI();
+  const authError = oauthErrorMessage(qs.get("github_auth_error"));
+  if (qs.has("github_auth_error")) {
+    const url = new URL(location.href);
+    url.searchParams.delete("github_auth_error");
+    history.replaceState(null, "", url);
+  }
+  if (authError) toast(authError, "err");
+  await broker.initialise();
+  if (broker.authenticated) {
+    credentialSource = "oauth";
+    github.setTarget({ owner: github.owner, repo: github.repo, token: broker.accessToken });
+  }
   updateConnectionUI();
   try {
     await reload();

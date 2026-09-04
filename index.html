@@ -7,7 +7,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://api.github.com https://raw.githubusercontent.com; img-src 'self' data:; style-src 'self'; script-src 'self' 'wasm-unsafe-eval'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="description" content="A browser frontend for Meads tasks stored in GitHub refs.">
 <title>Meads on GitHub</title>
-<link rel="stylesheet" href="./app.css?v=wasm-1">
+<link rel="stylesheet" href="./app.css?v=oauth-1">
 </head>
 <body>
 <header class="bar">
@@ -52,8 +52,19 @@
 <dialog id="connect">
   <form method="dialog" id="connect-form">
     <h2>Connect to GitHub</h2>
-    <p class="connect-copy">Public repositories can be viewed without a token. To edit, use a fine-grained personal access token restricted to this repository with <strong>Contents: read and write</strong>.</p>
-    <p class="connect-copy muted">A static GitHub Pages site cannot safely complete GitHub OAuth by itself: the authorization-code exchange needs a server-side client secret. A future “Sign in with GitHub” button therefore needs a small token-broker service.</p>
+    <p id="connect-copy" class="connect-copy">Public repositories can be viewed without a token. To edit from this static origin, use a fine-grained personal access token.</p>
+    <section id="github-oauth" class="oauth-panel" aria-label="GitHub sign in" hidden>
+      <div>
+        <strong id="github-oauth-title">GitHub App</strong>
+        <span id="github-oauth-status" class="muted"></span>
+      </div>
+      <div class="oauth-actions">
+        <button type="button" id="github-oauth-login" class="primary">Sign in with GitHub</button>
+        <button type="button" id="github-oauth-install">Install/select repositories</button>
+        <button type="button" id="github-oauth-logout">Sign out</button>
+      </div>
+    </section>
+    <p id="auth-divider" class="auth-divider" hidden><span>or use a personal access token</span></p>
     <div class="repo-fields">
       <label>Owner
         <input name="owner" required autocomplete="off" spellcheck="false" placeholder="jpillora">
@@ -62,7 +73,7 @@
         <input name="repo" required autocomplete="off" spellcheck="false" placeholder="meads">
       </label>
     </div>
-    <label>Fine-grained token <span class="muted">— optional for public read-only access</span>
+    <label>Fine-grained token <span class="muted">— optional fallback for public read-only access</span>
       <input name="token" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_…">
     </label>
     <label class="toggle token-retention">
@@ -71,7 +82,7 @@
     <p class="security-note">The token is sent only to <code>api.github.com</code>. It is never added to the URL or permanent browser storage. Meads Go runs locally in WebAssembly to validate and normalize writes before JavaScript commits them through GitHub’s API.</p>
     <p id="connect-error" class="form-error" role="alert" hidden></p>
     <div class="footer">
-      <button type="button" data-action="disconnect">Clear token</button>
+      <button type="button" data-action="disconnect">Clear PAT</button>
       <span class="spacer"></span>
       <button type="button" data-action="cancel-connect">Cancel</button>
       <button type="submit" class="primary">Connect</button>
@@ -209,6 +220,6 @@
 </template>
 
 <script src="./wasm_exec.js?v=wasm-1"></script>
-<script type="module" src="./app.js?v=wasm-1"></script>
+<script type="module" src="./app.js?v=oauth-1"></script>
 </body>
 </html>
