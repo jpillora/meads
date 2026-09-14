@@ -72,6 +72,37 @@ func bulletLineFor(out, name string) bool {
 	return false
 }
 
+func TestIntegration_HelpAndVersionExitZero(t *testing.T) {
+	bin := buildMD(t)
+	dir := t.TempDir()
+	for _, args := range [][]string{
+		{"--help"},
+		{"-h"},
+		{"list", "--help"},
+		{"list", "-h"},
+		{"--version"},
+		{"-v"},
+	} {
+		if out, err := runMD(t, bin, dir, nil, args...); err != nil {
+			t.Errorf("md %s should exit 0, got %v\n%s", strings.Join(args, " "), err, out)
+		}
+	}
+}
+
+func TestIntegration_InvalidInputStillExitsNonZero(t *testing.T) {
+	bin := buildMD(t)
+	dir := t.TempDir()
+	for _, args := range [][]string{
+		{"--nope"},
+		{"list", "--nope"},
+		{"list", "--nope", "--help"},
+	} {
+		if out, err := runMD(t, bin, dir, nil, args...); err == nil {
+			t.Errorf("md %s should exit non-zero\n%s", strings.Join(args, " "), out)
+		}
+	}
+}
+
 func TestIntegration_HelpVisibility_FileMode_ListsAllThree(t *testing.T) {
 	bin := buildMD(t)
 	h := newHarness(t) // plain git repo, no git-mode refs, TasksFile is absolute (irrelevant here: we invoke via cwd)

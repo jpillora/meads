@@ -9,7 +9,7 @@ import (
 
 // Tests for optsFailureText (main.go): the three-way split that lets main
 // filter hidden commands out of whatever opts would otherwise print and
-// os.Exit(1) on internally (see main()'s doc comment on why it calls
+// classify informational output as a successful exit (see main()'s doc comment on why it calls
 // ParseArgsError instead of Parse/ParseArgs). These exercise the REAL
 // jpillora/opts library end to end (not a hand-rolled fake of its error
 // types, which are unexported anyway - see optsFailureText's doc comment),
@@ -116,4 +116,27 @@ func TestOptsFailureText(t *testing.T) {
 			t.Errorf("text = %q, want exactly err.Error() (opts already embeds the error into the leaf's own exitError text)", text)
 		}
 	})
+}
+
+func TestOptsFailureIsSuccess(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want bool
+	}{
+		{"root long help", []string{"--help"}, true},
+		{"subcommand short help", []string{"leaf", "-h"}, true},
+		{"long version", []string{"--version"}, true},
+		{"short version", []string{"-v"}, true},
+		{"unknown command", []string{"bogus"}, false},
+		{"unknown flag", []string{"leaf", "--nope"}, false},
+		{"invalid flag with help", []string{"leaf", "--nope", "--help"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			text, _, _ := parseFailureText(t, tc.args...)
+			if got := optsFailureIsSuccess(text); got != tc.want {
+				t.Errorf("optsFailureIsSuccess() = %v, want %v\ntext:\n%s", got, tc.want, text)
+			}
+		})
+	}
 }

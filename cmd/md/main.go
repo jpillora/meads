@@ -431,12 +431,12 @@ func main() {
 	hidden := hiddenCommands(detectHelpMode(""))
 
 	// ParseArgsError, not Parse/ParseArgs: opts' own auto-exiting variants
-	// print help text and os.Exit(1) INSIDE the library, before md ever
-	// gets a chance to filter hidden commands out of it (confirmed against
-	// opts v1.4.0's source - see optsFailureText's doc comment for exactly
-	// what each variant prints and why). Using the Error-returning form
-	// instead means every exit path is reproduced here, in md, where the
-	// rendered text can be filtered first.
+	// print help text and os.Exit(1) INSIDE the library, before md ever gets a
+	// chance to filter hidden commands or give informational requests the
+	// conventional successful exit status (confirmed against opts v1.4.0's
+	// source - see optsFailureText's doc comment for exactly what each variant
+	// prints and why). Using the Error-returning form keeps those decisions in
+	// md.
 	p, err := opts.New(&c).
 		Name("md").
 		Version(version).
@@ -444,7 +444,11 @@ func main() {
 		Repo("https://github.com/jpillora/meads").
 		ParseArgsError(os.Args)
 	if err != nil {
-		fmt.Fprint(os.Stderr, filterHelp(optsFailureText(p, err), hidden))
+		text := optsFailureText(p, err)
+		fmt.Fprint(os.Stderr, filterHelp(text, hidden))
+		if optsFailureIsSuccess(text) {
+			return
+		}
 		os.Exit(1)
 	}
 	if !p.IsRunnable() {
@@ -502,4 +506,17 @@ func optsFailureText(p opts.ParsedOpts, err error) string {
 		return text
 	}
 	return p.Help()
+}
+
+// optsFailureIsSuccess distinguishes opts' informational exitError values
+// from real parse failures. opts uses the same unexported error type for
+// --help, --version, and invalid flags. Clean help contains a Usage section
+// but no Error section; parse failures render both. Explicit version output
+// is the bare version string. Help and version are successful Unix CLI
+// requests even though opts reports them through its error-returning API.
+func optsFailureIsSuccess(text string) bool {
+	if text == version {
+		return true
+	}
+	return strings.Contains(text, "Usage:") && !strings.Contains(text, "\n  Error:\n")
 }
