@@ -22,7 +22,7 @@ whichever mode is actually active. If the mode ever changes again, regenerate
 it rather than hand-editing:
 
 ```bash
-md prime --write CLAUDE.md
+md prime --write AGENTS.md
 ```
 
 ---
