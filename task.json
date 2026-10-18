@@ -1,0 +1,1 @@
+{"id":102,"title":"Add read-only Charmbracelet terminal UI","status":"open","priority":"P2","type":"feature","description":"Add md tui with responsive dark task list matching web UI ordering: in progress, ready, blocked; hide closed tasks.","meta":{"created":"2026-10-18T01:24:48Z"}}
