@@ -1,1 +1,1 @@
-{"id":103,"title":"Release v0.42.0","status":"open","priority":"P2","type":"task","description":"Publish the next minor release containing md tui by pushing the v0.42.0 tag and checking release automation.","meta":{"created":"2026-10-18T02:06:06Z"}}
+{"id":103,"title":"Release v0.42.0","status":"inprogress","priority":"P2","type":"task","description":"Publish the next minor release containing md tui by pushing the v0.42.0 tag and checking release automation.","meta":{"created":"2026-10-18T02:06:06Z","updated":"2026-10-18T02:06:11Z"}}
