@@ -119,8 +119,24 @@ md doctor                             Detect and fix duplicate task IDs (in git 
 md prime                              Print LLM context for using md
 md mcp                                Start MCP server over stdio
 md webui                              Launch web UI for the current task store
+md tui                                Browse tasks in a read-only terminal UI
 md --verbose update <id> ...          Show actions and elapsed timings on stderr (-V also works)
 ```
+
+### Terminal UI
+
+Run `md tui` to browse the current task store (git, Markdown, or CSV) in a
+read-only Charmbracelet UI with the web UI's dark colors. Tasks are grouped
+by in progress, ready, then not ready, with priority and ID sorting within
+each group. Closed and deleted tasks are hidden; drafts and blocked tasks
+appear under not ready. Missing or deleted dependencies count as satisfied.
+
+Use ↑/↓ or `j`/`k` to select, Enter to toggle Markdown task details, `/` to
+search titles, descriptions, IDs, tags, or status, and Esc to return or clear the filter.
+Details appear beside the list on wide terminals and fill narrow terminals;
+PgUp/PgDn (or Ctrl+U/Ctrl+D) scroll details. Home/End jump to the first/last
+task. Changes from other commands refresh automatically every two seconds;
+`r` checks immediately. Press `q` or Ctrl+C to quit. The TUI never edits tasks.
 
 ### Web UI
 

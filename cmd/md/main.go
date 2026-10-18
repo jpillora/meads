@@ -385,6 +385,7 @@ type root struct {
 	Prime       primeCmd       `opts:"mode=cmd,group=Misc" help:"Print LLM context for using md (describes whichever mode is active)"`
 	Mcp         mcpCmd         `opts:"mode=cmd,group=Misc" help:"Start MCP server over stdio (file or git mode)"`
 	Webui       webuiCmd       `opts:"mode=cmd,group=Misc" help:"Launch web UI for the current task store (file or git mode)"`
+	Tui         tuiCmd         `opts:"mode=cmd,group=Misc" help:"Browse tasks in a read-only terminal UI (file or git mode)"`
 	Doctor      doctorCmd      `opts:"mode=cmd,group=Misc" help:"Detect and fix duplicate task IDs (in git mode, also reports diverged tasks and repairs incomplete setup)"`
 	AutoDelete  autoDeleteCmd  `opts:"mode=cmd,name=auto-delete,group=Misc" help:"Auto-delete closed tasks via git hook (no-op in git mode: nothing to prune)"`
 	AutoSave    autoSaveCmd    `opts:"mode=cmd,name=auto-save,group=Misc" help:"Auto-stage the tasks file in every commit via git hook (no-op in git mode: no tasks file)"`
@@ -418,6 +419,7 @@ func main() {
 	c.BeadsImport.globals = g
 	c.Mcp.globals = g
 	c.Webui.globals = g
+	c.Tui.globals = g
 	c.Doctor.globals = g
 	c.AutoDelete.globals = g
 	c.AutoSave.globals = g
