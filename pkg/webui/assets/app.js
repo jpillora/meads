@@ -212,7 +212,8 @@ function taskCard(t) {
       b.title = parent
         ? `#${dep} ${parent.title || ""} — ${parent.status || "open"}`
         : `#${dep} — not in the current list (likely closed)`;
-      const x = el("button", "×");
+      const x = el("button");
+      x.innerHTML = iconMarkup("close");
       x.className = "dep-remove";
       x.dataset.action = "remove-dep";
       x.dataset.dep = dep;
@@ -803,7 +804,9 @@ function setEditingDeps(ids) {
     chip.className = "dep-chip";
     chip.dataset.depId = id;
     const text = el("span", label);
-    const rm = el("button", "×");
+    const rm = el("button");
+    rm.innerHTML = iconMarkup("close");
+    rm.setAttribute("aria-label", "Remove dependency");
     rm.type = "button";
     rm.className = "dep-chip-remove";
     rm.title = "Remove";
