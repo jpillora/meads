@@ -131,3 +131,10 @@ md set-status <id> closed    # Mark task done
 - `md doctor` also detects tasks that have diverged after independent edits in two clones, and repairs duplicate ids left by two clones creating a task offline at the same id; a genuine divergence needs manual resolution.
 - Task IDs are auto-assigned integers.
 <!-- md-prime:end -->
+
+## Shared design
+
+Follow the root [design directives](../../AGENTS.md#design-system--all-sites).
+The UI uses the shared Inter font, Nerd Fonts semantic icons and branded share
+assets at `https://jpillora.com/_/design/v1/`. Keep app-specific visualizations
+and brand artwork separate from action icons.

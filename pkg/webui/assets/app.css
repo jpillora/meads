@@ -69,7 +69,7 @@ html, body {
   padding: 0;
   color: var(--fg);
   background: var(--bg);
-  font: 13px/1.5 var(--vscode-font-family, system-ui, -apple-system, sans-serif);
+  font: 13px/1.5 var(--jp-font, Inter, sans-serif);
 }
 
 .bar {
@@ -609,7 +609,7 @@ dialog .footer { display: flex; justify-content: flex-end; gap: 0.5rem; margin-t
   display: inline-flex; align-items: center; justify-content: center;
   color: var(--chip-fg);
 }
-.trow .ttype svg { width: 14px; height: 14px; fill: currentColor; }
+.trow .ttype .jp-icon { width: 14px; height: 14px; fill: currentColor; }
 .trow .ttype.type-bug { color: var(--danger); }
 .trow .ttype.type-feature { color: var(--success); }
 .trow .ttype.type-idea { color: var(--warn); }
@@ -618,7 +618,7 @@ dialog .footer { display: flex; justify-content: flex-end; gap: 0.5rem; margin-t
   width: 16px; flex-shrink: 0;
   display: inline-flex; align-items: center; justify-content: center;
 }
-.trow .tstatus svg { width: 10px; height: 10px; }
+.trow .tstatus .jp-icon { width: 10px; height: 10px; }
 .trow .tpri {
   width: 3ch; flex-shrink: 0; text-align: center;
   font-weight: 600; color: var(--muted);
@@ -668,3 +668,19 @@ dialog .footer { display: flex; justify-content: flex-end; gap: 0.5rem; margin-t
   text-decoration: underline;
 }
 .prompt-field { width: 100%; box-sizing: border-box; resize: vertical; font-family: inherit; }
+
+/* Shared design rules: monorepo AGENTS.md, Design system — all sites. */
+:root { --jp-accent: #79945c; }
+
+.trow .jp-icon { vertical-align: middle; }
+
+/* Common plain-browser tokens retain VS Code's embedded theme overrides. */
+:root {
+  --p-bg: var(--jp-bg); --p-fg: var(--jp-text); --p-muted: var(--jp-muted);
+  --p-border: var(--jp-border); --p-accent: var(--jp-accent); --p-accent-fg: var(--jp-on-accent, white);
+  --p-card: var(--jp-surface); --p-input-bg: var(--jp-surface);
+  --p-input-fg: var(--jp-text); --p-input-border: var(--jp-border);
+}
+button, input, select, textarea { border-radius: var(--jp-radius); }
+.bar button, .footer button, .bar input, .bar select { min-height: var(--jp-control-height); padding:var(--jp-space-2) var(--jp-space-3); }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline:2px solid var(--jp-accent); outline-offset:3px; }
