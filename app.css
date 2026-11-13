@@ -759,3 +759,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 :root, :root[data-theme] { --p-muted:var(--jp-muted); --p-chip-bg:light-dark(#e6eee1,#2d3c2b); --p-chip-fg:var(--jp-link); }
 button, input, select { font:inherit; }
 .chip { font-size:max(12px,.82em); }
+
+/* Semantic chips keep readable text over their tinted surfaces. */
+:root, :root[data-theme] { --p-danger:light-dark(#a12b2b,#ffaca5); --p-warn:light-dark(#765000,#f2ca6b); --p-success:light-dark(#286235,#9dd697); }
