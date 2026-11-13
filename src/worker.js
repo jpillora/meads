@@ -11,7 +11,7 @@ const COOKIE_WIRE_LIMIT = 7000;
 const GITHUB_API_VERSION = "2026-03-10";
 
 const SECURITY_HEADERS = Object.freeze({
-  "Content-Security-Policy": "default-src 'self'; connect-src 'self' https://api.github.com https://raw.githubusercontent.com; img-src 'self' data: https://avatars.githubusercontent.com; style-src 'self'; script-src 'self' 'wasm-unsafe-eval'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; worker-src 'self'",
+  "Content-Security-Policy": "default-src 'self'; connect-src 'self' https://api.github.com https://raw.githubusercontent.com; img-src 'self' data: https://avatars.githubusercontent.com https://jpillora.com; style-src 'self' https://jpillora.com; font-src 'self' https://jpillora.com; script-src 'self' 'wasm-unsafe-eval'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; worker-src 'self'",
   "Referrer-Policy": "no-referrer",
   "X-Content-Type-Options": "nosniff",
   "X-Frame-Options": "DENY",

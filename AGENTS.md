@@ -41,3 +41,10 @@ bunx wrangler deploy
 
 The repo-root jpilloracom `dev.ts` also discovers this checkout as
 `sites/meads` after it is added as a submodule.
+
+## Shared design
+
+Follow the monorepo root design directives in `../../AGENTS.md`. Use the shared
+Inter font, Nerd Fonts semantic icons and share assets at
+`https://jpillora.com/_/design/v1/`. Preserve globally public static assets and
+keep GitHub OAuth endpoints protected by their existing encrypted cookies.

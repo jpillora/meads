@@ -77,19 +77,11 @@ function taskTags(t) {
 }
 
 // --- Icons -------------------------------------------------------------
-// Inline Material Design Icon path data (no build step, no icon font). Used by
-// the compact view; the strings are constants — never user input — so building
-// SVG markup with them below is safe.
-const MDI = {
-  circle: "M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z",
-  bug: "M14,12H10V10H14M14,16H10V14H14M20,8H17.19C16.74,7.22 16.12,6.55 15.37,6.04L17,4.41L15.59,3L13.42,5.17C12.96,5.06 12.5,5 12,5C11.5,5 11.04,5.06 10.59,5.17L8.41,3L7,4.41L8.62,6.04C7.88,6.55 7.26,7.22 6.81,8H4V10H6.09C6.04,10.33 6,10.66 6,11V12H4V14H6V15C6,15.34 6.04,15.67 6.09,16H4V18H6.81C7.85,19.79 9.78,21 12,21C14.22,21 16.15,19.79 17.19,18H20V16H17.91C17.96,15.67 18,15.34 18,15V14H20V12H18V11C18,10.66 17.96,10.33 17.91,10H20V8Z",
-  feature: "M12,15.39L8.24,17.66L9.23,13.38L5.91,10.5L10.29,10.13L12,6.09L13.71,10.13L18.09,10.5L14.77,13.38L15.76,17.66M22,9.24L14.81,8.63L12,2L9.19,8.63L2,9.24L7.45,13.97L5.82,21L12,17.27L18.18,21L16.54,13.97L22,9.24Z",
-  task: "M19,19H5V5H15V3H5C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V11H19M7.91,10.08L6.5,11.5L11,16L21,6L19.59,4.58L11,13.17L7.91,10.08Z",
-  idea: "M12,2A7,7 0 0,1 19,9C19,11.38 17.81,13.47 16,14.74V17A1,1 0 0,1 15,18H9A1,1 0 0,1 8,17V14.74C6.19,13.47 5,11.38 5,9A7,7 0 0,1 12,2M9,21V20H15V21A1,1 0 0,1 14,22H10A1,1 0 0,1 9,21M12,4A5,5 0 0,0 7,9C7,11.05 8.23,12.81 10,13.58V16H14V13.58C15.77,12.81 17,11.05 17,9A5,5 0 0,0 12,4Z",
-};
-function typeIconPath(type) { return MDI[type] || MDI.task; }
-function svgIcon(path, fill) {
-  return `<svg viewBox="0 0 24 24" aria-hidden="true"${fill ? ` fill="${fill}"` : ""}><path d="${path}"></path></svg>`;
+// Semantic names share the Nerd Fonts mapping used by every jpillora.com site.
+const TYPE_ICONS = { bug: "bug", feature: "star", task: "check", idea: "lightbulb" };
+function typeIconName(type) { return TYPE_ICONS[type] || TYPE_ICONS.task; }
+function iconMarkup(name) {
+  return `<span class="jp-icon" data-icon="${name}" aria-hidden="true"></span>`;
 }
 // statusColor maps a status to a theme variable. A closed task that carries a
 // status_reason renders in the danger colour so it reads differently from a
@@ -327,14 +319,15 @@ function taskRow(t) {
   const typeCell = tcell("ttype type-" + type, "");
   typeCell.title = type;
   typeCell.setAttribute("aria-label", "type: " + type);
-  typeCell.innerHTML = svgIcon(typeIconPath(type));
+  typeCell.innerHTML = iconMarkup(typeIconName(type));
   row.append(typeCell);
 
   const statusCell = tcell("tstatus", "");
   const reasonTip = t.status_reason ? " — " + t.status_reason : "";
   statusCell.title = status + reasonTip;
   statusCell.setAttribute("aria-label", "status: " + status + reasonTip);
-  statusCell.innerHTML = svgIcon(MDI.circle, statusColor(status, !!t.status_reason));
+  statusCell.innerHTML = iconMarkup("circle");
+  statusCell.style.color = statusColor(status, !!t.status_reason);
   row.append(statusCell);
 
   if (colShow.priority) row.append(tcell("tpri " + priority.toLowerCase(), priority));
