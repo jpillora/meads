@@ -1,0 +1,1 @@
+{"id":106,"title":"Restore readable shared design in Meads","status":"open","priority":"P1","type":"bug","description":"Permit shared styles and fonts in the static CSP and improve task chips and controls after the cross-site Chrome visual audit.","meta":{"created":"2026-11-13T09:37:21Z"}}
